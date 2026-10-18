@@ -3,6 +3,16 @@
 The ubiquitous language of the worklog. Definitions only; behaviour lives in
 [`docs/spec.md`](docs/spec.md).
 
+## Quartermaster
+
+The suite: several MCP servers, skills and tools under one repo and one plugin bundle. Each
+tool in it has its own name ([ADR 0009](docs/adr/0009-quartermaster-is-the-suite.md)).
+
+## Worklog
+
+The suite's first tool: it keeps the day's **note** and dispatches its work. Also the name
+of its skill.
+
 ## Note
 
 One markdown file per working day, `YYYY-MM-DD.md` in the vault, holding the day's live
@@ -49,7 +59,7 @@ The self-contained text a work item sends to a session, kept in its `herdr-promp
 
 ## Button
 
-A ▶ link in the note that makes Obsidian run `quartermaster send` for one work item's
+A ▶ link in the note that makes Obsidian run `worklog send` for one work item's
 prompt.
 
 ## Session
