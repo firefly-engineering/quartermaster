@@ -115,7 +115,6 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Manual action | a task list item `- [ ]` / `- [x]`, or an ordered one `1. [ ]` in *Next* |
 | Carry-over | the table under `## Carry-over` |
 | Process | the list under `## Process` |
-| Log | the list under `## Log`, last section, compacted at close |
 
 Item ids are lowercase letters, digits and `-`, unique within a note.
 
@@ -182,7 +181,6 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `next_set` | Replace *Next* with an ordered list of item ids; the server renders each line, button and details link. | — |
 | `status_set` | Rewrite the status line. | — |
 | `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. | — |
-| `log_event` | Append `HH:MM UTC · <source> · <message>` to *Log*. | `vault_log_event` |
 | `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). | — |
 | `prompt_send` | Send a work item's prompt block to its session; the tool form of `quartermaster send`. | — |
 | `task_dispatch` | Start work on a ref ([§9.2]). | `task_dispatch` |
@@ -305,7 +303,9 @@ own way; the README shows the snippets for `programs.agentSkills`,
 - ~~Should `refresh` run automatically at the start of each mutating tool, or only on demand?~~
   Settled: on demand only ([ADR 0008]).
   [#14](https://github.com/firefly-engineering/quartermaster/issues/14)
-- Is a `## Log` section worth its noise, given that jj history already keeps the timeline?
+- ~~Is a `## Log` section worth its noise, given that jj history already keeps the timeline?~~
+  Settled: no. The note has no *Log* and there is no `log_event`; the jj history is the
+  timeline, and Parts and item summaries carry what the note needs.
   [#15](https://github.com/firefly-engineering/quartermaster/issues/15)
 
 [ADR 0001]: adr/0001-the-worklog-note-is-the-canonical-format.md
