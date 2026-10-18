@@ -13,7 +13,7 @@ import (
 
 const (
 	// sessionStorePara is the fixture's session-store paragraph, from its prose to its prompt.
-	sessionStorePara = "Unblocks #15. 10 min. Route: `/grill-with-docs`.\n" +
+	sessionStorePara = "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n" +
 		"[▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-16&_item=session-store) ^session-store\n\n" +
 		"> [!prompt]- Prompt sent to web\n> ```herdr-prompt id=session-store to=web\n" +
 		"> /grill-with-docs https://github.com/acme/web/issues/14\n> ```\n"
@@ -40,8 +40,8 @@ func TestItemUpsertInputPrompt(t *testing.T) {
 		`{"id": "a", "prompt": null}`: true,
 		`{"id": "a", "prompt": {"to": "w", "text": "x"}}`: false,
 	} {
-		if in := upsertInput(t, s); in.dropPrompt != drop || in.ID != "a" {
-			t.Errorf("%s: %+v, want dropPrompt %v", s, in, drop)
+		if in := upsertInput(t, s); in.null.prompt != drop || in.ID != "a" {
+			t.Errorf("%s: %+v, want a null prompt %v", s, in, drop)
 		}
 	}
 	// Its own decoding still refuses unknown fields.
@@ -62,12 +62,12 @@ func TestItemUpsertDropPrompt(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.checkNote(t, edited(t, sessionStorePara, "Unblocks #15. 10 min. Route: `/grill-with-docs`. ^session-store\n"))
+		d.checkNote(t, edited(t, sessionStorePara, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`. ^session-store\n"))
 		if out.Item.Prompt != nil || out.Bucket != "Decisions for you" {
 			t.Errorf("out %+v", out)
 		}
 	})
-	t.Run("a ##### item without a body becomes a list item", func(t *testing.T) {
+	t.Run("a ##### item without a body becomes a list item, keeping its route", func(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), false)
 		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
@@ -76,7 +76,7 @@ func TestItemUpsertDropPrompt(t *testing.T) {
 		}
 		d.checkNote(t, edited(t,
 			"##### ⬜ [#14](https://github.com/acme/web/issues/14): which session store?\n\n"+sessionStorePara+"\n", "",
-			"- —\n\n"+yourActions, "- —\n- ⬜ [#14](https://github.com/acme/web/issues/14): which session store? · 10 min ^session-store\n\n"+yourActions))
+			"- —\n\n"+yourActions, "- —\n- ⬜ [#14](https://github.com/acme/web/issues/14): which session store? · 10 min · Route: `/grill-with-docs` ^session-store\n\n"+yourActions))
 	})
 	t.Run("its Next line loses its button", func(t *testing.T) {
 		t.Parallel()
@@ -85,7 +85,7 @@ func TestItemUpsertDropPrompt(t *testing.T) {
 			"ref": "#14", "body": "Unblocks #15.", "cost": "10 min", "route": "/grill-with-docs", "prompt": null}`)); err != nil {
 			t.Fatal(err)
 		}
-		want := strings.Replace(edited(t, sessionStorePara, "Unblocks #15. 10 min. Route: `/grill-with-docs`. ^session-store\n"),
+		want := strings.Replace(edited(t, sessionStorePara, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`. ^session-store\n"),
 			vendorNext, vendorNext+"4. Settle the session store · [[#^session-store|details]]\n", 1)
 		d.checkNote(t, want)
 	})
@@ -146,5 +146,100 @@ func TestItemUpsertNullPromptMCP(t *testing.T) {
 	if err != nil || res.IsError {
 		t.Fatalf("item_upsert: %v %+v", err, res)
 	}
-	d.checkNote(t, edited(t, sessionStorePara, "Unblocks #15. 10 min. Route: `/grill-with-docs`. ^session-store\n"))
+	d.checkNote(t, edited(t, sessionStorePara, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`. ^session-store\n"))
+}
+
+// On update an absent ref, cost or route stays, "" counts as absent, and an explicit null
+// clears one; on create a null counts as absent (#79).
+
+// ie11Line is the fixture's one-line decision; ie11Item is it with an id, a cost and a route.
+const (
+	ie11Line = "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11?\n"
+	ie11Item = "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11? · 5 min · Route: `/grill-with-docs` ^ie11\n"
+)
+
+func TestItemUpsertKeepsFields(t *testing.T) {
+	t.Parallel()
+	const link = "[#16](https://github.com/acme/web/issues/16): "
+	for in, want := range map[string]string{
+		`{"id": "ie11", "title": "drop IE11 now?"}`:                "- ⬜ " + link + "drop IE11 now? · 5 min · Route: `/grill-with-docs` ^ie11\n",
+		`{"id": "ie11", "title": "drop IE11 now?", "ref": ""}`:     "- ⬜ " + link + "drop IE11 now? · 5 min · Route: `/grill-with-docs` ^ie11\n",
+		`{"id": "ie11", "title": "drop IE11 now?", "ref": null}`:   "- ⬜ drop IE11 now? · 5 min · Route: `/grill-with-docs` ^ie11\n",
+		`{"id": "ie11", "title": "drop IE11 now?", "cost": null}`:  "- ⬜ " + link + "drop IE11 now? · Route: `/grill-with-docs` ^ie11\n",
+		`{"id": "ie11", "title": "drop IE11 now?", "route": null}`: "- ⬜ " + link + "drop IE11 now? · 5 min ^ie11\n",
+		`{"id": "ie11", "title": "drop IE11 now?", "ref": "#18", "cost": "1 h", "route": "/triage"}`: "- ⬜ " +
+			"[#18](https://github.com/acme/web/issues/18): drop IE11 now? · 1 h · Route: `/triage` ^ie11\n",
+	} {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			d := fixtureDeps(t, edited(t, ie11Line, ie11Item), false)
+			if _, err := d.itemUpsert(t.Context(), upsertInput(t, in)); err != nil {
+				t.Fatal(err)
+			}
+			d.checkNote(t, edited(t, ie11Line, want))
+		})
+	}
+	t.Run("a ##### item keeps its ref, cost and route", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		out, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
+			"body": "Unblocks #15.", "prompt": null}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.checkNote(t, edited(t, sessionStorePara, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`. ^session-store\n"))
+		if out.Item.Title != "[#14](https://github.com/acme/web/issues/14): which session store?" {
+			t.Errorf("title %q", out.Item.Title)
+		}
+	})
+	t.Run("a create takes a null as absent", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "flaky", "repo": "acme/web", "bucket": "Agent queue",
+			"title": "flaky test", "ref": null, "cost": null, "route": null}`)); err != nil {
+			t.Fatal(err)
+		}
+		d.checkNote(t, edited(t, wave2, wave2+"- ⬜ flaky test ^flaky\n"))
+	})
+}
+
+// TestItemUpsertNullFieldsMCP: the MCP schema takes a null ref, cost and route, and the server
+// hands it on.
+func TestItemUpsertNullFieldsMCP(t *testing.T) {
+	t.Parallel()
+	d := fixtureDeps(t, edited(t, ie11Line, ie11Item), false)
+	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
+	Register(s, All(d))
+	cs := connect(t, s)
+
+	tools, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(tools.Tools, func(tl *mcp.Tool) bool { return tl.Name == "item_upsert" })
+	var schema struct {
+		Properties map[string]struct {
+			Types       []string `json:"type"`
+			Description string   `json:"description"`
+		} `json:"properties"`
+	}
+	props := tools.Tools[i].InputSchema.(map[string]any)["properties"].(map[string]any)
+	if err := remarshal(map[string]any{"properties": map[string]any{
+		"ref": props["ref"], "cost": props["cost"], "route": props["route"],
+	}}, &schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"ref", "cost", "route"} {
+		if p := schema.Properties[f]; !slices.Equal(p.Types, []string{"null", "string"}) || !strings.Contains(p.Description, "null clears it") {
+			t.Errorf("%s schema %+v", f, p)
+		}
+	}
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "item_upsert", Arguments: map[string]any{
+		"id": "ie11", "title": "drop IE11?", "ref": nil, "route": nil,
+	}})
+	if err != nil || res.IsError {
+		t.Fatalf("item_upsert: %v %+v", err, res)
+	}
+	d.checkNote(t, edited(t, ie11Line, "- ⬜ drop IE11? · 5 min ^ie11\n"))
 }

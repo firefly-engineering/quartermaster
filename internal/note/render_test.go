@@ -33,8 +33,8 @@ func templateDay() Day {
 				{Icon: IconTodo, Name: "Decisions for you", Items: []ItemUnit{
 					{
 						ID: "grill-2", Icon: IconTodo, Heading: true,
-						Title:  "[#N](url): is the parser strict?",
-						Body:   "Unblocks #3. 20 min. Route: `/grill-with-docs`, it touches ADR 0002.",
+						Title: "[#N](url): is the parser strict?",
+						Body:  "Unblocks #3. It touches ADR 0002.", Cost: "20 min", Route: "/grill-with-docs",
 						Button: "grill in quartermaster",
 						Prompt: &PromptUnit{To: "quartermaster", Body: "/grill-with-docs https://github.com/firefly-engineering/quartermaster/issues/2"},
 					},
@@ -100,7 +100,7 @@ func TestNoButtonWithoutCommandID(t *testing.T) {
 	if strings.Contains(s, "obsidian://") || strings.Contains(s, "▶") {
 		t.Errorf("a button was rendered:\n%s", s)
 	}
-	if !strings.Contains(s, "Route: `/grill-with-docs`, it touches ADR 0002. ^grill-2\n\n> [!prompt]- Prompt sent to quartermaster\n") {
+	if !strings.Contains(s, "Cost: 20 min. Route: `/grill-with-docs`. ^grill-2\n\n> [!prompt]- Prompt sent to quartermaster\n") {
 		t.Errorf("the item lost its id or prompt:\n%s", s)
 	}
 	n, err := Parse(got)

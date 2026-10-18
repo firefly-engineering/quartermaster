@@ -78,3 +78,75 @@ func TestItemHead(t *testing.T) {
 		t.Errorf("objectives table: %+v", tb)
 	}
 }
+
+// TestItemFields: the parser reads back the ref, cost and route the renderer writes, in both
+// forms, and "" for an item without them (#79).
+func TestItemFields(t *testing.T) {
+	t.Parallel()
+	d := &Dispatch{Pane: "w1:p3", Workspace: "/ws/o/r/issue-14"}
+	items := []ItemUnit{
+		{ID: "store", Icon: IconInProgress, Heading: true, Repo: "o/r", Ref: Ref{Repo: "o/r", N: 14}, Title: "which store?",
+			Body: "Unblocks #15.", Cost: "10 min", Route: "/grill-with-docs", Summary: "grilling", Dispatch: d,
+			Button: "grill in r", Prompt: &PromptUnit{To: "r", Body: "/grill-with-docs"}},
+		{ID: "route-only", Icon: IconTodo, Heading: true, Title: "X", Route: "/triage"},
+		{ID: "cost-only", Icon: IconTodo, Heading: true, Title: "Y", Body: "Two lines\nof prose.", Cost: "1.5 h"},
+		{ID: "prose", Icon: IconTodo, Heading: true, Title: "Z", Body: "Done in 5 min."},
+		{ID: "login", Icon: IconInReview, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 7}, Title: "login form",
+			Cost: "20 min", Route: "/implement", Summary: "PR up", Dispatch: d},
+		{ID: "cost-line", Icon: IconTodo, Title: "a, b", Cost: "5 min"},
+		{ID: "route-line", Icon: IconTodo, Title: "c", Route: "/implement"},
+		{ID: "bare", Icon: IconTodo, Title: "plain"},
+	}
+	sent := []ItemUnit{{ID: "grant", Icon: IconTodo, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 8}, Title: "grant",
+		Cost: "5 min", Route: "/implement", Sent: &SentUnit{To: "IaC", Status: SentAcked, Note: "[#9](u)"}}}
+	src, err := testRenderer.Note(Day{Date: "2026-10-18", Status: StatusUnit{Time: "09:30", Text: "open."},
+		Projects: []ProjectUnit{{Icon: IconTodo, Repo: "o/r", Remains: IconTodo, Buckets: []BucketUnit{
+			{Icon: IconTodo, Name: "Decisions for you", Items: items},
+			{Icon: IconTodo, Name: SentBucket, Items: sent},
+		}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := Parse(src)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, src)
+	}
+	for _, w := range []struct{ id, ref, cost, route string }{
+		{"store", "o/r#14", "10 min", "/grill-with-docs"},
+		{"route-only", "", "", "/triage"},
+		{"cost-only", "", "1.5 h", ""},
+		{"prose", "", "", ""},
+		{"login", "acme/IaC#7", "20 min", "/implement"},
+		{"cost-line", "", "5 min", ""},
+		{"route-line", "", "", "/implement"},
+		{"bare", "", "", ""},
+		{"grant", "acme/IaC#8", "5 min", "/implement"},
+	} {
+		it := n.Item(w.id)
+		if it == nil {
+			t.Fatalf("no item ^%s in\n%s", w.id, src)
+		}
+		if it.Ref != w.ref || it.Cost != w.cost || it.Route != w.route {
+			t.Errorf("^%s: ref %q cost %q route %q, want %q %q %q", w.id, it.Ref, it.Cost, it.Route, w.ref, w.cost, w.route)
+		}
+		// Its title unit renders its title line back, as a transition writes it.
+		line, err := testRenderer.ItemTitle(it.TitleUnit())
+		if head := string(src[it.IconSpan.Start:it.Head.End]); err != nil || string(line) != head {
+			t.Errorf("^%s: title unit renders %q %v, want %q", w.id, line, err, head)
+		}
+	}
+}
+
+// TestItemFieldsOldForm: a ##### item whose body ends with a bare `<cost>.`, as written before
+// the `Cost:` marker, reads as having no cost; its route still reads.
+func TestItemFieldsOldForm(t *testing.T) {
+	t.Parallel()
+	src := []byte(strings.Replace(itemNote, "Unblocks #15.\n", "Unblocks #15. 10 min. Route: `/grill-with-docs`.\n", 1))
+	n, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it := n.Item("store"); it.Ref != "o/r#14" || it.Cost != "" || it.Route != "/grill-with-docs" {
+		t.Errorf("ref %q cost %q route %q", it.Ref, it.Cost, it.Route)
+	}
+}

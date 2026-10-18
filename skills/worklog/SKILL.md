@@ -31,7 +31,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `day_open` | create today's note, with the previous note's open items as carry-over rows |
 | `day_read` | read a note: status, objectives, *Next*, items by project and bucket, states, parse errors |
 | `objective_set` | add, refine, progress or settle an objective |
-| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status |
+| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status; a rewrite keeps a ref, cost or route left out, and `null` clears one |
 | `item_transition` | move a work item to a new state with a summary, or to its own state to rewrite only the summary, or tick a manual action; with `part`, file a done or dropped item into that Part |
 | `part_write` | create or rewrite one Part whole: number, kind, title, icon and body |
 | `action_upsert` | create, reword or move a manual action: a checkbox with an id |

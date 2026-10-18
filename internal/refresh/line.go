@@ -30,7 +30,7 @@ type line struct {
 // about it), and its sent status and label (note.Sent).
 func parseLine(it *note.Item) line {
 	var l line
-	l.ref, _ = it.Ref()
+	l.ref, _ = note.ParseRef(it.Ref, "")
 	if it.Sent != nil {
 		l.status, l.label = it.Sent.Status, it.Sent.To
 	}
