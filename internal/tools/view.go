@@ -63,6 +63,7 @@ type PartView struct {
 	N     int        `json:"n"`
 	Kind  string     `json:"kind" jsonschema:"Human session, Agent batch or Land"`
 	Title string     `json:"title"`
+	Body  string     `json:"body" jsonschema:"the markdown under its heading, as written: what part_write takes to rewrite it"`
 	Items []ItemView `json:"items" jsonschema:"its work items, those with an id"`
 }
 
@@ -90,6 +91,14 @@ type ItemView struct {
 	Title   string      `json:"title"`
 	Heading bool        `json:"heading,omitempty" jsonschema:"the ##### form"`
 	Prompt  *PromptView `json:"prompt,omitempty"`
+	Sent    *SentView   `json:"sent,omitempty" jsonschema:"in Sent to other repos, its sent status; the title holds it too"`
+}
+
+// SentView is the sent status of an item in Sent to other repos.
+type SentView struct {
+	Status string `json:"status" jsonschema:"to send, sent, acked or done"`
+	To     string `json:"to" jsonschema:"the herdr workspace label after its →"`
+	Note   string `json:"note,omitempty" jsonschema:"what follows the status: when it was asked, the reply's links"`
 }
 
 // PromptView is a work item's herdr-prompt block.
@@ -162,13 +171,7 @@ func view(n *note.Note, src []byte) NoteView {
 	for _, p := range n.Projects {
 		pv := ProjectView{Line: p.Line, Repo: p.Repo, Icon: string(p.Icon), Parts: []PartView{}}
 		for _, pt := range p.Parts {
-			items := []ItemView{}
-			for _, it := range pt.Items {
-				items = append(items, itemView(it))
-			}
-			pv.Parts = append(pv.Parts, PartView{
-				Line: pt.Line, Icon: string(pt.Icon), N: pt.N, Kind: pt.Kind, Title: pt.Title, Items: items,
-			})
+			pv.Parts = append(pv.Parts, partView(src, pt))
 		}
 		if r := p.Remains; r != nil {
 			rv := &RemainsView{Line: r.Line, Icon: string(r.Icon), Buckets: []BucketView{}}
@@ -207,12 +210,25 @@ func carryOverViews(n *note.Note) []CarryOverView {
 	return out
 }
 
+// partView is Part pt of a note with source src.
+func partView(src []byte, pt *note.Part) PartView {
+	items := []ItemView{}
+	for _, it := range pt.Items {
+		items = append(items, itemView(it))
+	}
+	body := strings.TrimLeft(source(src, note.Span{Start: pt.Heading.End, End: pt.End}), "\r\n")
+	return PartView{Line: pt.Line, Icon: string(pt.Icon), N: pt.N, Kind: pt.Kind, Title: pt.Title, Body: body, Items: items}
+}
+
 func itemView(it *note.Item) ItemView {
 	iv := ItemView{
 		Line: it.Line, ID: it.ID, Icon: string(it.Icon), State: stateName(it.Icon), Title: it.Title, Heading: it.Heading,
 	}
 	if it.Prompt != nil {
 		iv.Prompt = &PromptView{To: it.Prompt.To, Body: it.Prompt.Body}
+	}
+	if s := it.Sent; s != nil {
+		iv.Sent = &SentView{Status: s.Status, To: s.To, Note: s.Note}
 	}
 	return iv
 }

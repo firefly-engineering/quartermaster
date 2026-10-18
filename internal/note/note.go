@@ -52,12 +52,15 @@ const (
 // BucketNames are the fixed buckets under a project's *What remains*, in template order.
 var BucketNames = []string{
 	"Decisions for you",
-	"Your actions",
+	ActionsBucket,
 	"Agent queue",
 	SentBucket,
 	"Outside input: chase",
 	"Waiting",
 }
+
+// ActionsBucket is the bucket of manual actions only the user can do.
+const ActionsBucket = "Your actions"
 
 // SentBucket is the bucket of work sent to another repo's session.
 const SentBucket = "Sent to other repos"
@@ -152,6 +155,7 @@ type Part struct {
 	Kind    string // one of PartKinds
 	Title   string // the source after the kind and its `:` (or `,`)
 	Items   []*Item
+	Lists   []Span // its top-level lists, in note order
 }
 
 // Remains is a project's `### <icon> What remains` section.
@@ -200,6 +204,7 @@ type Item struct {
 	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
 	Prompt   *Prompt
 	Dispatch *Dispatch // where task_dispatch started an agent on it; nil when it has no marker
+	Sent     *Sent     // in *Sent to other repos*, its sent status; nil without one
 
 	idAt   int  // the offset of the `^` of its `^<id>`
 	marker Span // its dispatch marker's own bytes, when it has one
@@ -216,6 +221,7 @@ type Prompt struct {
 // ManualAction is a task list item, `- [ ]` / `- [x]` or ordered `1. [ ]`.
 type ManualAction struct {
 	Span
+	Head    Span // its first block, which holds its box and `^<id>`; Span also covers nested lines
 	Checked bool
 	Mark    int    // the byte offset of the mark inside its `[ ]`: ` `, `x` or `X`
 	ID      string // its `^<id>`, "" without one

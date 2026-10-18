@@ -132,8 +132,30 @@ func All(d Deps) []Tool {
 		Def[ItemTransitionInput, ItemTransitionOutput]{
 			Name: "item_transition", Verb: "transition",
 			Description: "Move a work item through the state model (spec §4.3) with a summary: the PR, commit, " +
-				"evidence or reason. Refuses an illegal move. A manual action can only be ticked, to DONE.",
+				"evidence or reason. Refuses an illegal move. A manual action can only be ticked, to DONE. With " +
+				"part N and a move to DONE or DROPPED, the item leaves its bucket and Next and becomes a plain line " +
+				"in its project's Part N, with its summary and without its id, button or prompt.",
 			Run: d.itemTransition,
+		},
+		Def[PartWriteInput, PartWriteOutput]{
+			Name: "part_write", Verb: "part",
+			Description: "Create or rewrite one Part of a project whole: its number, kind (Human session, Agent " +
+				"batch or Land), title, icon (🔄 running, 🔍 in review, ✅ done; written, never derived) and body. " +
+				"The body is markdown: lines, a table, anchors (a paragraph ending ^<id>); no heading or work item.",
+			Run: d.partWrite,
+		},
+		Def[ActionUpsertInput, ActionUpsertOutput]{
+			Name: "action_upsert", Verb: "action",
+			Description: "Create, reword or move a manual action: a checkbox with an id that only the user can " +
+				"do, in a project's bucket (Your actions by default) or Part, or in Process. It keeps the box as it " +
+				"is: item_transition ticks it, and nothing unticks it.",
+			Run: d.actionUpsert,
+		},
+		Def[ProcessSetInput, ProcessSetOutput]{
+			Name: "process_set", Verb: "process",
+			Description: "Add a Process entry, or reword or settle one by its 1-based place. A settled entry " +
+				"leaves Process, so the next day_open does not carry it over.",
+			Run: d.processSet,
 		},
 		Def[NextSetInput, NextSetOutput]{
 			Name: "next_set", Verb: "next",

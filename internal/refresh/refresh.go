@@ -119,7 +119,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 		return
 	}
 	head, _ := note.SplitSummary(it.Title)
-	l := parseLine(head)
+	l := parseLine(it)
 	m := move{Applied: Applied{Item: it.ID, From: from.String()}, from: from}
 	if l.ref != (note.Ref{}) {
 		m.Ref = l.ref.String()
@@ -217,8 +217,7 @@ func (m move) apply(src []byte) ([]byte, error) {
 	if now, _ := note.StateOf(it.Icon); now != m.from {
 		return nil, fmt.Errorf("it moved from %s to %s since refresh read it", m.from, now)
 	}
-	head, _ := note.SplitSummary(it.Title)
-	l := parseLine(head)
+	l := parseLine(it)
 	if m.Ref != "" && l.ref.String() != m.Ref {
 		return nil, fmt.Errorf("its ref changed from %s since refresh read it", m.Ref)
 	}
@@ -240,18 +239,20 @@ func (m move) apply(src []byte) ([]byte, error) {
 	return setStatus(src, it, m.Status, m.Links)
 }
 
-// setStatus writes status over the sent status in item it's title, and adds links at the end
-// of the title, before its summary. The title line is rendered as a transition renders it, so
-// its marker, indent and nested lines stay.
+// setStatus writes status as item it's sent status, and adds links at the end of its note,
+// before its summary. The title line is rendered as a transition renders it, so its marker,
+// indent and nested lines stay.
 func setStatus(src []byte, it *note.Item, status string, links []string) ([]byte, error) {
-	head, summary := note.SplitSummary(it.Title)
-	l := parseLine(head)
-	head = head[:l.at[0]] + status + head[l.at[1]:]
+	if it.Sent == nil {
+		return nil, errors.New("it has no sent status to set")
+	}
+	_, summary := note.SplitSummary(it.Title)
+	sent := note.SentUnit{To: it.Sent.To, Status: status, Note: it.Sent.Note}
 	if len(links) > 0 {
-		head += ", " + strings.Join(links, ", ")
+		sent.Note = strings.TrimPrefix(sent.Note+", "+strings.Join(links, ", "), ", ")
 	}
 	line, err := note.Renderer{}.ItemTitle(note.ItemUnit{
-		ID: it.ID, Icon: it.Icon, Title: head, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch,
+		ID: it.ID, Icon: it.Icon, Title: it.Sent.Title, Sent: &sent, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch,
 	})
 	if err != nil {
 		return nil, err

@@ -16,10 +16,10 @@ Built today:
 - `quartermaster version`.
 - `quartermaster serve`: a stdio MCP server with the `workflow_rules` and `phase` prompts
   ([spec §8](docs/spec.md#8-mcp-prompts)) and the tools `day_open`, `day_read`,
-  `objective_set`, `item_upsert`, `item_transition`, `next_set`, `status_set`,
-  `carryover_verdict`, `refresh`, `prompt_send` and `task_dispatch`
-  ([spec §6](docs/spec.md#6-mcp-tools)).
-- `quartermaster note open|read|objective|item|transition|next|status|verdict|refresh|send|dispatch`:
+  `objective_set`, `item_upsert`, `item_transition`, `part_write`, `action_upsert`,
+  `process_set`, `next_set`, `status_set`, `carryover_verdict`, `refresh`, `prompt_send`
+  and `task_dispatch` ([spec §6](docs/spec.md#6-mcp-tools)).
+- `quartermaster note open|read|objective|item|transition|part|action|process|next|status|verdict|refresh|send|dispatch`:
   the same tools from the command line.
 - `quartermaster send <vault> <date> <item-id>`: the ▶ button handler
   ([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)).
@@ -53,8 +53,11 @@ quartermaster note transition '{"item": "login-stack", "to": "DONE", "summary": 
 | `open` | `day_open` | creates today's note |
 | `read` | `day_read` | returns a note as structured data |
 | `objective` | `objective_set` | adds, refines, progresses or settles an objective |
-| `item` | `item_upsert` | creates or rewrites a work item in a bucket |
-| `transition` | `item_transition` | moves a work item to a new state, or ticks a manual action |
+| `item` | `item_upsert` | creates or rewrites a work item in a bucket, with its sent status in *Sent to other repos* |
+| `transition` | `item_transition` | moves a work item to a new state, or ticks a manual action; with `part`, files a done item into a Part |
+| `part` | `part_write` | creates or rewrites one Part whole |
+| `action` | `action_upsert` | creates, rewords or moves a manual action |
+| `process` | `process_set` | adds, rewords or settles a *Process* entry |
 | `next` | `next_set` | replaces *Next* with up to five actions, by item id |
 | `status` | `status_set` | rewrites the status line |
 | `verdict` | `carryover_verdict` | records keep, defer or drop on a carry-over row |
