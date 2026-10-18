@@ -1,10 +1,11 @@
 # quartermaster
 
-quartermaster is a single Go binary that keeps the day's **worklog note** in an Obsidian
-vault and dispatches the work it lists to agents running under
-[herdr](https://github.com/herdrdev/herdr). It serves the note's operations as MCP
-tools, so Claude Code, oh-my-pi or any MCP client mutates the note through one state
-machine instead of rewriting markdown by hand. [Status](#status) lists what is built.
+quartermaster is a suite of MCP servers, skills and tools
+([ADR 0009](docs/adr/0009-quartermaster-is-the-suite.md)). Its first tool, `worklog`, is a
+single Go binary that keeps the day's **worklog note** in an Obsidian vault and dispatches
+the work it lists to agents running under [herdr](https://github.com/herdrdev/herdr). It
+serves the note's operations as MCP tools, so Claude Code, oh-my-pi or any MCP client
+mutates the note through one state machine instead of rewriting markdown by hand. [Status](#status) lists what is built.
 
 The design is in [`docs/spec.md`](docs/spec.md), decisions in [`docs/adr/`](docs/adr/),
 terms in [`GLOSSARY.md`](GLOSSARY.md).
@@ -13,39 +14,39 @@ terms in [`GLOSSARY.md`](GLOSSARY.md).
 
 Built today:
 
-- `quartermaster version`.
-- `quartermaster serve`: a stdio MCP server with the `workflow_rules` and `phase` prompts
+- `worklog version`.
+- `worklog serve`: a stdio MCP server with the `workflow_rules` and `phase` prompts
   ([spec §8](docs/spec.md#8-mcp-prompts)) and the tools `day_open`, `day_read`,
   `objective_set`, `item_upsert`, `item_transition`, `part_write`, `action_upsert`,
   `process_set`, `next_set`, `status_set`, `carryover_verdict`, `refresh`, `prompt_send`
   and `task_dispatch` ([spec §6](docs/spec.md#6-mcp-tools)).
-- `quartermaster note open|read|objective|item|transition|part|action|process|next|status|verdict|refresh|send|dispatch`:
+- `worklog note open|read|objective|item|transition|part|action|process|next|status|verdict|refresh|send|dispatch`:
   the same tools from the command line.
-- `quartermaster send <vault> <date> <item-id>`: the ▶ button handler
-  ([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)).
+- `worklog send <vault> <date> <item-id>`: the ▶ button handler
+  ([spec §9.1](docs/spec.md#91-worklog-send--buttons)).
 - The configuration ([spec §3](docs/spec.md#3-configuration)): `serve` and `note` read
-  `config.toml` and take `--config` and `--vault`.
+  `worklog.toml` and take `--config` and `--vault`.
 - The `skills` flake package: the `worklog` skill as a Claude plugin directory.
 - The home-manager module.
 
 ## Usage
 
 ```sh
-quartermaster serve [--config <file>] [--vault <repo>]
-quartermaster note [--config <file>] [--vault <repo>] <verb> [<json input>]
+worklog serve [--config <file>] [--vault <repo>]
+worklog note [--config <file>] [--vault <repo>] <verb> [<json input>]
 ```
 
-The config file defaults to `$XDG_CONFIG_HOME/quartermaster/config.toml`, else
-`~/.config/quartermaster/config.toml`; a missing default file is not an error. `--vault`
+The config file defaults to `$XDG_CONFIG_HOME/quartermaster/worklog.toml`, else
+`~/.config/quartermaster/worklog.toml`; a missing default file is not an error. `--vault`
 overrides `vault.repo`, the repo that holds the vault.
 
 Each `note` verb runs the MCP tool of the same operation. It takes the tool's input as one
 JSON object argument, `{}` when left out, and prints the tool's output as JSON:
 
 ```sh
-quartermaster note open                          # day_open: create today's note
-quartermaster note read '{"date": "2026-10-17"}' # day_read: a note as JSON, plus parse errors
-quartermaster note transition '{"item": "login-stack", "to": "DONE", "summary": "merged in abc123"}'
+worklog note open                          # day_open: create today's note
+worklog note read '{"date": "2026-10-17"}' # day_read: a note as JSON, plus parse errors
+worklog note transition '{"item": "login-stack", "to": "DONE", "summary": "merged in abc123"}'
 ```
 
 | Verb | Tool | Does |
@@ -69,7 +70,7 @@ The write tools change the note through one lock, check, rename and commit seque
 ([ADR 0006](docs/adr/0006-mutations-lock-check-rename-commit.md)), one jj change each, and
 never refresh first ([ADR 0008](docs/adr/0008-mutating-tools-do-not-refresh.md)). Each takes
 an optional `date`, today (UTC) by default; times are UTC from the clock unless an `at` is
-given. `quartermaster serve` lists every tool's input schema.
+given. `worklog serve` lists every tool's input schema.
 
 `day_open` creates today's note (UTC) from the template. Each open item of the previous
 note, the latest dated note before today, becomes a carry-over row with no verdict: unmet
@@ -89,15 +90,15 @@ reads **done**. Its write also ticks paired
 checkboxes and derives icons, as every write does. It returns what it changed, and every item
 it checked and left as it was, with why.
 
-`prompt_send` takes `{date, item}` and does what `quartermaster send` does
-([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)): it sends the item's prompt block,
+`prompt_send` takes `{date, item}` and does what `worklog send` does
+([spec §9.1](docs/spec.md#91-worklog-send--buttons)): it sends the item's prompt block,
 with its closing line, to the one agent in the herdr workspace the block names, and refuses a
 `blocked` agent. It leaves the note alone; recording the send is the skill's.
 
 `task_dispatch` takes `{ref, mode, instruction}`, the ref as `owner/repo#N`, and finds the
 ref's work item in the note by the link leading its title
 ([spec §9.2](docs/spec.md#92-task_dispatch)). Mode `session`, the default, sends the item's
-prompt, or `/implement <url>`, to the project's herdr session as `quartermaster send` does,
+prompt, or `/implement <url>`, to the project's herdr session as `worklog send` does,
 and leaves the note alone. Mode `fresh` creates the ref's workspace at
 `<dispatch.workspace_root>/<owner>/<repo>/issue-<N>` with `jj workspace add`, or with
 `git worktree add -b issue-<N>` when the project has no `.jj`
@@ -114,10 +115,10 @@ The flake exports, for `x86_64-linux`, `aarch64-linux` and `aarch64-darwin`
 
 | Output | Content |
 |---|---|
-| `packages.<system>.quartermaster` (default) | the binary |
+| `packages.<system>.worklog` (default) | the `worklog` binary |
 | `packages.<system>.skills` | the skill bundle, a Claude plugin directory |
-| `homeManagerModules.default` | `programs.quartermaster` |
-| `overlays.default` | `quartermaster` |
+| `homeManagerModules.default` | `programs.quartermaster.worklog` |
+| `overlays.default` | `worklog` |
 
 Add it to your flake's inputs:
 
@@ -127,8 +128,8 @@ inputs.quartermaster.url = "github:firefly-engineering/quartermaster";
 
 ## home-manager
 
-The module installs the binary and writes `settings` to
-`~/.config/quartermaster/config.toml`, key for key
+The module installs the `worklog` binary and writes `settings` to
+`~/.config/quartermaster/worklog.toml`, key for key
 ([spec §3](docs/spec.md#3-configuration)). It does not install the skill or register the
 MCP server ([spec §10.1](docs/spec.md#101-home-manager-module)); the sections below do.
 
@@ -137,7 +138,7 @@ MCP server ([spec §10.1](docs/spec.md#101-home-manager-module)); the sections b
 {
   imports = [ inputs.quartermaster.homeManagerModules.default ];
 
-  programs.quartermaster = {
+  programs.quartermaster.worklog = {
     enable = true;
     settings = {
       vault.repo = "~/src/github.com/sigma/worklog";
@@ -186,14 +187,14 @@ A harness without skills gets the same text from the `workflow_rules` prompt
 
 ## Register the MCP server
 
-The server is `quartermaster serve`, over stdio.
+The server is `worklog serve`, over stdio.
 
 ### Claude Code
 
 With the CLI, for every project:
 
 ```sh
-claude mcp add --scope user quartermaster -- quartermaster serve
+claude mcp add --scope user worklog -- worklog serve
 ```
 
 For one session, from a file:
@@ -201,8 +202,8 @@ For one session, from a file:
 ```json
 {
   "mcpServers": {
-    "quartermaster": {
-      "command": "quartermaster",
+    "worklog": {
+      "command": "worklog",
       "args": ["serve"]
     }
   }
@@ -210,7 +211,7 @@ For one session, from a file:
 ```
 
 ```sh
-claude --mcp-config quartermaster.json
+claude --mcp-config worklog.json
 ```
 
 From home-manager, next to the plugin above:
@@ -218,8 +219,8 @@ From home-manager, next to the plugin above:
 ```nix
 { config, lib, ... }:
 {
-  programs.claude-code.mcpServers.quartermaster = {
-    command = lib.getExe config.programs.quartermaster.package;
+  programs.claude-code.mcpServers.worklog = {
+    command = lib.getExe config.programs.quartermaster.worklog.package;
     args = [ "serve" ];
   };
 }
@@ -232,18 +233,18 @@ oh-my-pi reads the same `mcpServers` JSON from `~/.omp/agent/mcp.json`, or from
 
 ## Obsidian ▶ buttons
 
-Each ▶ button in the note runs `quartermaster send` through the community
+Each ▶ button in the note runs `worklog send` through the community
 [Shell commands](https://publish.obsidian.md/shellcommands) plugin
-([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)).
+([spec §9.1](docs/spec.md#91-worklog-send--buttons)).
 
 The shell command, set up once per vault:
 
 ```sh
-PATH="/etc/profiles/per-user/$USER/bin:$PATH" quartermaster send {{vault_path}} {{_date}} {{_item}}
+PATH="/etc/profiles/per-user/$USER/bin:$PATH" worklog send {{vault_path}} {{_date}} {{_item}}
 ```
 
 An Obsidian started from the Dock does not have the nix profile on `PATH`; the prefix lets
-it find `quartermaster` and `herdr`.
+it find `worklog` and `herdr`.
 [`skills/worklog/buttons-setup.md`](skills/worklog/buttons-setup.md) has the steps and why
 the URI carries only a reference.
 

@@ -41,7 +41,7 @@ func parseLine(it *note.Item) line {
 const githubPrefix = "https://github.com/"
 
 // replyLinks finds the reply to item id's prompt in an agent's terminal text: whatever follows
-// the line naming the item (send.PromptTag), which `quartermaster send` closes every prompt with. It
+// the line naming the item (send.PromptTag), which `worklog send` closes every prompt with. It
 // returns the GitHub links in the reply; ok is false when the text holds no prompt for id.
 func replyLinks(text, id string) (links []string, ok bool) {
 	i := strings.LastIndex(text, send.PromptTag(id))

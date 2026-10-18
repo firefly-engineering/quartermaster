@@ -219,7 +219,7 @@ func TestTransitionKeepsDispatch(t *testing.T) {
 // transition with no summary keeps it.
 func TestDispatchMarkerRoundTrip(t *testing.T) {
 	t.Parallel()
-	d := Dispatch{Pane: "w3:p7", Workspace: "/home/u/.local/share/quartermaster/workspaces/o/r/issue-9"}
+	d := Dispatch{Pane: "w3:p7", Workspace: "/home/u/.local/share/quartermaster/worklog/workspaces/o/r/issue-9"}
 	src := []byte("# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
 		"- ⬜ [#9](https://github.com/o/r/issues/9): fix it " + Renderer{}.DispatchMarker(d) + " ^fix\n")
 	n, err := Parse(src)

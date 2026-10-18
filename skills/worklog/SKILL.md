@@ -2,7 +2,7 @@
 name: worklog
 description: >-
   Keep the day's worklog note in the Obsidian vault (~/src/github.com/sigma/worklog)
-  through quartermaster's MCP tools: one living note per working day, across every
+  through the worklog MCP server's tools: one living note per working day, across every
   project, led by progress on the day's objectives and the next actions as ▶ buttons. Use
   to open the day (objectives, triage of yesterday's leftovers), to record a human unblock
   session or its decisions, to queue or record an AFK agent batch (mass-implement results,
@@ -20,8 +20,8 @@ at it sees how far the objectives have got and what to do next, and starts the n
 action with one click.
 
 This skill holds the judgement: the phases, the routes, the triage, and when each phase is
-done. quartermaster's tools do every write. They need `quartermaster serve` registered as
-an MCP server ([README](https://github.com/firefly-engineering/quartermaster#register-the-mcp-server)).
+done. The worklog's MCP tools do every write. They need `worklog serve` registered as an
+MCP server ([README](https://github.com/firefly-engineering/quartermaster#register-the-mcp-server)).
 Without it, stop and say so: never edit the note by hand instead.
 
 ## The tools
@@ -43,7 +43,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `prompt_send` | send a work item's prompt to its herdr session; leaves the note alone |
 | `task_dispatch` | start work on a ref, in its project's session or in a fresh agent |
 
-`prompt_send` is the tool form of the ▶ button's `quartermaster send`: see
+`prompt_send` is the tool form of the ▶ button's `worklog send`: see
 [Buttons](#buttons). The server lists each tool's input schema. Every tool but `day_open`
 takes an optional `date`, today (UTC) by default.
 
@@ -274,7 +274,7 @@ implemented one goes back to `/grill-me` when the batch finds a gap.
 
 ## Buttons
 
-A ▶ button runs `quartermaster send`, which types a work item's prompt into a herdr
+A ▶ button runs `worklog send`, which types a work item's prompt into a herdr
 session: the user's agent for a project, in the herdr workspace labelled with the
 project's name (`trunk`, `IaC`). Nothing is pasted by hand.
 
@@ -290,7 +290,7 @@ The judgement stays here:
   `run batch in trunk`.
 - A prompt is self-contained, because the session receiving it may not have the note's
   context.
-- `quartermaster send` adds a closing line to every prompt: when the work is done, update
+- `worklog send` adds a closing line to every prompt: when the work is done, update
   the worklog's `^<item-id>` work item. Leave that line out of the prompt. A session that
   receives it runs the matching phase here, against that work item.
 

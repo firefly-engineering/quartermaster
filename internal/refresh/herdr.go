@@ -111,7 +111,7 @@ func (g *gatherer) workspaces(ctx context.Context) (map[string][]string, error) 
 }
 
 // replier finds the agent an item was sent to: the one in its dispatch marker's pane, else the
-// one agent in the workspace labelled label, as `quartermaster send` finds it.
+// one agent in the workspace labelled label, as `worklog send` finds it.
 func (g *gatherer) replier(ctx context.Context, pane, label string) (agent, error) {
 	agents, err := g.agents(ctx)
 	if err != nil {

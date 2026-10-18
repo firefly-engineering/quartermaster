@@ -1,9 +1,11 @@
 # quartermaster — specification
 
-quartermaster is a single Go binary that keeps the day's **worklog note** in an Obsidian
-vault and dispatches the work it lists to agents running under herdr. It serves the
-note's operations as MCP tools, so every harness (Claude Code, oh-my-pi, any MCP client)
-mutates the note through the same state machine instead of rewriting markdown by hand.
+quartermaster is a suite of MCP servers, skills and tools
+([ADR 0009](adr/0009-quartermaster-is-the-suite.md)). This specifies its first tool,
+`worklog`: a single Go binary that keeps the day's **worklog note** in an Obsidian vault and
+dispatches the work it lists to agents running under herdr. It serves the note's operations
+as MCP tools, so every harness (Claude Code, oh-my-pi, any MCP client) mutates the note
+through the same state machine instead of rewriting markdown by hand.
 
 It grows out of the hand-written `worklog` skill and its `worklog-send` script. Terms in
 **bold** are defined in [`GLOSSARY.md`](../GLOSSARY.md); decisions are recorded in
@@ -36,24 +38,24 @@ the daily worklog; a GUI; any issue tracker other than GitHub.
  Obsidian ──edits──►  vault/worklog/YYYY-MM-DD.md  ◄──flock + atomic rename + jj commit──┐
     │ ▶ button (obsidian://shell-commands)                                              │
     ▼                                                                                   │
- quartermaster send <vault> <date> <id> ──herdr agent prompt──► project session         │
+ worklog send <vault> <date> <id> ──herdr agent prompt──► project session               │
                                                                                         │
  Claude Code ─┐                                                                         │
- oh-my-pi    ─┼─ stdio MCP ─► quartermaster serve ── note engine ───────────────────────┘
- other        ─┘                     │
-                                     ├── gh (issue / PR / milestone state)
-                                     ├── jj / git (workspaces for dispatch)
-                                     └── herdr (tabs, agent start, prompt, status)
+ oh-my-pi    ─┼─ stdio MCP ─► worklog serve ── note engine ─────────────────────────────┘
+ other        ─┘                 │
+                                 ├── gh (issue / PR / milestone state)
+                                 ├── jj / git (workspaces for dispatch)
+                                 └── herdr (tabs, agent start, prompt, status)
 ```
 
 One binary, several subcommands:
 
 | Command | Role |
 |---|---|
-| `quartermaster serve` | stdio MCP server: tools ([§6]) and prompts ([§8]) |
-| `quartermaster send <vault> <date> <item-id>` | ▶ button handler; replaces `worklog-send` ([§9]) |
-| `quartermaster note <subcommand>` | the same operations as the tools, for scripts and tests |
-| `quartermaster version` | prints the version |
+| `worklog serve` | stdio MCP server: tools ([§6]) and prompts ([§8]) |
+| `worklog send <vault> <date> <item-id>` | ▶ button handler; replaces the skill's `worklog-send` script ([§9]) |
+| `worklog note <subcommand>` | the same operations as the tools, for scripts and tests |
+| `worklog version` | prints the version |
 
 Each process is **stateless**: every call reads the vault, does its work under the note's
 lock, and exits or waits for the next call. All durable state is the note, GitHub and
@@ -63,7 +65,7 @@ herdr ([ADR 0003]).
 
 TOML, loaded in this order, later wins: built-in defaults, then the user file, then
 `--config` / `--vault` flags. The user file's path defaults to
-`$XDG_CONFIG_HOME/quartermaster/config.toml`, resolved once in `main` and passed down: no
+`$XDG_CONFIG_HOME/quartermaster/worklog.toml`, resolved once in `main` and passed down: no
 package reads the environment or cwd.
 
 ```toml
@@ -73,7 +75,7 @@ dir = "worklog"                           # Obsidian vault, relative to repo
 name = "worklog"                          # Obsidian vault name, for obsidian:// URIs
 
 [dispatch]
-workspace_root = "~/.local/share/quartermaster/workspaces"  # <root>/<owner>/<repo>/issue-<n>
+workspace_root = "~/.local/share/quartermaster/worklog/workspaces"  # <root>/<owner>/<repo>/issue-<n>
 
 [harness.worker]                # default harness for task_dispatch mode=fresh
 kind = "omp"                    # a herdr agent kind
@@ -207,7 +209,7 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `status_set` | Rewrite the status line. | — |
 | `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. | — |
 | `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). | — |
-| `prompt_send` | Send a work item's prompt block to its session; the tool form of `quartermaster send`. | — |
+| `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send`. | — |
 | `task_dispatch` | Start work on a ref ([§9.2]). | `task_dispatch` |
 
 Times come from the clock (UTC). A tool that records an event the user timed takes an
@@ -217,10 +219,10 @@ explicit `at`; nothing estimates a time.
 
 A mutation runs this sequence ([ADR 0006]):
 
-1. Open `<vault>/.quartermaster/locks/<date>.lock` and take `flock(LOCK_EX)`, with a timeout
-   (default 10 s). The lock is an OS-held descriptor, so a dead process frees it. The
-   `.quartermaster/` directory is listed in the vault's `.gitignore`; Obsidian hides dot
-   directories.
+1. Open `<vault>/.quartermaster/worklog/locks/<date>.lock` and take `flock(LOCK_EX)`, with a
+   timeout (default 10 s). The lock is an OS-held descriptor, so a dead process frees it. The
+   suite's `.quartermaster/` directory is listed in the vault's `.gitignore`; Obsidian hides
+   dot directories.
 2. Read the note and hash it.
 3. Parse, apply the transition, render.
 4. Write `<note>.tmp.<random>` in the same directory, `fsync` it.
@@ -247,9 +249,9 @@ the installed skill cannot drift ([ADR 0005]).
 
 ## 9. Sending and dispatch
 
-### 9.1 `quartermaster send` (▶ buttons)
+### 9.1 `worklog send` (▶ buttons)
 
-The Obsidian Shell commands plugin runs `quartermaster send <vault> <date> <item-id>` when
+The Obsidian Shell commands plugin runs `worklog send <vault> <date> <item-id>` when
 a button is clicked. Any web page can open an `obsidian://` URI, so the command takes only
 a date and an id and validates both: the date parses as ISO, the id matches §4.1, the note
 exists under the vault. It reads the prompt from the note's `herdr-prompt` block (through
@@ -288,10 +290,10 @@ The flake exports:
 
 | Output | Content |
 |---|---|
-| `packages.<system>.quartermaster` (default) | the static binary (`CGO_ENABLED=0`) |
+| `packages.<system>.worklog` (default) | the static `worklog` binary (`CGO_ENABLED=0`) |
 | `packages.<system>.skills` | a Claude plugin directory holding `skills/worklog`, for `programs.agentSkills.plugins` or `programs.claude-code.plugins` |
-| `homeManagerModules.default` | `programs.quartermaster` ([§10.1]) |
-| `overlays.default` | `quartermaster` |
+| `homeManagerModules.default` | `programs.quartermaster.worklog` ([§10.1]) |
+| `overlays.default` | `worklog` |
 | `checks` | the package build with its tests, and the module evaluated on home-manager |
 
 Systems: `x86_64-linux`, `aarch64-linux`, `aarch64-darwin`, as in toolbox. The dev shell
@@ -300,14 +302,14 @@ and the package's Go come from toolbox.
 ### 10.1 home-manager module
 
 ```nix
-programs.quartermaster = {
+programs.quartermaster.worklog = {
   enable = true;
   package = …;                 # default: this flake's
-  settings = { vault.repo = "…"; projects."o/r" = { … }; };   # → config.toml
+  settings = { vault.repo = "…"; projects."o/r" = { … }; };   # → quartermaster/worklog.toml
 };
 ```
 
-The module installs the package and writes `~/.config/quartermaster/config.toml`. It does
+The module installs the package and writes `~/.config/quartermaster/worklog.toml`. It does
 not install the skill or register MCP servers, because each user's setup does those in its
 own way; the README shows the snippets for `programs.agentSkills`,
 `programs.claude-code` and oh-my-pi.

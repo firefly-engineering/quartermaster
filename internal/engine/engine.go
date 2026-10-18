@@ -26,8 +26,12 @@ const DefaultLockTimeout = 10 * time.Second
 // maxRetries is how many times a mutation starts over when the note changed under it.
 const maxRetries = 3
 
-// ignoreEntry is the .gitignore line that keeps the lock directory out of jj (spec §7).
+// ignoreEntry is the .gitignore line that keeps the lock directory out of jj (spec §7). It
+// ignores the suite's whole vault directory, so every quartermaster tool's locks are covered.
 const ignoreEntry = ".quartermaster/"
+
+// lockDir is where the worklog keeps its locks, relative to the vault (ADR 0009).
+var lockDir = filepath.Join(".quartermaster", "worklog", "locks")
 
 // Engine writes the notes of one vault. The caller resolves every field: nothing here reads the
 // environment or the cwd.
@@ -97,7 +101,7 @@ func (e *Engine) Mutate(ctx context.Context, date, tool string, edit Edit) (Resu
 	if err := e.ensureIgnored(ctx, isJJ, timeout); err != nil {
 		return Result{}, err
 	}
-	unlock, err := lock(ctx, filepath.Join(vault, ".quartermaster", "locks", date+".lock"), timeout)
+	unlock, err := lock(ctx, filepath.Join(vault, lockDir, date+".lock"), timeout)
 	if err != nil {
 		return Result{}, err
 	}
@@ -236,7 +240,7 @@ func ignores(gitignore []byte, dir string) bool {
 // lock of their own. Whatever else `@` holds stays in the new `@`; a description `@` had is
 // replaced by msg, so the vault repo is expected to keep `@` undescribed.
 func (e *Engine) commit(ctx context.Context, timeout time.Duration, msg, rel string) error {
-	unlock, err := lock(ctx, filepath.Join(e.Repo, e.Dir, ".quartermaster", "locks", "jj.lock"), timeout)
+	unlock, err := lock(ctx, filepath.Join(e.Repo, e.Dir, lockDir, "jj.lock"), timeout)
 	if err != nil {
 		return err
 	}

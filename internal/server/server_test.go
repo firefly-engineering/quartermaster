@@ -73,6 +73,14 @@ func TestListPrompts(t *testing.T) {
 	}
 }
 
+// TestServerName: the server reports the tool's name, not the suite's (ADR 0009).
+func TestServerName(t *testing.T) {
+	t.Parallel()
+	if got := connect(t).InitializeResult().ServerInfo.Name; got != "worklog" {
+		t.Fatalf("server name %q, want worklog", got)
+	}
+}
+
 func TestListTools(t *testing.T) {
 	t.Parallel()
 	srv, err := server.New("test", tools.All(tools.Deps{})...)

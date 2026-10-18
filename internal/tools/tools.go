@@ -1,5 +1,5 @@
 // Package tools holds the note's operations (docs/spec.md §6), each defined once and served
-// two ways: as an MCP tool by `quartermaster serve`, and as a verb of `quartermaster note`.
+// two ways: as an MCP tool by `worklog serve`, and as a verb of `worklog note`.
 //
 // The pattern: a tool is one function from a typed input to a typed output, wrapped in a
 // [Def] that names it as a tool and as a verb. The MCP server derives the JSON schemas of the
@@ -42,7 +42,7 @@ type Deps struct {
 
 // Tool is one operation, servable over MCP and runnable from the CLI.
 type Tool interface {
-	// Names are the MCP tool name, as `day_open`, and the `quartermaster note` verb, as `open`.
+	// Names are the MCP tool name, as `day_open`, and the `worklog note` verb, as `open`.
 	Names() (tool, verb string)
 	// AddTo registers the tool on an MCP server.
 	AddTo(s *mcp.Server)
@@ -187,7 +187,7 @@ func All(d Deps) []Tool {
 		Def[PromptSendInput, PromptSendOutput]{
 			Name: "prompt_send", Verb: "send",
 			Description: "Send a work item's prompt block to the one agent in the herdr workspace its to= names, " +
-				"as `quartermaster send` does, with the closing line asking it to update the item. Refuses a " +
+				"as `worklog send` does, with the closing line asking it to update the item. Refuses a " +
 				"blocked agent. Does not write the note.",
 			Run: d.promptSend,
 		},
@@ -241,7 +241,7 @@ func Verbs(ts []Tool) []string {
 // vault is the Obsidian vault's directory.
 func (d Deps) vault() (string, error) {
 	if d.Config.Vault.Repo == "" {
-		return "", errors.New("vault.repo is not set: set it in config.toml or pass --vault")
+		return "", errors.New("vault.repo is not set: set it in worklog.toml or pass --vault")
 	}
 	return filepath.Join(d.Config.Vault.Repo, d.Config.Vault.Dir), nil
 }

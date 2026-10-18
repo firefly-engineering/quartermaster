@@ -59,7 +59,7 @@ func TestSendNoHerdr(t *testing.T) {
 	lookPath := func(string) (string, error) { return "", errors.New("not found") }
 	// The inputs are validated before herdr is needed.
 	code := send([]string{t.TempDir(), "2026-10-16", "x;rm"}, &out, &errb, lookPath, nil)
-	if code != 1 || errb.String() != "quartermaster send: not an item id: \"x;rm\"\n" {
+	if code != 1 || errb.String() != "worklog send: not an item id: \"x;rm\"\n" {
 		t.Fatalf("code %d, stderr %q", code, errb.String())
 	}
 	vault := t.TempDir()
@@ -70,7 +70,7 @@ func TestSendNoHerdr(t *testing.T) {
 	}
 	errb.Reset()
 	code = send([]string{vault, "2026-10-16", "a"}, &out, &errb, lookPath, nil)
-	if code != 1 || errb.String() != "quartermaster send: herdr not found on PATH\n" {
+	if code != 1 || errb.String() != "worklog send: herdr not found on PATH\n" {
 		t.Fatalf("code %d, stderr %q", code, errb.String())
 	}
 }
@@ -80,9 +80,9 @@ func TestDefaultConfigPath(t *testing.T) {
 	tests := []struct {
 		name, xdg, home, want string
 	}{
-		{"XDG_CONFIG_HOME wins", "/xdg", "/home/u", "/xdg/quartermaster/config.toml"},
-		{"unset falls back to ~/.config", "", "/home/u", "/home/u/.config/quartermaster/config.toml"},
-		{"a relative XDG_CONFIG_HOME is ignored", "rel", "/home/u", "/home/u/.config/quartermaster/config.toml"},
+		{"XDG_CONFIG_HOME wins", "/xdg", "/home/u", "/xdg/quartermaster/worklog.toml"},
+		{"unset falls back to ~/.config", "", "/home/u", "/home/u/.config/quartermaster/worklog.toml"},
+		{"a relative XDG_CONFIG_HOME is ignored", "rel", "/home/u", "/home/u/.config/quartermaster/worklog.toml"},
 		{"no home and no XDG_CONFIG_HOME gives no path", "", "", ""},
 	}
 	for _, tt := range tests {
@@ -157,7 +157,7 @@ func TestNoteOpenRead(t *testing.T) {
 	}
 	errb.Reset()
 	if code := run([]string{"note", "--vault", "repo", "open"}, &out, &errb, h); code != 1 ||
-		!strings.Contains(errb.String(), "quartermaster note open: ") {
+		!strings.Contains(errb.String(), "worklog note open: ") {
 		t.Fatalf("second open: code %d, stderr %q", code, errb.String())
 	}
 }
@@ -170,7 +170,7 @@ func TestNoteConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := filepath.Join(h.home, ".config", "quartermaster", "config.toml")
+	cfg := filepath.Join(h.home, ".config", "quartermaster", "worklog.toml")
 	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
 		t.Fatal(err)
 	}

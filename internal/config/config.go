@@ -1,5 +1,5 @@
-// Package config loads quartermaster's configuration (docs/spec.md §3): built-in defaults,
-// then the user's config.toml, then the --config / --vault flags, later sources winning.
+// Package config loads the worklog's configuration (docs/spec.md §3): built-in defaults,
+// then the user's worklog.toml, then the --config / --vault flags, later sources winning.
 //
 // The package reads neither the environment nor the cwd: main resolves the default path and
 // the home directory and passes them in Options.
@@ -67,7 +67,7 @@ type Options struct {
 func Defaults() Config {
 	return Config{
 		Vault:    Vault{Dir: "worklog", Name: "worklog"},
-		Dispatch: Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/workspaces"},
+		Dispatch: Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
 		Projects: map[string]Project{},
 	}
 }

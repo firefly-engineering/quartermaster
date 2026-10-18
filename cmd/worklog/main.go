@@ -1,4 +1,5 @@
-// Command quartermaster keeps the day's worklog note and dispatches its work (docs/spec.md).
+// Command worklog keeps the day's worklog note and dispatches its work (docs/spec.md). It is
+// the first tool of the quartermaster suite (ADR 0009).
 //
 // main is the one place that reads the process's environment, home, cwd and clock and finds
 // jj, git, gh and herdr on PATH; it passes what it found down to every package.
@@ -52,10 +53,10 @@ func main() {
 
 func usage(stderr io.Writer) int {
 	verbs := strings.Join(tools.Verbs(tools.All(tools.Deps{})), "|")
-	_, _ = fmt.Fprintln(stderr, "usage: quartermaster version\n"+
-		"       quartermaster serve [--config <file>] [--vault <repo>]\n"+
-		"       quartermaster note [--config <file>] [--vault <repo>] "+verbs+" [<json input>]\n"+
-		"       quartermaster send <vault> <date> <item-id>")
+	_, _ = fmt.Fprintln(stderr, "usage: worklog version\n"+
+		"       worklog serve [--config <file>] [--vault <repo>]\n"+
+		"       worklog note [--config <file>] [--vault <repo>] "+verbs+" [<json input>]\n"+
+		"       worklog send <vault> <date> <item-id>")
 	return 2
 }
 
@@ -94,14 +95,14 @@ func send(args []string, stdout, stderr io.Writer, lookPath func(string) (string
 		_, err = fmt.Fprintln(stdout, sent)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "quartermaster send:", err)
+		_, _ = fmt.Fprintln(stderr, "worklog send:", err)
 		return 1
 	}
 	return 0
 }
 
 // defaultConfigPath is the user file's default path (spec §3): $XDG_CONFIG_HOME, else
-// ~/.config, joined with quartermaster/config.toml. A relative XDG_CONFIG_HOME is ignored, as
+// ~/.config, joined with quartermaster/worklog.toml. A relative XDG_CONFIG_HOME is ignored, as
 // the XDG spec requires. It returns "" when neither base is known.
 func defaultConfigPath(getenv func(string) string, home string) string {
 	base := getenv("XDG_CONFIG_HOME")
@@ -111,7 +112,7 @@ func defaultConfigPath(getenv func(string) string, home string) string {
 		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "quartermaster", "config.toml")
+	return filepath.Join(base, "quartermaster", "worklog.toml")
 }
 
 // errUsage is a command line that does not parse.
@@ -164,7 +165,7 @@ func serve(args []string, stderr io.Writer, h host) int {
 		return usage(stderr)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "quartermaster serve:", err)
+		_, _ = fmt.Fprintln(stderr, "worklog serve:", err)
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -174,7 +175,7 @@ func serve(args []string, stderr io.Writer, h host) int {
 		err = s.Run(ctx, &mcp.StdioTransport{})
 	}
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "quartermaster serve:", err)
+		_, _ = fmt.Fprintln(stderr, "worklog serve:", err)
 		return 1
 	}
 	return 0
@@ -188,7 +189,7 @@ func note(args []string, stdout, stderr io.Writer, h host) int {
 		return usage(stderr)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "quartermaster note:", err)
+		_, _ = fmt.Fprintln(stderr, "worklog note:", err)
 		return 1
 	}
 	var input []byte
@@ -200,7 +201,7 @@ func note(args []string, stdout, stderr io.Writer, h host) int {
 		return usage(stderr)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "quartermaster note %s: %v\n", rest[0], err)
+		_, _ = fmt.Fprintf(stderr, "worklog note %s: %v\n", rest[0], err)
 		return 1
 	}
 	return 0

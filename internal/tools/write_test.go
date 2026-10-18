@@ -19,7 +19,7 @@ var friday = time.Date(2026, 10, 16, 18, 5, 0, 0, time.UTC)
 const fixtureDate = "2026-10-16"
 
 // shellCommands sets up the ▶ buttons' command, with the id the fixture's buttons carry.
-const shellCommands = `{"shell_commands":[{"id":"abc","platform_specific_commands":{"default":"quartermaster send {{vault_path}} {{_date}} {{_item}}"}}]}`
+const shellCommands = `{"shell_commands":[{"id":"abc","platform_specific_commands":{"default":"worklog send {{vault_path}} {{_date}} {{_item}}"}}]}`
 
 // fixtureDeps makes a vault holding the fixture note, on its own day, with buttons set up.
 func fixtureDeps(t *testing.T, src string, jj bool) Deps {
