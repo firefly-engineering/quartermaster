@@ -105,7 +105,8 @@ type Status struct {
 // Objectives is the `## Objectives` section; Rows are its table's rows.
 type Objectives struct {
 	Span
-	Rows []Objective
+	Table *Span // its table, header included; nil without one
+	Rows  []Objective
 }
 
 // Objective is one row of the objectives table. Cells hold their trimmed source.
@@ -168,6 +169,8 @@ type Bucket struct {
 	Name     string // one of BucketNames
 	Items    []*Item
 	Entries  []Entry // its list items led by a state icon with no `^<id>`, at any depth
+	Dashes   []Span  // its `- —` list items, which stand for nothing in it
+	Lists    []Span  // its top-level lists, in note order
 }
 
 // Entry is a list item that is not a work item or a manual action: a bucket's line led by a
@@ -185,11 +188,14 @@ type Entry struct {
 // item's covers its nested lists.
 type Item struct {
 	Span
-	ID      string
-	Icon    Icon
-	Title   string // the source after the icon, without the `^<id>`
-	Heading bool
-	Prompt  *Prompt
+	Head     Span // the ##### heading line, or a list item's first block, which holds its `^<id>`
+	IconSpan Span // Icon's own bytes in Head
+	ID       string
+	Icon     Icon
+	Title    string // the source after the icon, its lines joined by one space, without the `^<id>`
+	Heading  bool
+	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
+	Prompt   *Prompt
 }
 
 // Prompt is a work item's `> [!prompt]-` callout and the `herdr-prompt` block inside it.

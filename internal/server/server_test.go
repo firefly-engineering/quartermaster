@@ -98,7 +98,8 @@ func TestListTools(t *testing.T) {
 	for _, tl := range res.Tools {
 		names = append(names, tl.Name)
 	}
-	if !slices.Equal(names, []string{"day_open", "day_read"}) {
+	if !slices.Equal(names, []string{"carryover_verdict", "day_open", "day_read", "item_transition", "item_upsert",
+		"next_set", "objective_set", "status_set"}) {
 		t.Fatalf("tools %v", names)
 	}
 }

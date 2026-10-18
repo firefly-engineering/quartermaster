@@ -449,7 +449,7 @@ func (p *parser) heading(h *ast.Heading) {
 			p.errorf(line, "a ##### work item must start with a status icon")
 			return
 		}
-		p.pending = &Item{Span: head, Icon: icon, Title: rest, Heading: true}
+		p.pending = &Item{Span: head, Head: head, IconSpan: iconSpan, Icon: icon, Title: rest, Heading: true}
 	default:
 		p.errorf(line, "a level %d heading has no place in the note", h.Level)
 	}
@@ -549,9 +549,25 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	}
 	it.ID = id
 	it.End = p.nodeEnd(para)
+	it.Button = p.buttonLabel(para)
 	p.addItem(it)
 	p.bucket.Items = append(p.bucket.Items, it)
 	return it
+}
+
+// buttonLabel is the label after the ▶ of a paragraph's button: a link to the Shell commands
+// plugin reading `▶ <label>`. It is "" when the paragraph has none.
+func (p *parser) buttonLabel(para *ast.Paragraph) string {
+	for c := para.FirstChild(); c != nil; c = c.NextSibling() {
+		l, ok := c.(*ast.Link)
+		if !ok || !bytes.HasPrefix(l.Destination, []byte(buttonURI)) {
+			continue
+		}
+		if label, ok := strings.CutPrefix(p.inlineText(l), buttonMark); ok {
+			return label
+		}
+	}
+	return ""
 }
 
 func (p *parser) addItem(it *Item) {
@@ -707,6 +723,9 @@ func (p *parser) list(l *ast.List) {
 			}
 		}
 	case secProject:
+		if p.bucket != nil {
+			p.bucket.Lists = append(p.bucket.Lists, p.blockSpan(l))
+		}
 		p.projectList(l)
 	}
 }
@@ -771,6 +790,10 @@ func (p *parser) entry(li, first ast.Node) {
 		}
 	}
 	lead, rest, _ := strings.Cut(p.blockLine(first), " ")
+	if lead == string(IconNone) && rest == "" {
+		p.bucket.Dashes = append(p.bucket.Dashes, p.blockSpan(li))
+		return
+	}
 	if !Icon(lead).isState() {
 		return
 	}
@@ -802,12 +825,16 @@ func (p *parser) listItem(li, first ast.Node) {
 		p.errorf(line, "%s", bad)
 		return
 	}
-	lead, rest, _ := strings.Cut(strings.TrimSpace(p.linesText(first)), " ")
+	lead, rest, _ := strings.Cut(p.blockLine(first), " ")
 	if !Icon(lead).isState() {
 		p.errorf(line, "work item ^%s must start with a status icon", id)
 		return
 	}
-	it := &Item{Span: p.blockSpan(li), ID: id, Icon: Icon(lead), Title: withoutID(rest, id)}
+	icon := first.Lines().At(0).Start // a list item's text opens on its icon
+	it := &Item{
+		Span: p.blockSpan(li), Head: p.span(p.nodeStart(li), p.nodeEnd(first)), IconSpan: p.span(icon, icon+len(lead)),
+		ID: id, Icon: Icon(lead), Title: withoutID(rest, id),
+	}
 	p.addItem(it)
 	if p.part != nil {
 		p.part.Items = append(p.part.Items, it)
@@ -823,6 +850,8 @@ func (p *parser) table(t *extast.Table) {
 		if !ok {
 			return
 		}
+		table := p.blockSpan(t)
+		p.n.Objectives.Table = &table
 		for _, r := range rows {
 			lead, _, _ := strings.Cut(r.cells[2], " ")
 			if !Icon(lead).isState() {

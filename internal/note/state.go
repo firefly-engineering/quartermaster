@@ -42,6 +42,14 @@ func (s State) String() string {
 	return stateNames[s]
 }
 
+// ParseState reads a state's name, as `IN_PROGRESS`.
+func ParseState(name string) (State, error) {
+	if i := slices.Index(stateNames[:], name); i > 0 {
+		return State(i), nil
+	}
+	return 0, fmt.Errorf("state %q: want one of %s", name, strings.Join(stateNames[Todo:], ", "))
+}
+
 // StateOf reads a work item's icon. `—` and anything else that is not a state icon is not.
 func StateOf(i Icon) (State, bool) {
 	if k := slices.Index(stateIcons, i); k >= 0 {

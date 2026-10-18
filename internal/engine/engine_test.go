@@ -187,6 +187,9 @@ func TestMutateCommitsTheNoteAlone(t *testing.T) {
 	if !strings.Contains(got, "- [x] Renew the cert ^renew\n") {
 		t.Errorf("not ticked:\n%s", got)
 	}
+	if string(res.Src) != got {
+		t.Errorf("Src is not what was written:\n%s", res.Src)
+	}
 	// One open, one done: the headings over them are 🔄 (spec §4.2); the agent queue stays ⬜.
 	for _, h := range []string{"## 🔄 o/r\n", "### 🔄 What remains\n", "#### 🔄 Your actions\n", "#### ⬜ Agent queue\n"} {
 		if !strings.Contains(got, h) {

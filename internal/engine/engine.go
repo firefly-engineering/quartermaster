@@ -53,6 +53,7 @@ type Edit func(n *note.Note, src []byte) (out []byte, headline string, err error
 type Result struct {
 	Path      string     // the note's path
 	Note      *note.Note // the note as it now is
+	Src       []byte     // Note's source
 	Changed   bool       // false when the edit left the note as it was, and nothing was written
 	Committed bool       // the note was committed as one jj change
 	Skipped   string     // why the note was not committed, when it changed but was not
@@ -130,6 +131,7 @@ func (e *Engine) Mutate(ctx context.Context, date, tool string, edit Edit) (Resu
 		if err != nil {
 			return Result{}, fmt.Errorf("%s: %w", notePath, err)
 		}
+		res.Src = out
 		if existed && bytes.Equal(out, raw) {
 			return res, nil
 		}

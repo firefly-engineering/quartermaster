@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"fmt"
 	"slices"
 	"strings"
@@ -19,10 +18,7 @@ func settle(was *note.Note, out []byte) ([]byte, *note.Note, error) {
 		return nil, nil, err
 	}
 	if ticks := n.Reconcile(); len(ticks) > 0 {
-		out = bytes.Clone(out)
-		for _, a := range ticks {
-			out[a.Mark] = 'x'
-		}
+		out = note.Tick(out, ticks)
 		if n, err = parse(out, "the reconciled note"); err != nil {
 			return nil, nil, err
 		}

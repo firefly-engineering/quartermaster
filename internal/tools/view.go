@@ -156,8 +156,7 @@ func view(n *note.Note, src []byte) NoteView {
 	}
 	if n.Next != nil {
 		for _, it := range n.Next.Items {
-			box := map[note.Box]string{note.Checked: "checked", note.Unchecked: "unchecked"}[it.Box]
-			v.Next = append(v.Next, NextView{Line: it.Line, Text: source(src, it.Span), Box: box, Ref: it.Ref})
+			v.Next = append(v.Next, nextView(src, it))
 		}
 	}
 	for _, p := range n.Projects {

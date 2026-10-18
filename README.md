@@ -16,9 +16,11 @@ Built today:
 
 - `quartermaster version`.
 - `quartermaster serve`: a stdio MCP server with the `workflow_rules` and `phase` prompts
-  ([spec §8](docs/spec.md#8-mcp-prompts)) and the tools `day_open` and `day_read`
-  ([spec §6](docs/spec.md#6-mcp-tools)).
-- `quartermaster note open|read`: the same tools from the command line.
+  ([spec §8](docs/spec.md#8-mcp-prompts)) and the tools `day_open`, `day_read`,
+  `objective_set`, `item_upsert`, `item_transition`, `next_set`, `status_set` and
+  `carryover_verdict` ([spec §6](docs/spec.md#6-mcp-tools)).
+- `quartermaster note open|read|objective|item|transition|next|status|verdict`: the same
+  tools from the command line.
 - `quartermaster send <vault> <date> <item-id>`: the ▶ button handler
   ([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)).
 - The configuration ([spec §3](docs/spec.md#3-configuration)): `serve` and `note` read
@@ -29,7 +31,6 @@ Built today:
 Not built yet:
 
 - The other MCP tools, and their `note` verbs:
-  [#9](https://github.com/firefly-engineering/quartermaster/issues/9) (the write tools),
   [#10](https://github.com/firefly-engineering/quartermaster/issues/10) (`refresh`),
   [#11](https://github.com/firefly-engineering/quartermaster/issues/11) (`task_dispatch`).
 
@@ -37,7 +38,7 @@ Not built yet:
 
 ```sh
 quartermaster serve [--config <file>] [--vault <repo>]
-quartermaster note [--config <file>] [--vault <repo>] open|read [<json input>]
+quartermaster note [--config <file>] [--vault <repo>] <verb> [<json input>]
 ```
 
 The config file defaults to `$XDG_CONFIG_HOME/quartermaster/config.toml`, else
@@ -50,7 +51,25 @@ JSON object argument, `{}` when left out, and prints the tool's output as JSON:
 ```sh
 quartermaster note open                          # day_open: create today's note
 quartermaster note read '{"date": "2026-10-17"}' # day_read: a note as JSON, plus parse errors
+quartermaster note transition '{"item": "login-stack", "to": "DONE", "summary": "merged in abc123"}'
 ```
+
+| Verb | Tool | Does |
+|---|---|---|
+| `open` | `day_open` | creates today's note |
+| `read` | `day_read` | returns a note as structured data |
+| `objective` | `objective_set` | adds, refines, progresses or settles an objective |
+| `item` | `item_upsert` | creates or rewrites a work item in a bucket |
+| `transition` | `item_transition` | moves a work item to a new state, or ticks a manual action |
+| `next` | `next_set` | replaces *Next* with up to five actions, by item id |
+| `status` | `status_set` | rewrites the status line |
+| `verdict` | `carryover_verdict` | records keep, defer or drop on a carry-over row |
+
+The write tools change the note through one lock, check, rename and commit sequence
+([ADR 0006](docs/adr/0006-mutations-lock-check-rename-commit.md)), one jj change each, and
+never refresh first ([ADR 0008](docs/adr/0008-mutating-tools-do-not-refresh.md)). Each takes
+an optional `date`, today (UTC) by default; times are UTC from the clock unless an `at` is
+given. `quartermaster serve` lists every tool's input schema.
 
 `day_open` creates today's note (UTC) from the template. Each open item of the previous
 note, the latest dated note before today, becomes a carry-over row with no verdict: unmet

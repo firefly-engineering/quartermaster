@@ -111,6 +111,44 @@ func All(d Deps) []Tool {
 				"and bucket with their states, carry-over, Process and manual actions, plus any parse errors.",
 			Run: d.dayRead,
 		},
+		Def[ObjectiveSetInput, ObjectiveSetOutput]{
+			Name: "objective_set", Verb: "objective",
+			Description: "Add an objective (no row), or change one by its 1-based row: refine its objective or " +
+				"done-condition (stamped `(refined HH:MM UTC: <reason>)`, reason required), set its progress, or " +
+				"settle it as DONE or DROPPED (progress says why).",
+			Run: d.objectiveSet,
+		},
+		Def[ItemUpsertInput, ItemUpsertOutput]{
+			Name: "item_upsert", Verb: "item",
+			Description: "Create a work item in a project's bucket, or rewrite one: title, ref (owner/repo#N, " +
+				"rendered as a full link), cost, route, body, and a prompt for its ▶ button. A new project, What " +
+				"remains or bucket is created as needed. An update rewrites the item from the input, keeping its " +
+				"state and summary; a repo or bucket moves it.",
+			Run: d.itemUpsert,
+		},
+		Def[ItemTransitionInput, ItemTransitionOutput]{
+			Name: "item_transition", Verb: "transition",
+			Description: "Move a work item through the state model (spec §4.3) with a summary: the PR, commit, " +
+				"evidence or reason. Refuses an illegal move. A manual action can only be ticked, to DONE.",
+			Run: d.itemTransition,
+		},
+		Def[NextSetInput, NextSetOutput]{
+			Name: "next_set", Verb: "next",
+			Description: "Replace Next with at most five actions, each named by its work item, manual action " +
+				"or anchor id. The server renders each line: action, cost, details link and ▶ button.",
+			Run: d.nextSet,
+		},
+		Def[StatusSetInput, StatusSetOutput]{
+			Name: "status_set", Verb: "status",
+			Description: "Rewrite the status line: `**HH:MM UTC, <label>:** <text>`, at the clock's time or at.",
+			Run:         d.statusSet,
+		},
+		Def[CarryOverVerdictInput, CarryOverVerdictOutput]{
+			Name: "carryover_verdict", Verb: "verdict",
+			Description: "Record keep, defer or drop on a carry-over row, by its 1-based row. Keep also writes " +
+				"the row's work item into its project's bucket; drop needs its reason.",
+			Run: d.carryOverVerdict,
+		},
 	}
 }
 

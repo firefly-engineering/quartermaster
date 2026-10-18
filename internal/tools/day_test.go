@@ -257,7 +257,7 @@ func TestDayReadMissing(t *testing.T) {
 	}
 }
 
-// TestMCP calls both tools over MCP, as a client does.
+// TestMCP lists the tools and calls some over MCP, as a client does.
 func TestMCP(t *testing.T) {
 	t.Parallel()
 	d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t))}, false)
@@ -272,15 +272,16 @@ func TestMCP(t *testing.T) {
 	var names []string
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
-		if tl.OutputSchema == nil {
-			t.Errorf("%s has no output schema", tl.Name)
+		if tl.OutputSchema == nil || tl.InputSchema == nil {
+			t.Errorf("%s lacks an input or output schema", tl.Name)
 		}
 		if ro := tl.Annotations != nil && tl.Annotations.ReadOnlyHint; ro != (tl.Name == "day_read") {
 			t.Errorf("%s read-only %v", tl.Name, ro)
 		}
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"day_open", "day_read"}) {
+	if !slices.Equal(names, []string{"carryover_verdict", "day_open", "day_read", "item_transition", "item_upsert",
+		"next_set", "objective_set", "status_set"}) {
 		t.Fatalf("tools %v", names)
 	}
 
@@ -300,6 +301,23 @@ func TestMCP(t *testing.T) {
 	var read DayReadOutput
 	if err := remarshal(res.StructuredContent, &read); err != nil || read.Note.Date != "2026-10-19" || len(read.Note.CarryOver) != 13 {
 		t.Fatalf("day_read: %v %+v", err, read)
+	}
+
+	res, err = cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "item_upsert", Arguments: map[string]any{
+		"id": "flaky", "repo": "acme/web", "bucket": "Agent queue", "title": "flaky test", "ref": "#9",
+	}})
+	if err != nil || res.IsError {
+		t.Fatalf("item_upsert: %v %+v", err, res)
+	}
+	var upserted ItemUpsertOutput
+	if err := remarshal(res.StructuredContent, &upserted); err != nil || !upserted.Created || upserted.Item.ID != "flaky" ||
+		!strings.HasSuffix(upserted.Path, "2026-10-19.md") {
+		t.Fatalf("item_upsert: %v %+v", err, upserted)
+	}
+	// The schema refuses an input without its required fields.
+	res, err = cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "item_transition", Arguments: map[string]any{"item": "flaky"}})
+	if err == nil && !res.IsError {
+		t.Fatalf("item_transition without to: %+v", res)
 	}
 
 	// A second open is a tool error, not a protocol one.
@@ -343,7 +361,7 @@ func TestRunVerb(t *testing.T) {
 	t.Parallel()
 	d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t))}, false)
 	ts := All(d)
-	if got := Verbs(ts); !slices.Equal(got, []string{"open", "read"}) {
+	if got := Verbs(ts); !slices.Equal(got, []string{"open", "read", "objective", "item", "transition", "next", "status", "verdict"}) {
 		t.Fatalf("verbs %v", got)
 	}
 	ctx := context.Background()
@@ -362,6 +380,14 @@ func TestRunVerb(t *testing.T) {
 	var read DayReadOutput
 	if err := json.Unmarshal(out.Bytes(), &read); err != nil || read.Note.Date != "2026-10-16" {
 		t.Fatalf("read: %v %s", err, out.String())
+	}
+	out.Reset()
+	if err := RunVerb(ctx, ts, "status", []byte(`{"text": "Opened by hand.", "at": "08:00"}`), &out); err != nil {
+		t.Fatal(err)
+	}
+	var status StatusSetOutput
+	if err := json.Unmarshal(out.Bytes(), &status); err != nil || status.Status.Text != "**08:00 UTC:** Opened by hand." {
+		t.Fatalf("status: %v %s", err, out.String())
 	}
 	for input, want := range map[string]string{
 		`{"day": "x"}`: "unknown field",
