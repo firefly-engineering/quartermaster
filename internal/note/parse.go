@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -374,10 +375,19 @@ func (p *parser) heading(h *ast.Heading) {
 	head := p.blockSpan(h)
 	lead, rest, _ := strings.Cut(txt, " ")
 	icon := Icon(lead)
+	// goldmark's heading segment opens past the `#` run and its ASCII spaces; lead starts
+	// past what TrimSpace also drops there, as an NBSP. An empty heading has no segment.
+	var iconSpan Span
+	if h.Lines().Len() > 0 {
+		seg := h.Lines().At(0)
+		raw := seg.Value(p.src)
+		at := seg.Start + len(raw) - len(bytes.TrimLeftFunc(raw, unicode.IsSpace))
+		iconSpan = p.span(at, at+len(lead))
+	}
 	switch h.Level {
 	case 2:
 		p.project, p.part, p.remains, p.bucket = nil, nil, nil, nil
-		p.section2(txt, icon, rest, whole, head)
+		p.section2(txt, icon, iconSpan, rest, whole, head)
 	case 3:
 		p.part, p.remains, p.bucket = nil, nil, nil
 		if p.sec != secProject {
@@ -393,7 +403,7 @@ func (p *parser) heading(h *ast.Heading) {
 				p.errorf(line, "repeated `### What remains`")
 				return
 			}
-			p.remains = &Remains{Span: whole, Heading: head, Icon: icon}
+			p.remains = &Remains{Span: whole, Heading: head, Icon: icon, IconSpan: iconSpan}
 			p.project.Remains = p.remains
 			p.open(3, &p.remains.Span)
 			return
@@ -427,7 +437,7 @@ func (p *parser) heading(h *ast.Heading) {
 				return
 			}
 		}
-		p.bucket = &Bucket{Span: whole, Heading: head, Icon: icon, Name: rest}
+		p.bucket = &Bucket{Span: whole, Heading: head, Icon: icon, IconSpan: iconSpan, Name: rest}
 		p.remains.Buckets = append(p.remains.Buckets, p.bucket)
 		p.open(4, &p.bucket.Span)
 	case 5:
@@ -439,17 +449,17 @@ func (p *parser) heading(h *ast.Heading) {
 			p.errorf(line, "a ##### work item must start with a status icon")
 			return
 		}
-		p.pending = &Item{Span: head, Icon: icon, Title: rest, Heading: true}
+		p.pending = &Item{Span: head, Head: head, IconSpan: iconSpan, Icon: icon, Title: rest, Heading: true}
 	default:
 		p.errorf(line, "a level %d heading has no place in the note", h.Level)
 	}
 }
 
-func (p *parser) section2(txt string, icon Icon, rest string, whole, head Span) {
+func (p *parser) section2(txt string, icon Icon, iconSpan Span, rest string, whole, head Span) {
 	line := whole.Line
 	fixed := map[string]bool{
 		"Objectives": p.n.Objectives != nil, "Next": p.n.Next != nil,
-		"Carry-over": p.n.CarryOver != nil, "Process": p.n.Process != nil,
+		"Carry-over": p.n.CarryOver != nil, ProcessSection: p.n.Process != nil,
 	}
 	if seen, ok := fixed[txt]; ok && seen {
 		p.errorf(line, "repeated section %q", txt)
@@ -469,7 +479,7 @@ func (p *parser) section2(txt string, icon Icon, rest string, whole, head Span) 
 		p.n.CarryOver = &CarryOver{Span: whole}
 		p.open(2, &p.n.CarryOver.Span)
 		p.sec = secCarryOver
-	case "Process":
+	case ProcessSection:
 		p.n.Process = &Process{Span: whole}
 		p.open(2, &p.n.Process.Span)
 		p.sec = secProcess
@@ -483,7 +493,7 @@ func (p *parser) section2(txt string, icon Icon, rest string, whole, head Span) 
 			p.errorf(line, "unknown status icon %q", icon)
 			return
 		}
-		p.project = &Project{Span: whole, Heading: head, Icon: icon, Repo: rest}
+		p.project = &Project{Span: whole, Heading: head, Icon: icon, IconSpan: iconSpan, Repo: rest}
 		p.n.Projects = append(p.n.Projects, p.project)
 		p.open(2, &p.project.Span)
 		p.sec = secProject
@@ -539,9 +549,46 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	}
 	it.ID = id
 	it.End = p.nodeEnd(para)
+	it.Button = p.buttonLabel(para)
+	p.dispatch(it, para)
 	p.addItem(it)
 	p.bucket.Items = append(p.bucket.Items, it)
 	return it
+}
+
+// buttonLabel is the label after the ▶ of a paragraph's button: a link to the Shell commands
+// plugin reading `▶ <label>`. It is "" when the paragraph has none.
+func (p *parser) buttonLabel(para *ast.Paragraph) string {
+	for c := para.FirstChild(); c != nil; c = c.NextSibling() {
+		l, ok := c.(*ast.Link)
+		if !ok || !bytes.HasPrefix(l.Destination, []byte(buttonURI)) {
+			continue
+		}
+		if label, ok := strings.CutPrefix(p.inlineText(l), buttonMark); ok {
+			return label
+		}
+	}
+	return ""
+}
+
+// dispatch sets it's Dispatch from the first dispatch marker among block's inlines, and
+// where its `^<id>` and that marker are. It returns the marker's source, "" without one.
+func (p *parser) dispatch(it *Item, block ast.Node) string {
+	last := block.Lines().At(block.Lines().Len() - 1)
+	it.idAt = last.Start + bytes.LastIndex(last.Value(p.src), []byte("^"+it.ID))
+	for c := block.FirstChild(); c != nil; c = c.NextSibling() {
+		h, ok := c.(*ast.RawHTML)
+		if !ok || h.Segments.Len() == 0 {
+			continue
+		}
+		start, end := h.Segments.At(0).Start, h.Segments.At(h.Segments.Len()-1).Stop
+		raw := string(p.src[start:end])
+		if d, ok := parseMarker(raw); ok {
+			it.Dispatch, it.marker = &d, Span{Start: start, End: end}
+			return raw
+		}
+	}
+	return ""
 }
 
 func (p *parser) addItem(it *Item) {
@@ -587,7 +634,7 @@ func (p *parser) status(para *ast.Paragraph) {
 		p.errorf(line, "%s", form)
 		return
 	}
-	if _, err := time.Parse("15:04", s[:5]); err != nil {
+	if _, err := time.Parse(ClockLayout, s[:5]); err != nil {
 		p.errorf(line, "%s", form)
 		return
 	}
@@ -684,7 +731,22 @@ func (p *parser) list(l *ast.List) {
 		}
 		s := p.blockSpan(l)
 		p.n.Process.List = &s
+		for li := l.FirstChild(); li != nil; li = li.NextSibling() {
+			first := li.FirstChild()
+			if first == nil {
+				continue
+			}
+			if _, box := first.FirstChild().(*extast.TaskCheckBox); box {
+				continue // a manual action, recorded already
+			}
+			if txt := p.blockLine(first); txt != string(IconNone) {
+				p.n.Process.Entries = append(p.n.Process.Entries, Entry{Span: p.blockSpan(li), Text: txt})
+			}
+		}
 	case secProject:
+		if p.bucket != nil {
+			p.bucket.Lists = append(p.bucket.Lists, p.blockSpan(l))
+		}
 		p.projectList(l)
 	}
 }
@@ -740,8 +802,41 @@ func (p *parser) projectList(l *ast.List) {
 	}
 }
 
+// entry records a bucket's list item with no id as an entry when a state icon leads it. `—`,
+// which is not a state, prose, and a list item nested in a work item are not entries.
+func (p *parser) entry(li, first ast.Node) {
+	for a := li.Parent(); a != nil; a = a.Parent() {
+		if anc, ok := a.(*ast.ListItem); ok && p.placed[anc.FirstChild()] {
+			return // a step of a work item, part of its span
+		}
+	}
+	lead, rest, _ := strings.Cut(p.blockLine(first), " ")
+	if lead == string(IconNone) && rest == "" {
+		p.bucket.Dashes = append(p.bucket.Dashes, p.blockSpan(li))
+		return
+	}
+	if !Icon(lead).isState() {
+		return
+	}
+	p.bucket.Entries = append(p.bucket.Entries, Entry{Span: p.blockSpan(li), Icon: Icon(lead), Text: strings.TrimSpace(rest)})
+}
+
+// blockLine is a block's source on one line: each line trimmed, joined by one space.
+func (p *parser) blockLine(n ast.Node) string {
+	parts := make([]string, n.Lines().Len())
+	for i := range parts {
+		seg := n.Lines().At(i)
+		parts[i] = strings.TrimSpace(string(seg.Value(p.src)))
+	}
+	return strings.Join(parts, " ")
+}
+
 func (p *parser) listItem(li, first ast.Node) {
 	id, ok, bad := p.trailingID(first)
+	if !ok && p.part == nil && p.bucket != nil {
+		p.entry(li, first)
+		return
+	}
 	if !ok || (p.part == nil && p.bucket == nil) {
 		return // no id, or one reported as unplaced
 	}
@@ -751,12 +846,19 @@ func (p *parser) listItem(li, first ast.Node) {
 		p.errorf(line, "%s", bad)
 		return
 	}
-	lead, rest, _ := strings.Cut(strings.TrimSpace(p.linesText(first)), " ")
+	lead, rest, _ := strings.Cut(p.blockLine(first), " ")
 	if !Icon(lead).isState() {
 		p.errorf(line, "work item ^%s must start with a status icon", id)
 		return
 	}
-	it := &Item{Span: p.blockSpan(li), ID: id, Icon: Icon(lead), Title: withoutID(rest, id)}
+	icon := first.Lines().At(0).Start // a list item's text opens on its icon
+	it := &Item{
+		Span: p.blockSpan(li), Head: p.span(p.nodeStart(li), p.nodeEnd(first)), IconSpan: p.span(icon, icon+len(lead)),
+		ID: id, Icon: Icon(lead), Title: withoutID(rest, id),
+	}
+	if raw := p.dispatch(it, first); raw != "" {
+		it.Title = strings.Join(strings.Fields(strings.Replace(it.Title, raw, "", 1)), " ")
+	}
 	p.addItem(it)
 	if p.part != nil {
 		p.part.Items = append(p.part.Items, it)
@@ -772,6 +874,8 @@ func (p *parser) table(t *extast.Table) {
 		if !ok {
 			return
 		}
+		table := p.blockSpan(t)
+		p.n.Objectives.Table = &table
 		for _, r := range rows {
 			lead, _, _ := strings.Cut(r.cells[2], " ")
 			if !Icon(lead).isState() {

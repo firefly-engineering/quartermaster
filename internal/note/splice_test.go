@@ -249,7 +249,7 @@ func TestSpliceRenderedUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if it := m.Item("impl-4"); it == nil || it.Icon != IconDone || it.Title != "[#4](https://example.com/4) merged" ||
-		string(out[it.Start:it.End]) != "- ✅ [#4](https://example.com/4) merged ^impl-4\n  - a note on it\n" {
+		string(out[it.Start:it.End]) != "- ✅ [#4](https://example.com/4) merged ^impl-4\n  - a note on it\n  - ⬜ a step of the item, not an entry\n" {
 		t.Errorf("item after splice: %+v", it)
 	}
 	if !bytes.Equal(out[:line.Start], src[:line.Start]) || !bytes.Equal(out[line.Start+len(unit):], src[line.End:]) {

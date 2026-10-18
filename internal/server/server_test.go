@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/firefly-engineering/quartermaster/internal/server"
+	"github.com/firefly-engineering/quartermaster/internal/tools"
 	"github.com/firefly-engineering/quartermaster/skills"
 )
 
@@ -69,6 +70,37 @@ func TestListPrompts(t *testing.T) {
 	slices.Sort(names)
 	if !slices.Equal(names, []string{"phase", "workflow_rules"}) {
 		t.Fatalf("prompts %v", names)
+	}
+}
+
+func TestListTools(t *testing.T) {
+	t.Parallel()
+	srv, err := server.New("test", tools.All(tools.Deps{})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := srv.Connect(t.Context(), st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(t.Context(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	res, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tl := range res.Tools {
+		names = append(names, tl.Name)
+	}
+	if !slices.Equal(names, []string{"carryover_verdict", "day_open", "day_read", "item_transition", "item_upsert",
+		"next_set", "objective_set", "refresh", "status_set", "task_dispatch"}) {
+		t.Fatalf("tools %v", names)
 	}
 }
 

@@ -32,9 +32,9 @@ The ▶ buttons need the community **Shell commands** plugin
 5. Pick an output channel. A notification works well: it shows `sent <id> to <workspace>`,
    or the reason it refused.
 
-The skill finds the command's id by itself, in
-`.obsidian/plugins/obsidian-shellcommands/data.json`. Once the command exists, the next
-worklog update adds the buttons.
+quartermaster finds the command's id by itself, in
+`.obsidian/plugins/obsidian-shellcommands/data.json`. Once the command exists, every work
+item with a prompt that it writes carries its button, in its bucket and in *Next*.
 
 ## Why the URI carries only a reference
 

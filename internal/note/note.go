@@ -4,6 +4,7 @@
 package note
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 )
@@ -53,10 +54,19 @@ var BucketNames = []string{
 	"Decisions for you",
 	"Your actions",
 	"Agent queue",
-	"Sent to other repos",
+	SentBucket,
 	"Outside input: chase",
 	"Waiting",
 }
+
+// SentBucket is the bucket of work sent to another repo's session.
+const SentBucket = "Sent to other repos"
+
+// ProcessSection is the name of the `## Process` section.
+const ProcessSection = "Process"
+
+// Empty reports whether a note's source holds only whitespace: such a note counts as missing.
+func Empty(src []byte) bool { return len(bytes.TrimSpace(src)) == 0 }
 
 // PartKinds are the kinds a Part heading names.
 var PartKinds = []string{"Human session", "Agent batch", "Land"}
@@ -98,7 +108,8 @@ type Status struct {
 // Objectives is the `## Objectives` section; Rows are its table's rows.
 type Objectives struct {
 	Span
-	Rows []Objective
+	Table *Span // its table, header included; nil without one
+	Rows  []Objective
 }
 
 // Objective is one row of the objectives table. Cells hold their trimmed source.
@@ -124,11 +135,12 @@ type NextItem struct {
 // Project is a `## <icon> <owner/repo>` section.
 type Project struct {
 	Span
-	Heading Span
-	Icon    Icon
-	Repo    string
-	Parts   []*Part
-	Remains *Remains
+	Heading  Span
+	Icon     Icon
+	IconSpan Span // Icon's own bytes in Heading
+	Repo     string
+	Parts    []*Part
+	Remains  *Remains
 }
 
 // Part is a `### <icon> Part N — <kind>: <title>` section.
@@ -145,18 +157,32 @@ type Part struct {
 // Remains is a project's `### <icon> What remains` section.
 type Remains struct {
 	Span
-	Heading Span
-	Icon    Icon
-	Buckets []*Bucket
+	Heading  Span
+	Icon     Icon
+	IconSpan Span // Icon's own bytes in Heading
+	Buckets  []*Bucket
 }
 
 // Bucket is a `#### <icon> <name>` section under *What remains*.
 type Bucket struct {
 	Span
-	Heading Span
-	Icon    Icon
-	Name    string // one of BucketNames
-	Items   []*Item
+	Heading  Span
+	Icon     Icon
+	IconSpan Span   // Icon's own bytes in Heading
+	Name     string // one of BucketNames
+	Items    []*Item
+	Entries  []Entry // its list items led by a state icon with no `^<id>`, at any depth
+	Dashes   []Span  // its `- —` list items, which stand for nothing in it
+	Lists    []Span  // its top-level lists, in note order
+}
+
+// Entry is a list item that is not a work item or a manual action: a bucket's line led by a
+// state icon with no `^<id>`, as `- ⬜ [#M](url): a decision with no prompt yet`, or a line of
+// *Process*. Its span covers its nested lists.
+type Entry struct {
+	Span
+	Icon Icon   // its state icon; "" in Process
+	Text string // its first block's source after the icon, its lines joined by one space
 }
 
 // Item is a work item: a `#####` heading whose paragraph ends with `^<id>` (Heading), or a
@@ -165,11 +191,18 @@ type Bucket struct {
 // item's covers its nested lists.
 type Item struct {
 	Span
-	ID      string
-	Icon    Icon
-	Title   string // the source after the icon, without the `^<id>`
-	Heading bool
-	Prompt  *Prompt
+	Head     Span // the ##### heading line, or a list item's first block, which holds its `^<id>`
+	IconSpan Span // Icon's own bytes in Head
+	ID       string
+	Icon     Icon
+	Title    string // the source after the icon, its lines joined by one space, without the `^<id>` or a list item's dispatch marker
+	Heading  bool
+	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
+	Prompt   *Prompt
+	Dispatch *Dispatch // where task_dispatch started an agent on it; nil when it has no marker
+
+	idAt   int  // the offset of the `^` of its `^<id>`
+	marker Span // its dispatch marker's own bytes, when it has one
 }
 
 // Prompt is a work item's `> [!prompt]-` callout and the `herdr-prompt` block inside it.
@@ -186,7 +219,7 @@ type ManualAction struct {
 	Checked bool
 	Mark    int    // the byte offset of the mark inside its `[ ]`: ` `, `x` or `X`
 	ID      string // its `^<id>`, "" without one
-	Text    string // the source after the checkbox, without the `^<id>`
+	Text    string // the source after the checkbox, without the `^<id>` or a list item's dispatch marker
 }
 
 // Anchor is a paragraph in a Part or bucket ending with `^<id>`, a link target that is not a
@@ -211,7 +244,8 @@ type CarryOverRow struct {
 // Process is the `## Process` section and its list.
 type Process struct {
 	Span
-	List *Span
+	List    *Span
+	Entries []Entry // the list's items but its checkboxes (manual actions) and `—`
 }
 
 // ParseError is a unit that cannot be placed, at a 1-based line.

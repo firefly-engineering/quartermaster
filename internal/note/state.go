@@ -42,6 +42,14 @@ func (s State) String() string {
 	return stateNames[s]
 }
 
+// ParseState reads a state's name, as `IN_PROGRESS`.
+func ParseState(name string) (State, error) {
+	if i := slices.Index(stateNames[:], name); i > 0 {
+		return State(i), nil
+	}
+	return 0, fmt.Errorf("state %q: want one of %s", name, strings.Join(stateNames[Todo:], ", "))
+}
+
 // StateOf reads a work item's icon. `—` and anything else that is not a state icon is not.
 func StateOf(i Icon) (State, bool) {
 	if k := slices.Index(stateIcons, i); k >= 0 {
@@ -56,6 +64,19 @@ func (a ManualAction) State() State {
 		return Done
 	}
 	return Todo
+}
+
+// closedVerdicts are the verdicts that close a carry-over row: keep moves it into its project's
+// bucket, drop closes it, and the hand-written notes record a row finished during the day as
+// done. Defer, or no verdict yet, leaves it open.
+var closedVerdicts = map[string]bool{"keep": true, "kept": true, "drop": true, "dropped": true, "done": true}
+
+// Open reports whether a carry-over row is still open, by its verdict's first word, before any
+// `:` and in any case.
+func (r CarryOverRow) Open() bool {
+	word, _, _ := strings.Cut(strings.TrimSpace(r.Verdict), " ")
+	word, _, _ = strings.Cut(word, ":")
+	return !closedVerdicts[strings.ToLower(word)]
 }
 
 // The transition errors; Transition wraps them with the move it refused.
@@ -111,9 +132,10 @@ func derive(states []State) Icon {
 
 // DerivedIcon is a heading's icon as derived from what is under it.
 type DerivedIcon struct {
-	Heading Span // the heading line, whose icon a write replaces
-	Was     Icon // the icon the note has
-	Icon    Icon // the icon the rule gives
+	Heading  Span // the heading line
+	IconSpan Span // Was's own bytes in Heading, which a write replaces with Icon
+	Was      Icon // the icon the note has
+	Icon     Icon // the icon the rule gives
 }
 
 // DeriveIcons derives the icon of every project, *What remains* and bucket heading, in note
@@ -122,7 +144,7 @@ type DerivedIcon struct {
 // each one whose Icon differs from Was; derivation never touches a checkbox.
 func (n *Note) DeriveIcons() []DerivedIcon {
 	var out []DerivedIcon
-	deriveSection := func(section, heading Span, was Icon, parts []*Part) {
+	deriveSection := func(section, heading, iconSpan Span, was Icon, parts []*Part) {
 		var states []State
 		for _, pt := range parts {
 			if s, ok := StateOf(pt.Icon); ok {
@@ -139,14 +161,14 @@ func (n *Note) DeriveIcons() []DerivedIcon {
 				states = append(states, a.State())
 			}
 		}
-		out = append(out, DerivedIcon{Heading: heading, Was: was, Icon: derive(states)})
+		out = append(out, DerivedIcon{Heading: heading, IconSpan: iconSpan, Was: was, Icon: derive(states)})
 	}
 	for _, p := range n.Projects {
-		deriveSection(p.Span, p.Heading, p.Icon, p.Parts)
+		deriveSection(p.Span, p.Heading, p.IconSpan, p.Icon, p.Parts)
 		if r := p.Remains; r != nil {
-			deriveSection(r.Span, r.Heading, r.Icon, nil)
+			deriveSection(r.Span, r.Heading, r.IconSpan, r.Icon, nil)
 			for _, b := range r.Buckets {
-				deriveSection(b.Span, b.Heading, b.Icon, nil)
+				deriveSection(b.Span, b.Heading, b.IconSpan, b.Icon, nil)
 			}
 		}
 	}

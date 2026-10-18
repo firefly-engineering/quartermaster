@@ -148,6 +148,47 @@ func TestSendOneLinePrompt(t *testing.T) {
 	}
 }
 
+// TestSendItemWithInstruction appends an instruction to the item's prompt, before the closing line.
+func TestSendItemWithInstruction(t *testing.T) {
+	t.Parallel()
+	vault, s := setup(t, "idle")
+	if _, err := s.SendItem(context.Background(), vault, "2026-10-16", "batch-c", "Skip #819."); err != nil {
+		t.Fatal(err)
+	}
+	if out := sent(t, s); !strings.HasPrefix(out, "wZ:p6\n/mass-implement arbora-partners/trunk #871 #819\n\nSkip #819.\n\nWhen this is done, update the worklog") {
+		t.Fatalf("sent %q", out)
+	}
+}
+
+// TestDeliver sends a given text to a workspace's agent, closed with the worklog line about
+// what it names, through the same checks as Send.
+func TestDeliver(t *testing.T) {
+	t.Parallel()
+	_, s := setup(t, "idle")
+	got, err := s.Deliver(context.Background(), "IaC", "/implement https://github.com/o/r/issues/3", "o/r#3", "/v/2026-10-16.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Sent{ID: "o/r#3", To: "IaC", Pane: "wX:p9"}); got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	want := "wX:p9\n/implement https://github.com/o/r/issues/3\n\nWhen this is done, update the worklog with the worklog skill: " +
+		"o/r#3 in /v/2026-10-16.md. Record the outcome and refresh Next."
+	if out := sent(t, s); out != want {
+		t.Fatalf("sent %q", out)
+	}
+	_, s = setup(t, "blocked")
+	if _, err := s.Deliver(context.Background(), "trunk", "go", "o/r#3", "/v/n.md"); err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("a blocked agent: %v", err)
+	}
+	for _, bad := range [][2]string{{"", "go"}, {"trunk", " "}} {
+		if _, err := s.Deliver(context.Background(), bad[0], bad[1], "o/r#3", "/v/n.md"); err == nil {
+			t.Errorf("%q: no error", bad)
+		}
+	}
+	assertNothingSent(t, s)
+}
+
 func TestSendKeepsRelativeIndent(t *testing.T) {
 	t.Parallel()
 	vault, s := setup(t, "idle")

@@ -35,6 +35,8 @@ type ObjectiveUnit struct {
 	DoneWhen  string // the checkable condition
 	Icon      Icon   // leads Progress
 	Progress  string // after the icon, "" for none
+	Refined   string // HH:MM UTC of its last refinement, "" for none; stamped after Objective
+	Reason    string // why it was refined; needed with Refined
 }
 
 // NextUnit is one action in *Next*.
@@ -48,14 +50,56 @@ type NextUnit struct {
 
 // ItemUnit is an entry in a bucket. With an ID it is a work item; without one it is a one-line
 // list entry, as `- ⬜ [#M](url): a decision with no prompt yet`.
+//
+// Its title line reads `<icon> <ref link>: <title> — <summary>`. The list form adds
+// ` · <cost> · Route: <route>` before the summary, the route in a code span, and ` ^<id>` after
+// it; the `#####` form ends its body with `<cost>. Route: <route>.` instead.
 type ItemUnit struct {
 	ID      string
 	Icon    Icon
-	Title   string      // one line, after the icon
+	Title   string      // one line, after the icon and ref link; no SummarySep
+	Ref     Ref         // the issue or PR it is about, the zero Ref for none
+	Repo    string      // the project it is in, where Ref renders as a bare #N; "" for none
+	Cost    string      // as `20 min`; "" for none
+	Route   string      // the next skill, as `/implement`; "" for none
+	Summary string      // its last transition's summary (spec §4.3), after SummarySep; "" for none
 	Heading bool        // the `#####` form; required with a Prompt
 	Body    string      // the `#####` form's prose before its button; no blank line
 	Button  string      // the ▶ label, as `grill in trunk`; needs a Prompt
 	Prompt  *PromptUnit // the collapsed `> [!prompt]-` callout
+
+	// Dispatch is the dispatch marker written just before its ` ^<id>`: on its title line in
+	// the list form, ending its paragraph in the ##### one.
+	Dispatch *Dispatch
+}
+
+// SummarySep parts a work item's title from its summary. A title holds none, so the first one
+// in a title line starts the summary.
+const SummarySep = " — "
+
+// NothingLine is the list line of a bucket or Process with nothing in it.
+const NothingLine = "- " + string(IconNone) + "\n"
+
+// fieldSep parts a list item's title from its cost and route, and a *Next* line's fields.
+const fieldSep = " · "
+
+// DefaultButton is the ▶ label of a prompt sent to the workspace labelled to, when no other
+// label is given.
+func DefaultButton(to string) string { return "send to " + to }
+
+// Action is a parsed work item's title (Item.Title) as the action of its *Next* line: without
+// its summary, or the cost and route the list form puts after ` · `.
+func Action(title string) string {
+	head, _ := SplitSummary(title)
+	head, _, _ = strings.Cut(head, fieldSep)
+	return head
+}
+
+// SplitSummary parts a parsed work item's title (Item.Title) into the title before its summary
+// and the summary, "" when it has none.
+func SplitSummary(title string) (head, summary string) {
+	head, summary, _ = strings.Cut(title, SummarySep)
+	return head, summary
 }
 
 // PromptUnit is a work item's herdr-prompt block.
@@ -136,7 +180,118 @@ func (r Renderer) Objective(u ObjectiveUnit) ([]byte, error) {
 	if u.Progress != "" {
 		progress += " " + u.Progress
 	}
-	return tableRow(u.Objective, u.DoneWhen, progress)
+	objective := u.Objective
+	if u.Refined != "" || u.Reason != "" {
+		if !isClock(u.Refined) {
+			return nil, fmt.Errorf("objective %q: refined at %q, want HH:MM", u.Objective, u.Refined)
+		}
+		if strings.TrimSpace(u.Reason) == "" {
+			return nil, fmt.Errorf("objective %q: a refinement needs its reason", u.Objective)
+		}
+		objective += refinedOpen + u.Refined + refinedMid + u.Reason + ")"
+	}
+	return tableRow(objective, u.DoneWhen, progress)
+}
+
+// An objective's refined stamp: ` (refined HH:MM UTC: <reason>)`.
+const (
+	refinedOpen = " (refined "
+	refinedMid  = " UTC: "
+)
+
+// StripRefined is an objective cell without the refined stamp that ends it, if one does.
+func StripRefined(cell string) string {
+	i := strings.LastIndex(cell, refinedOpen)
+	if i < 0 || !strings.HasSuffix(cell, ")") {
+		return cell
+	}
+	clock, _, ok := strings.Cut(cell[i+len(refinedOpen):], refinedMid)
+	if !ok || !isClock(clock) {
+		return cell
+	}
+	return cell[:i]
+}
+
+// Verdicts are a carry-over row's verdicts (spec §6): keep moves it into its project's bucket,
+// defer leaves it for tomorrow's open, drop closes it.
+var Verdicts = []string{"keep", "defer", "drop"}
+
+// VerdictCell renders a carry-over row's verdict: `<verdict>` or `<verdict>: <reason>`. A drop
+// needs its reason.
+func VerdictCell(verdict, reason string) (string, error) {
+	if !slices.Contains(Verdicts, verdict) {
+		return "", fmt.Errorf("verdict %q: want one of %s", verdict, strings.Join(Verdicts, ", "))
+	}
+	if err := oneLine("verdict reason", reason); err != nil {
+		return "", err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		if verdict == "drop" {
+			return "", errors.New("a drop needs its reason")
+		}
+		return verdict, nil
+	}
+	return verdict + ": " + reason, nil
+}
+
+// ClockLayout is the time layout of the status line's `HH:MM`, in UTC.
+const ClockLayout = "15:04"
+
+// Carried is an open item of the previous note, as day_open carries it over (spec §6).
+type Carried struct {
+	Text      string // the item as written: a title, an objective, an action's text, a row's item
+	Repo      string // its project, "" outside one
+	ID        string // its `^<id>` there, "" for none; the row links back to it
+	Where     string // the bucket or section it is in, "" to leave out
+	State     State  // its state, or 0 when StateText holds it
+	Manual    bool   // a manual action, which carries a checkbox rather than an icon
+	StateText string // the state as written: an objective's progress, a carried row's state
+}
+
+// CarriedRow renders c, an open item of the note of date prev, as a carry-over row with no
+// verdict: the item `<text> (<repo>) [[<prev>#^<id>|^<id>]]`, and the state
+// `<icon> <STATE> in <where>`, `<STATE>, manual action in <where>`, or StateText.
+func (r Renderer) CarriedRow(prev string, c Carried) (CarryOverUnit, error) {
+	if c.Text == "" {
+		return CarryOverUnit{}, errors.New("carried item: empty text")
+	}
+	if err := oneLine("carried item", c.Text+c.Where+c.StateText); err != nil {
+		return CarryOverUnit{}, err
+	}
+	item := c.Text
+	if c.Repo != "" {
+		if !isRepo(c.Repo) {
+			return CarryOverUnit{}, fmt.Errorf("carried item %q: repo %q: want owner/repo", c.Text, c.Repo)
+		}
+		item += " (" + c.Repo + ")"
+	}
+	if c.ID != "" {
+		if !ValidID(c.ID) {
+			return CarryOverUnit{}, fmt.Errorf("carried item %q: invalid item id ^%s", c.Text, c.ID)
+		}
+		if !IsDate(prev) {
+			return CarryOverUnit{}, fmt.Errorf("carried item %q: previous date %q: want YYYY-MM-DD", c.Text, prev)
+		}
+		item += " [[" + prev + "#^" + c.ID + "|^" + c.ID + "]]"
+	}
+	if (c.State == 0) == (c.StateText == "") {
+		return CarryOverUnit{}, fmt.Errorf("carried item %q: want one of State and StateText", c.Text)
+	}
+	if c.StateText != "" {
+		return CarryOverUnit{Item: item, State: c.StateText}, nil
+	}
+	if !c.State.valid() {
+		return CarryOverUnit{}, fmt.Errorf("carried item %q: invalid state %d", c.Text, c.State)
+	}
+	state := string(c.State.Icon()) + " " + c.State.String()
+	if c.Manual {
+		state = c.State.String() + ", manual action"
+	}
+	if c.Where != "" {
+		state += " in " + c.Where
+	}
+	return CarryOverUnit{Item: item, State: state}, nil
 }
 
 // CarryOver renders one carry-over table row.
@@ -180,7 +335,24 @@ func (r Renderer) NextLine(n int, u NextUnit) ([]byte, error) {
 	if button != "" {
 		parts = append(parts, button)
 	}
-	return []byte(strconv.Itoa(n) + ". " + strings.Join(parts, " · ") + "\n"), nil
+	return []byte(strconv.Itoa(n) + ". " + strings.Join(parts, fieldSep) + "\n"), nil
+}
+
+// NextBody renders what follows the `## Next` heading line: nothing for no actions, else a
+// blank line and one line per action.
+func (r Renderer) NextBody(units []NextUnit) ([]byte, error) {
+	if len(units) == 0 {
+		return nil, nil
+	}
+	out := []byte("\n")
+	for i, u := range units {
+		b, err := r.NextLine(i+1, u)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b...)
+	}
+	return out, nil
 }
 
 // Item renders a bucket entry. The list form is one line, `- <icon> <title> ^<id>`. The
@@ -188,34 +360,15 @@ func (r Renderer) NextLine(n int, u NextUnit) ([]byte, error) {
 // `^<id>`, then a blank line and the collapsed prompt callout when it has a prompt. Without a
 // CommandID the button is left out and the prompt kept.
 func (r Renderer) Item(u ItemUnit) ([]byte, error) {
-	what := "entry " + strconv.Quote(u.Title)
-	if u.ID != "" {
-		what = "work item ^" + u.ID
-		if !ValidID(u.ID) {
-			return nil, fmt.Errorf("invalid item id ^%s: lowercase letters, digits and - only", u.ID)
-		}
-	}
-	if !u.Icon.isState() {
-		return nil, fmt.Errorf("%s: icon %q is not a status icon", what, u.Icon)
-	}
-	if u.Title == "" {
-		return nil, fmt.Errorf("%s: empty title", what)
-	}
-	if err := oneLine(what+" title", u.Title); err != nil {
+	what, title, err := r.title(u)
+	if err != nil {
 		return nil, err
-	}
-	if w := strings.Fields(u.Title); strings.HasPrefix(w[len(w)-1], "^") {
-		return nil, fmt.Errorf("%s: the title ends in a block id; set ID instead", what)
 	}
 	if !u.Heading {
 		if u.Prompt != nil || u.Body != "" || u.Button != "" {
 			return nil, fmt.Errorf("%s: a body, button or prompt needs the ##### form", what)
 		}
-		line := "- " + string(u.Icon) + " " + u.Title
-		if u.ID != "" {
-			line += " ^" + u.ID
-		}
-		return []byte(line + "\n"), nil
+		return []byte("- " + title), nil
 	}
 	if u.ID == "" {
 		return nil, fmt.Errorf("%s: a ##### work item needs an id", what)
@@ -230,6 +383,20 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 			return nil, fmt.Errorf("%s: a blank line in the body would end its paragraph", what)
 		}
 	}
+	var tail []string // the body's last sentence: cost and route
+	if u.Cost != "" {
+		tail = append(tail, u.Cost+".")
+	}
+	if u.Route != "" {
+		tail = append(tail, "Route: `"+u.Route+"`.")
+	}
+	switch {
+	case len(tail) == 0:
+	case len(para) == 0:
+		para = []string{strings.Join(tail, " ")}
+	default:
+		para[len(para)-1] += " " + strings.Join(tail, " ")
+	}
 	button, err := r.button(u.Button, u.ID)
 	if err != nil {
 		return nil, err
@@ -237,13 +404,20 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	if button != "" {
 		para = append(para, button)
 	}
+	if u.Dispatch != nil {
+		if len(para) == 0 {
+			para = []string{r.DispatchMarker(*u.Dispatch)}
+		} else {
+			para[len(para)-1] += " " + r.DispatchMarker(*u.Dispatch)
+		}
+	}
 	if len(para) == 0 {
 		para = []string{"^" + u.ID}
 	} else {
 		para[len(para)-1] += " ^" + u.ID
 	}
 	var b strings.Builder
-	b.WriteString("##### " + string(u.Icon) + " " + u.Title + "\n\n")
+	b.WriteString("##### " + title + "\n")
 	b.WriteString(strings.Join(para, "\n") + "\n")
 	if u.Prompt != nil {
 		callout, err := prompt(u.ID, *u.Prompt)
@@ -255,14 +429,101 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
+// ItemTitle renders a work item's title line from its icon on: the bytes a transition writes
+// over an item's Head from its IconSpan, as `✅ <title> — <summary> ^<id>` for the list form and
+// `✅ <title> — <summary>` for the ##### one. Its prose, button and prompt are not rendered.
+func (r Renderer) ItemTitle(u ItemUnit) ([]byte, error) {
+	_, title, err := r.title(u)
+	return []byte(title), err
+}
+
+// title checks u and renders its title line from its icon on, with its line end; what names u
+// in errors.
+func (r Renderer) title(u ItemUnit) (what, title string, err error) {
+	what = "entry " + strconv.Quote(u.Title)
+	if u.ID != "" {
+		what = "work item ^" + u.ID
+		if !ValidID(u.ID) {
+			return "", "", fmt.Errorf("invalid item id ^%s: lowercase letters, digits and - only", u.ID)
+		}
+	}
+	if !u.Icon.isState() {
+		return "", "", fmt.Errorf("%s: icon %q is not a status icon", what, u.Icon)
+	}
+	if u.Title == "" {
+		return "", "", fmt.Errorf("%s: empty title", what)
+	}
+	if err := oneLine(what+" title", u.Title+u.Cost+u.Route+u.Summary); err != nil {
+		return "", "", err
+	}
+	if w := strings.Fields(u.Title); strings.HasPrefix(w[len(w)-1], "^") {
+		return "", "", fmt.Errorf("%s: the title ends in a block id; set ID instead", what)
+	}
+	if strings.Contains(u.Title+u.Cost+u.Route, SummarySep) {
+		return "", "", fmt.Errorf("%s: %q starts the summary, so the title, cost and route may not hold it", what, SummarySep)
+	}
+	if u.Dispatch != nil {
+		if err := u.Dispatch.Check(); err != nil {
+			return "", "", fmt.Errorf("%s: %w", what, err)
+		}
+		if u.ID == "" {
+			return "", "", fmt.Errorf("%s: a dispatch marker needs an id", what)
+		}
+	}
+	if strings.Contains(u.Route, "`") {
+		return "", "", fmt.Errorf("%s: route %q: no backticks, it renders in a code span", what, u.Route)
+	}
+	title = string(u.Icon) + " "
+	if u.Ref != (Ref{}) {
+		link, err := refLink(u.Ref, u.Repo)
+		if err != nil {
+			return "", "", fmt.Errorf("%s: %w", what, err)
+		}
+		title += link + ": "
+	}
+	title += u.Title
+	if !u.Heading {
+		if u.Cost != "" {
+			title += fieldSep + u.Cost
+		}
+		if u.Route != "" {
+			title += fieldSep + "Route: `" + u.Route + "`"
+		}
+	}
+	if u.Summary != "" {
+		title += SummarySep + u.Summary
+	}
+	if !u.Heading && u.ID != "" {
+		if u.Dispatch != nil {
+			title += " " + r.DispatchMarker(*u.Dispatch)
+		}
+		title += " ^" + u.ID
+	}
+	return what, title + "\n", nil
+}
+
+// refLink renders a ref as a full link (ADR 0007): `[#N](<url>)` in its own project, and
+// `[<repo>#N](<url>)` in another, as the skill writes `[IaC#564](…)`.
+func refLink(f Ref, project string) (string, error) {
+	_, repo, _ := strings.Cut(f.Repo, "/")
+	if !isRepo(f.Repo) || f.N < 1 {
+		return "", fmt.Errorf("ref %+v: want owner/repo#N", f)
+	}
+	label := "#" + strconv.Itoa(f.N)
+	if f.Repo != project {
+		label = repo + label
+	}
+	return "[" + label + "](" + f.URL() + ")", nil
+}
+
 // Note renders a whole note from d, in template.md's layout. Its buttons carry d.Date, the
 // note's own date, whatever r.Date holds.
 func (r Renderer) Note(d Day) ([]byte, error) {
-	if !isDate(d.Date) {
+	if !IsDate(d.Date) {
 		return nil, fmt.Errorf("note date %q: want YYYY-MM-DD", d.Date)
 	}
 	r.Date = d.Date
-	if d.Previous != "" && !isDate(d.Previous) {
+	if d.Previous != "" && !IsDate(d.Previous) {
 		return nil, fmt.Errorf("previous date %q: want YYYY-MM-DD", d.Previous)
 	}
 	var blocks []string
@@ -301,18 +562,11 @@ func (r Renderer) Note(d Day) ([]byte, error) {
 	}
 	add("## Objectives\n", objectives)
 
-	add("## Next\n")
-	if len(d.Next) > 0 {
-		var next string
-		for i, u := range d.Next {
-			b, err := r.NextLine(i+1, u)
-			if err != nil {
-				return nil, err
-			}
-			next += string(b)
-		}
-		add(next)
+	next, err := r.NextBody(d.Next)
+	if err != nil {
+		return nil, err
 	}
+	add("## Next\n" + string(next)) // the body brings its own blank line
 
 	for _, p := range d.Projects {
 		b, err := r.project(p)
@@ -370,40 +624,80 @@ func (r Renderer) project(p ProjectUnit) ([]string, error) {
 	if len(p.Buckets) == 0 {
 		return blocks, nil
 	}
-	if !p.Remains.isHeading() {
-		return nil, fmt.Errorf("project %s: What remains icon %q", p.Repo, p.Remains)
+	remains, err := r.remains(p.Remains, p.Repo, p.Buckets)
+	if err != nil {
+		return nil, fmt.Errorf("project %s: %w", p.Repo, err)
 	}
-	blocks = append(blocks, "### "+string(p.Remains)+" What remains\n")
-	for _, b := range p.Buckets {
-		if !slices.Contains(BucketNames, b.Name) {
-			return nil, fmt.Errorf("project %s: unknown bucket %q: want one of %s", p.Repo, b.Name, strings.Join(BucketNames, ", "))
+	return append(blocks, remains...), nil
+}
+
+// Project renders a project section, to splice into a note that lacks it.
+func (r Renderer) Project(p ProjectUnit) ([]byte, error) {
+	blocks, err := r.project(p)
+	return []byte(strings.Join(blocks, "\n")), err
+}
+
+// Remains renders a `### <icon> What remains` section, to splice into a project that lacks it.
+func (r Renderer) Remains(icon Icon, buckets []BucketUnit) ([]byte, error) {
+	blocks, err := r.remains(icon, "", buckets)
+	return []byte(strings.Join(blocks, "\n")), err
+}
+
+// Bucket renders a `#### <icon> <name>` section, to splice into a *What remains* that lacks it.
+func (r Renderer) Bucket(b BucketUnit) ([]byte, error) {
+	blocks, err := r.bucket(b, "")
+	return []byte(strings.Join(blocks, "\n")), err
+}
+
+// remains renders a What remains section of project repo as blocks.
+func (r Renderer) remains(icon Icon, repo string, buckets []BucketUnit) ([]string, error) {
+	if !icon.isHeading() {
+		return nil, fmt.Errorf("the What remains icon %q is not a heading icon", icon)
+	}
+	blocks := []string{"### " + string(icon) + " What remains\n"}
+	for _, b := range buckets {
+		bb, err := r.bucket(b, repo)
+		if err != nil {
+			return nil, err
 		}
-		if !b.Icon.isHeading() {
-			return nil, fmt.Errorf("project %s: bucket %s: icon %q", p.Repo, b.Name, b.Icon)
+		blocks = append(blocks, bb...)
+	}
+	return blocks, nil
+}
+
+// bucket renders a bucket of project repo as blocks; an item's ref there renders as #N.
+func (r Renderer) bucket(b BucketUnit, repo string) ([]string, error) {
+	if !slices.Contains(BucketNames, b.Name) {
+		return nil, fmt.Errorf("unknown bucket %q: want one of %s", b.Name, strings.Join(BucketNames, ", "))
+	}
+	if !b.Icon.isHeading() {
+		return nil, fmt.Errorf("bucket %s: icon %q", b.Name, b.Icon)
+	}
+	blocks := []string{"#### " + string(b.Icon) + " " + b.Name + "\n"}
+	if len(b.Items) == 0 {
+		blocks = append(blocks, NothingLine)
+	}
+	// Consecutive list entries form one list; a ##### item is a block of its own.
+	var run string
+	for _, it := range b.Items {
+		if it.Repo == "" {
+			it.Repo = repo
 		}
-		blocks = append(blocks, "#### "+string(b.Icon)+" "+b.Name+"\n")
-		if len(b.Items) == 0 {
-			blocks = append(blocks, "- —\n")
+		unit, err := r.Item(it)
+		if err != nil {
+			return nil, err
 		}
-		// Consecutive list entries form one list; a ##### item is a block of its own.
-		var run string
-		for _, it := range b.Items {
-			unit, err := r.Item(it)
-			if err != nil {
-				return nil, err
-			}
-			if !it.Heading {
-				run += string(unit)
-				continue
-			}
-			if run != "" {
-				blocks, run = append(blocks, run), ""
-			}
-			blocks = append(blocks, string(unit))
+		if !it.Heading {
+			run += string(unit)
+			continue
 		}
 		if run != "" {
-			blocks = append(blocks, run)
+			blocks, run = append(blocks, run), ""
 		}
+		blocks = append(blocks, string(unit))
+	}
+	if run != "" {
+		blocks = append(blocks, run)
 	}
 	return blocks, nil
 }
@@ -420,14 +714,20 @@ func (r Renderer) button(label, id string) (string, error) {
 	if r.Vault == "" {
 		return "", errors.New("button: no vault name")
 	}
-	if !isDate(r.Date) {
+	if !IsDate(r.Date) {
 		return "", fmt.Errorf("button: note date %q: want YYYY-MM-DD", r.Date)
 	}
-	uri := "obsidian://shell-commands/?vault=" + queryValue(r.Vault) +
+	uri := buttonURI + "?vault=" + queryValue(r.Vault) +
 		"&execute=" + queryValue(r.CommandID) +
 		"&_date=" + r.Date + "&_item=" + id
-	return "[▶ " + label + "](" + uri + ")", nil
+	return "[" + buttonMark + label + "](" + uri + ")", nil
 }
+
+// A button is a link to buttonURI whose text is buttonMark and its label.
+const (
+	buttonURI  = "obsidian://shell-commands/"
+	buttonMark = "▶ "
+)
 
 // prompt renders the collapsed callout holding item id's herdr-prompt block.
 func prompt(id string, p PromptUnit) (string, error) {
@@ -480,7 +780,7 @@ func tableRow(cells ...string) ([]byte, error) {
 // list renders lines as a `- ` list, `- —` when there are none.
 func list(lines []string, what string) (string, error) {
 	if len(lines) == 0 {
-		return "- —\n", nil
+		return NothingLine, nil
 	}
 	var b strings.Builder
 	for _, l := range lines {
@@ -507,11 +807,12 @@ func isBlank(s string) bool { return strings.TrimSpace(s) == "" }
 func isSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }
 
 func isClock(s string) bool {
-	_, err := time.Parse("15:04", s)
+	_, err := time.Parse(ClockLayout, s)
 	return err == nil && len(s) == 5
 }
 
-func isDate(s string) bool {
-	_, err := time.Parse(time.DateOnly, s)
-	return err == nil
+// IsDate reports whether s is a note's date, YYYY-MM-DD, written as Go writes it.
+func IsDate(s string) bool {
+	t, err := time.Parse(time.DateOnly, s)
+	return err == nil && t.Format(time.DateOnly) == s
 }

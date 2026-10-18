@@ -29,10 +29,21 @@ To send once #3 lands. ^send-iac
 
 - 🔍 [#4](https://example.com/4) in review ^impl-4
   - a note on it
+  - ⬜ a step of the item, not an entry
 - plain
   - ❌ dropped ^deep-1
+  - 🔄 a nested entry
+- ⬜ [#5](https://example.com/5) an entry with no id,
+  on two lines
+- —
 
 #### ⬜ Your actions
 
 - [ ] Rotate the token ^rotate
   1. [ ] Nested, and ordered
+
+## Process
+
+- File a ticket for the cache
+- [ ] Ask about the budget
+- —

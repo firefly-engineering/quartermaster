@@ -44,7 +44,7 @@ type Engine struct {
 }
 
 // Edit changes a note. n is the parsed note and src its source, both nil when the note does
-// not exist yet or is empty. It returns the note's new source, spliced from src (ADR 0002),
+// not exist yet or holds only whitespace. It returns the note's new source, spliced from src (ADR 0002),
 // and a one-line headline for the commit message. Mutate may run it more than once, on a
 // fresh read each time, so it must not act outside the note.
 type Edit func(n *note.Note, src []byte) (out []byte, headline string, err error)
@@ -53,6 +53,7 @@ type Edit func(n *note.Note, src []byte) (out []byte, headline string, err error
 type Result struct {
 	Path      string     // the note's path
 	Note      *note.Note // the note as it now is
+	Src       []byte     // Note's source
 	Changed   bool       // false when the edit left the note as it was, and nothing was written
 	Committed bool       // the note was committed as one jj change
 	Skipped   string     // why the note was not committed, when it changed but was not
@@ -105,17 +106,18 @@ func (e *Engine) Mutate(ctx context.Context, date, tool string, edit Edit) (Resu
 	res := Result{Path: notePath}
 	var headline string
 	for attempt := 0; ; attempt++ {
-		src, existed, err := readNote(notePath)
+		raw, existed, err := readNote(notePath) // raw is what the re-hash compares against
 		if err != nil {
 			return Result{}, err
 		}
 		var was *note.Note
-		if len(src) > 0 {
+		src := raw
+		if !note.Empty(raw) {
 			if was, err = parse(src, notePath); err != nil {
 				return Result{}, err
 			}
 		} else {
-			src = nil
+			src = nil // empty or whitespace only: nothing to splice, as a missing note
 		}
 		var out []byte
 		out, headline, err = edit(was, src)
@@ -129,7 +131,8 @@ func (e *Engine) Mutate(ctx context.Context, date, tool string, edit Edit) (Resu
 		if err != nil {
 			return Result{}, fmt.Errorf("%s: %w", notePath, err)
 		}
-		if existed && bytes.Equal(out, src) {
+		res.Src = out
+		if existed && bytes.Equal(out, raw) {
 			return res, nil
 		}
 		tmp, err := writeTemp(vault, date, out)
@@ -144,7 +147,7 @@ func (e *Engine) Mutate(ctx context.Context, date, tool string, edit Edit) (Resu
 			_ = os.Remove(tmp)
 			return Result{}, err
 		}
-		if exists != existed || sha256.Sum256(now) != sha256.Sum256(src) {
+		if exists != existed || sha256.Sum256(now) != sha256.Sum256(raw) {
 			_ = os.Remove(tmp)
 			if attempt == maxRetries {
 				return Result{}, fmt.Errorf("%s: %w", notePath, ErrConcurrentEdit)

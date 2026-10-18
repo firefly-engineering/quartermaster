@@ -1,5 +1,5 @@
 // Package server is quartermaster's MCP server: the prompts of docs/spec.md §8, served from
-// the worklog skill embedded in the binary (ADR 0005).
+// the worklog skill embedded in the binary (ADR 0005), and the tools of §6 from internal/tools.
 package server
 
 import (
@@ -12,12 +12,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/firefly-engineering/quartermaster/internal/tools"
 	"github.com/firefly-engineering/quartermaster/skills"
 )
 
-// New returns the MCP server, its prompts read from the embedded skill. version is reported
-// to clients as the server's version.
-func New(version string) (*mcp.Server, error) {
+// New returns the MCP server, its prompts read from the embedded skill, serving the tools ts.
+// version is reported to clients as the server's version.
+func New(version string, ts ...tools.Tool) (*mcp.Server, error) {
 	skill, err := fs.ReadFile(skills.Worklog, "worklog/SKILL.md")
 	if err != nil {
 		return nil, err
@@ -58,6 +59,7 @@ func New(version string) (*mcp.Server, error) {
 		}
 		return userMessages(section), nil
 	})
+	tools.Register(s, ts)
 	return s, nil
 }
 
