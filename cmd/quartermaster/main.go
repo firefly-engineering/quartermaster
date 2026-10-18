@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 var version = "dev"
@@ -22,4 +23,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stderr, "usage: quartermaster version")
 	return 2
+}
+
+// defaultConfigPath is the user file's default path (spec §3): $XDG_CONFIG_HOME, else
+// ~/.config, joined with quartermaster/config.toml. A relative XDG_CONFIG_HOME is ignored, as
+// the XDG spec requires. It returns "" when neither base is known.
+func defaultConfigPath(getenv func(string) string, home string) string {
+	base := getenv("XDG_CONFIG_HOME")
+	if !filepath.IsAbs(base) {
+		if home == "" {
+			return ""
+		}
+		base = filepath.Join(home, ".config")
+	}
+	return filepath.Join(base, "quartermaster", "config.toml")
 }

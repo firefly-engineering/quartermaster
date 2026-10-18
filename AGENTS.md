@@ -9,6 +9,7 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | Path | Holds |
 |---|---|
 | `cmd/quartermaster/` | the binary's entry point |
+| `internal/config/` | config loading: defaults, then `config.toml`, then flags (spec §3) |
 | `skills/worklog/` | the worklog skill: one source for the installed skill and the `workflow_rules` prompt (ADR 0005) |
 | `skills/embed.go` | embeds the skill into the binary |
 | `.claude-plugin/plugin.json` | the skill bundle's manifest |
