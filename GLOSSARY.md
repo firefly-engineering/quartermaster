@@ -8,6 +8,12 @@ The ubiquitous language of the worklog. Definitions only; behaviour lives in
 The suite: several MCP servers, skills and tools under one repo and one plugin bundle. Each
 tool in it has its own name ([ADR 0009](docs/adr/0009-quartermaster-is-the-suite.md)).
 
+## Suite member
+
+Anything the suite ships: a **tool**, with its own binary, or a skill-only member, a skill in
+the plugin bundle and nothing else, such as `worktree-build-cache`
+([ADR 0010](docs/adr/0010-a-suite-member-may-be-skill-only.md)).
+
 ## Worklog
 
 The suite's first tool: it keeps the day's **note** and dispatches its work. Also the name

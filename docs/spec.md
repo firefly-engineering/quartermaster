@@ -311,10 +311,10 @@ The flake exports:
 | Output | Content |
 |---|---|
 | `packages.<system>.worklog` (default) | the static `worklog` binary (`CGO_ENABLED=0`) |
-| `packages.<system>.skills` | a Claude plugin directory holding `skills/worklog`, for `programs.agentSkills.plugins` or `programs.claude-code.plugins` |
+| `packages.<system>.skills` | a Claude plugin directory holding `skills/worklog` and `skills/worktree-build-cache` ([ADR 0010]), for `programs.agentSkills.plugins` or `programs.claude-code.plugins` |
 | `homeManagerModules.default` | `programs.quartermaster.worklog` ([§10.1]) |
 | `overlays.default` | `worklog` |
-| `checks` | the package build with its tests, and the module evaluated on home-manager |
+| `checks` | the package build with its tests, the skill bundle against its manifest, and the module evaluated on home-manager |
 
 Systems: `x86_64-linux`, `aarch64-linux`, `aarch64-darwin`, as in toolbox. The dev shell
 and the package's Go come from toolbox.
@@ -363,6 +363,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [ADR 0006]: adr/0006-mutations-lock-check-rename-commit.md
 [ADR 0007]: adr/0007-refs-are-owner-repo-number.md
 [ADR 0008]: adr/0008-mutating-tools-do-not-refresh.md
+[ADR 0010]: adr/0010-a-suite-member-may-be-skill-only.md
 [§4]: #4-the-note
 [§4.3]: #43-transitions
 [§4.4]: #44-manual-actions

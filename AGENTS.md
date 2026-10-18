@@ -19,7 +19,8 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | `internal/server/` | the MCP server (`worklog serve`): the prompts, cut from the embedded skill |
 | `internal/tools/` | every MCP tool and `note` verb, one `Def` each (spec §6) |
 | `skills/worklog/` | the worklog skill: one source for the installed skill and the `workflow_rules` prompt (ADR 0005) |
-| `skills/embed.go` | embeds the skill into the binary |
+| `skills/worktree-build-cache/` | the worktree-build-cache skill: do fresh workspaces reuse the shared caches; skill-only (ADR 0010) |
+| `skills/embed.go` | embeds the worklog skill into the binary |
 | `.claude-plugin/plugin.json` | the skill bundle's manifest |
 | `nix/` | package, skill bundle, home-manager module, checks |
 
