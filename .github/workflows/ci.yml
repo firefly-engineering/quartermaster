@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Builds the package with its tests, the skill bundle, and the home-manager module check.
+  # Builds the package, the skill bundle, and the home-manager module check.
   flake:
     name: nix flake check
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
@@ -35,4 +35,21 @@ jobs:
           extra-conf: |
             extra-substituters = https://firefly-toolbox.cachix.org
             extra-trusted-public-keys = firefly-toolbox.cachix.org-1:4RgCoc0+CS7QhRarG109VmWlnlYi+rQ5JYrCsRP5aK8=
-      - run: nix develop --quiet --command just check
+      # Go's build and test caches, and golangci-lint's: a run only rebuilds and retests what changed.
+      # Keyed per commit so every run saves; restore takes the newest from this branch, else main.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ${{ runner.temp }}/go-build
+            ${{ runner.temp }}/golangci-lint
+          key: go-${{ runner.os }}-${{ hashFiles('flake.lock', 'go.sum') }}-${{ github.sha }}
+          restore-keys: go-${{ runner.os }}-${{ hashFiles('flake.lock', 'go.sum') }}-
+      # A fixed TMPDIR inside the shell: nix develop makes a fresh one per run, and the tests read it,
+      # so Go's test cache would never hit.
+      - run: nix develop --quiet --command env TMPDIR="$RUNNER_TEMP" just check
+        # Explicit: the dev shell's default cache paths are not where actions/cache looks. Blacksmith
+        # runners set GOCACHEPROG, which bypasses GOCACHE and keeps no test results across jobs.
+        env:
+          GOCACHEPROG: ""
+          GOCACHE: ${{ runner.temp }}/go-build
+          GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint

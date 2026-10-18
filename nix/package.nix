@@ -20,6 +20,8 @@
 
   vendorHash = "sha256-Hh4eKyRJmwrRkc0uCLqjAFECo36aicrnjpbCF2E1F7k=";
   subPackages = [ "cmd/worklog" ];
+  # CI's `just check` runs every package's tests, with -race; testing again here only slows the build.
+  doCheck = false;
   env.CGO_ENABLED = "0";
   ldflags = [
     "-s"

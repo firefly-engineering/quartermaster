@@ -1,4 +1,4 @@
-# The package builds with its tests, the skill bundle builds with the package's version and its
+# The package builds, the skill bundle builds with the package's version and its
 # manifest lists every skill under skills/, and the home-manager module installs the binary and
 # emits quartermaster/worklog.toml.
 {
