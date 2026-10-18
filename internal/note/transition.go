@@ -34,11 +34,12 @@ func TransitionItem(n *Note, src []byte, id string, to State, summary string) ([
 	if err := Transition(from, to, summary); err != nil {
 		return nil, fmt.Errorf("^%s: %w", id, err)
 	}
-	head, was := SplitSummary(it.Title)
-	if summary == "" {
-		summary = was
+	u := it.TitleUnit()
+	u.Icon = to.Icon()
+	if summary != "" {
+		u.Summary = summary
 	}
-	line, err := Renderer{}.ItemTitle(ItemUnit{ID: id, Icon: to.Icon(), Title: head, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch})
+	line, err := Renderer{}.ItemTitle(u)
 	if err != nil {
 		return nil, err
 	}

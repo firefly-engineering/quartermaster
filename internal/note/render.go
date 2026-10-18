@@ -56,12 +56,13 @@ type NextUnit struct {
 //
 // Its title line reads `<icon> <ref link>: <title> — <summary>`. The list form adds
 // ` · <cost> · Route: <route>` before the summary, the route in a code span, and ` ^<id>` after
-// it; the `#####` form ends its body with `<cost>. Route: <route>.` instead. A sent status
-// comes before the summary: ` → <to>, **<status>**`.
+// it, so its title holds no ` · `; the `#####` form ends its body with
+// `Cost: <cost>. Route: <route>.` instead. A sent status comes before the summary:
+// ` → <to>, **<status>**`. The parser reads the ref, cost and route back (Item).
 type ItemUnit struct {
 	ID      string
 	Icon    Icon
-	Title   string      // one line, after the icon and ref link; no SummarySep
+	Title   string      // one line, after the icon and ref link; no SummarySep, and in the list form no fieldSep
 	Ref     Ref         // the issue or PR it is about, the zero Ref for none
 	Repo    string      // the project it is in, where Ref renders as a bare #N; "" for none
 	Cost    string      // as `20 min`; "" for none
@@ -433,10 +434,10 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	}
 	var tail []string // the body's last sentence: cost and route
 	if u.Cost != "" {
-		tail = append(tail, u.Cost+".")
+		tail = append(tail, costMark+u.Cost+".")
 	}
 	if u.Route != "" {
-		tail = append(tail, "Route: `"+u.Route+"`.")
+		tail = append(tail, routeMark+"`"+u.Route+"`.")
 	}
 	switch {
 	case len(tail) == 0:
@@ -527,6 +528,9 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 			return "", "", fmt.Errorf("%s: a dispatch marker needs an id", what)
 		}
 	}
+	if !u.Heading && strings.Contains(u.Title, fieldSep) {
+		return "", "", fmt.Errorf("%s: %q parts a one-line title from its cost and route, so the title may not hold it", what, fieldSep)
+	}
 	if strings.Contains(u.Route, "`") {
 		return "", "", fmt.Errorf("%s: route %q: no backticks, it renders in a code span", what, u.Route)
 	}
@@ -544,7 +548,7 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 			title += fieldSep + u.Cost
 		}
 		if u.Route != "" {
-			title += fieldSep + "Route: `" + u.Route + "`"
+			title += fieldSep + routeMark + "`" + u.Route + "`"
 		}
 	}
 	title += sent

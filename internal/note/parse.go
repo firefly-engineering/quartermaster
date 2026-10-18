@@ -566,6 +566,7 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	it.Button = p.buttonLabel(para)
 	p.dispatch(it, para)
 	p.sent(it)
+	p.fields(it, para)
 	p.addItem(it)
 	p.bucket.Items = append(p.bucket.Items, it)
 	return it
@@ -912,6 +913,7 @@ func (p *parser) listItem(li, first ast.Node) {
 		it.Title = strings.Join(strings.Fields(strings.Replace(it.Title, raw, "", 1)), " ")
 	}
 	p.sent(it)
+	p.fields(it, first)
 	p.addItem(it)
 	if p.part != nil {
 		p.part.Items = append(p.part.Items, it)

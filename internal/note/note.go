@@ -206,9 +206,13 @@ type Item struct {
 	Prompt   *Prompt
 	Dispatch *Dispatch // where task_dispatch started an agent on it; nil when it has no marker
 	Sent     *Sent     // in *Sent to other repos*, its sent status; nil without one
+	Ref      string    // the issue or PR its title's leading link names, as owner/repo#N; "" without one
+	Cost     string    // what it costs the user, as `20 min`; "" without one
+	Route    string    // the next skill that moves it, as `/implement`; "" without one
 
-	idAt   int  // the offset of the `^` of its `^<id>`
-	marker Span // its dispatch marker's own bytes, when it has one
+	idAt   int    // the offset of the `^` of its `^<id>`
+	marker Span   // its dispatch marker's own bytes, when it has one
+	lead   string // its title as written before its cost, route, sent status and summary
 }
 
 // Prompt is a work item's `> [!prompt]-` callout and the `herdr-prompt` block inside it.

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -210,12 +211,12 @@ const (
 
 // grant is a ##### work item with a prompt, sent to another repo.
 var grant = ItemFields{
-	ID: "grant", Repo: "acme/web", Bucket: "Sent to other repos", Title: "grant the deploy role", Ref: "acme/IaC#7",
-	Body: "Needed for #12.", Cost: "10 min", Route: "/implement", Prompt: &PromptInput{To: "IaC", Text: "Grant the deploy role."},
+	ID: "grant", Repo: "acme/web", Bucket: "Sent to other repos", Title: "grant the deploy role", Ref: new("acme/IaC#7"),
+	Body: "Needed for #12.", Cost: new("10 min"), Route: new("/implement"), Prompt: &PromptInput{To: "IaC", Text: "Grant the deploy role."},
 }
 
 const grantItem = "##### ⬜ [IaC#7](https://github.com/acme/IaC/issues/7): grant the deploy role\n\n" +
-	"Needed for #12. 10 min. Route: `/implement`.\n" +
+	"Needed for #12. Cost: 10 min. Route: `/implement`.\n" +
 	"[▶ send to IaC](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-16&_item=grant) ^grant\n\n" +
 	"> [!prompt]- Prompt sent to IaC\n> ```herdr-prompt id=grant to=IaC\n> Grant the deploy role.\n> ```\n"
 
@@ -229,14 +230,14 @@ func TestItemUpsertCreate(t *testing.T) {
 		{"a ##### item in place of a bucket's dash", ItemUpsertInput{ItemFields: grant},
 			[]string{sentBucket, "#### ⬜ Sent to other repos\n\n" + grantItem}},
 		{"a list item joins the bucket's last list", ItemUpsertInput{
-			ItemFields: ItemFields{ID: "flaky", Repo: "acme/web", Bucket: "Agent queue", Title: "flaky test", Ref: "#9", Route: "/implement"},
+			ItemFields: ItemFields{ID: "flaky", Repo: "acme/web", Bucket: "Agent queue", Title: "flaky test", Ref: new("#9"), Route: new("/implement")},
 		}, []string{wave2, wave2 + "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · Route: `/implement` ^flaky\n"}},
 		{"a missing bucket, in template order", ItemUpsertInput{
-			ItemFields: ItemFields{ID: "cache", Repo: "acme/infra", Bucket: "Waiting", Title: "cache budget", Cost: "5 min"},
+			ItemFields: ItemFields{ID: "cache", Repo: "acme/infra", Bucket: "Waiting", Title: "cache budget", Cost: new("5 min")},
 			State:      "WAITING",
 		}, []string{infraChase, infraChase + "\n#### ⏳ Waiting\n\n- ⏳ cache budget · 5 min ^cache\n"}},
 		{"a missing project, after the last one and in the front matter", ItemUpsertInput{
-			ItemFields: ItemFields{ID: "bump", Repo: "acme/api", Bucket: "Agent queue", Title: "bump Go", Ref: "acme/api#3"},
+			ItemFields: ItemFields{ID: "bump", Repo: "acme/api", Bucket: "Agent queue", Title: "bump Go", Ref: new("acme/api#3")},
 		}, []string{"  - acme/infra\n", "  - acme/infra\n  - acme/api\n", infraChase, infraChase + "\n## ⬜ acme/api\n\n### ⬜ What remains\n\n#### — Decisions for you\n\n- —\n\n" +
 			"#### — Your actions\n\n- —\n\n#### ⬜ Agent queue\n\n- ⬜ [#3](https://github.com/acme/api/issues/3): bump Go ^bump\n\n" +
 			"#### — Sent to other repos\n\n- —\n\n#### — Outside input: chase\n\n- —\n\n#### — Waiting\n\n- —\n"}},
@@ -262,7 +263,7 @@ func TestItemUpsertUpdate(t *testing.T) {
 	t.Run("a list item in place, keeping its state", func(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), false)
-		out, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: ItemFields{ID: "login-stack", Title: "login stack", Ref: "#12", Cost: "20 min"}})
+		out, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: ItemFields{ID: "login-stack", Title: "login stack", Ref: new("#12"), Cost: new("20 min")}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -275,13 +276,13 @@ func TestItemUpsertUpdate(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), false)
 		out, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: ItemFields{
-			ID: "session-store", Title: "which session store?", Ref: "#14", Body: "Unblocks #15.", Cost: "15 min",
-			Route: "/grill-with-docs", Button: "grill in web", Prompt: &PromptInput{To: "web", Text: "/grill-with-docs https://github.com/acme/web/issues/14"},
+			ID: "session-store", Title: "which session store?", Ref: new("#14"), Body: "Unblocks #15.", Cost: new("15 min"),
+			Route: new("/grill-with-docs"), Button: "grill in web", Prompt: &PromptInput{To: "web", Text: "/grill-with-docs https://github.com/acme/web/issues/14"},
 		}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.checkNote(t, edited(t, "Unblocks #15. 10 min.", "Unblocks #15. 15 min."))
+		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min.", "Unblocks #15. Cost: 15 min."))
 		if !out.Changed || out.Item.Prompt == nil || out.Item.Prompt.To != "web" {
 			t.Errorf("out %+v", out)
 		}
@@ -294,15 +295,15 @@ func TestItemUpsertUpdate(t *testing.T) {
 			return strings.Replace(src, "&_item=session-store) ^session-store", "&_item=session-store) "+marker+" ^session-store", 1)
 		}
 		d := fixtureDeps(t, withMarker(settled(t)), false)
-		for _, f := range []ItemFields{{ID: "login-stack", Title: "login stack, in review", Ref: "acme/web#12"}, {
-			ID: "session-store", Title: "which session store?", Ref: "#14", Body: "Unblocks #15.", Cost: "15 min",
-			Route: "/grill-with-docs", Button: "grill in web", Prompt: &PromptInput{To: "web", Text: "/grill-with-docs https://github.com/acme/web/issues/14"},
+		for _, f := range []ItemFields{{ID: "login-stack", Title: "login stack, in review", Ref: new("acme/web#12")}, {
+			ID: "session-store", Title: "which session store?", Ref: new("#14"), Body: "Unblocks #15.", Cost: new("15 min"),
+			Route: new("/grill-with-docs"), Button: "grill in web", Prompt: &PromptInput{To: "web", Text: "/grill-with-docs https://github.com/acme/web/issues/14"},
 		}} {
 			if _, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: f}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		d.checkNote(t, withMarker(edited(t, "Unblocks #15. 10 min.", "Unblocks #15. 15 min.",
+		d.checkNote(t, withMarker(edited(t, "Unblocks #15. Cost: 10 min.", "Unblocks #15. Cost: 15 min.",
 			loginStack, "- 🔍 [#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n")))
 	})
 	t.Run("moved to another project's missing bucket", func(t *testing.T) {
@@ -324,7 +325,7 @@ func TestItemUpsertUpdate(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), true)
 		out, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: ItemFields{
-			ID: "login-stack", Bucket: "Waiting", Title: "login stack, in review", Ref: "#12",
+			ID: "login-stack", Bucket: "Waiting", Title: "login stack, in review", Ref: new("#12"),
 		}})
 		if err != nil {
 			t.Fatal(err)
@@ -370,7 +371,7 @@ func TestItemUpsertRefuses(t *testing.T) {
 		{ItemUpsertInput{ItemFields: ItemFields{ID: "rotate-token", Repo: "acme/web", Bucket: "Your actions", Title: "x"}}, "manual action"},
 		{ItemUpsertInput{ItemFields: ItemFields{ID: "New", Repo: "acme/web", Bucket: "Waiting", Title: "x"}}, "item id"},
 		{ItemUpsertInput{ItemFields: ItemFields{ID: "new", Repo: "acme/web", Bucket: "Waiting", Title: "a — b"}}, SummarySepText},
-		{ItemUpsertInput{ItemFields: ItemFields{ID: "new", Repo: "acme/web", Bucket: "Waiting", Title: "x", Ref: "12"}}, "owner/repo#N"},
+		{ItemUpsertInput{ItemFields: ItemFields{ID: "new", Repo: "acme/web", Bucket: "Waiting", Title: "x", Ref: new("12")}}, "owner/repo#N"},
 		{ItemUpsertInput{ItemFields: ItemFields{ID: "new", Repo: "acme/web", Bucket: "Waiting", Title: "x", Button: "go"}}, "prompt"},
 		{ItemUpsertInput{ItemFields: ItemFields{ID: "login-stack"}}, "title"},
 		// An update may not drop a ##### item's prose or prompt by leaving them out.
@@ -607,6 +608,44 @@ func TestNextSetAnchor(t *testing.T) {
 	}
 }
 
+// TestNextSetCost: a work item's line takes the entry's cost, else the item's, else none,
+// whatever the line showed before; a manual action's or an anchor's takes the entry's only (#82).
+func TestNextSetCost(t *testing.T) {
+	t.Parallel()
+	const costed = "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review · 5 min ^login-stack\n"
+	src := edited(t, loginStack, costed, "- Wave 2 after the stack lands.\n", "- Wave 2 after the stack lands.\n\nThe queue. ^queue\n")
+	for _, c := range []struct {
+		name string
+		src  string
+		in   []NextInput
+		want string
+	}{
+		{"the item's cost", src, []NextInput{{ID: "login-stack", Action: "Review"}, {ID: "session-store", Action: "Pick"}},
+			"1. Review · 5 min · [[#^login-stack|details]]\n2. Pick · 10 min · [[#^session-store|details]]"},
+		{"the entry's cost wins", src, []NextInput{{ID: "login-stack", Action: "Review", Cost: "1 agent run"}},
+			"1. Review · 1 agent run · [[#^login-stack|details]]\n"},
+		{"no cost, though the line had one", settled(t), []NextInput{{ID: "login-stack", Action: "Review"}},
+			"1. Review · [[#^login-stack|details]]\n"},
+		{"a manual action's from the entry only", src, []NextInput{{ID: "rotate-token"}, {ID: "design-doc", Cost: "2 min"}},
+			"1. [ ] Rotate the staging token · [[#^rotate-token|details]]\n2. [x] Approve the design doc · 2 min · [[#^design-doc|details]]\n"},
+		{"an anchor's from the entry only", src, []NextInput{{ID: "queue", Action: "Read the queue"}},
+			"1. Read the queue · [[#^queue|details]]\n"},
+		{"an anchor's from the entry", src, []NextInput{{ID: "queue", Action: "Read the queue", Cost: "1 min"}},
+			"1. Read the queue · 1 min · [[#^queue|details]]\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			d := fixtureDeps(t, c.src, false)
+			if _, err := d.nextSet(t.Context(), NextSetInput{Items: c.in}); err != nil {
+				t.Fatal(err)
+			}
+			if got := d.note(t, fixtureDate); !strings.Contains(got, "## Next\n\n"+c.want) {
+				t.Errorf("note:\n%s", got)
+			}
+		})
+	}
+}
+
 const (
 	row1 = "| Bring the build cache online (acme/infra) | offline | defer: hardware |\n"
 	row2 = "| [#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"
@@ -639,7 +678,7 @@ func TestCarryOverVerdict(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), false)
 		out, err := d.carryOverVerdict(t.Context(), CarryOverVerdictInput{Row: 2, Verdict: "keep", Reason: "in scope",
-			Item: &ItemFields{ID: "flaky", Repo: "acme/web", Bucket: "Agent queue", Route: "/implement"}})
+			Item: &ItemFields{ID: "flaky", Repo: "acme/web", Bucket: "Agent queue", Route: new("/implement")}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -649,6 +688,21 @@ func TestCarryOverVerdict(t *testing.T) {
 		if out.Kept == nil || out.Kept.Item.ID != "flaky" || out.Kept.Bucket != "Agent queue" {
 			t.Errorf("out %+v", out)
 		}
+	})
+	t.Run("keep takes a null ref, cost or route as absent", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		var in CarryOverVerdictInput
+		if err := json.Unmarshal([]byte(`{"row": 2, "verdict": "keep", "item": {"id": "flaky", "repo": "acme/web",
+			"bucket": "Agent queue", "ref": null, "cost": null, "route": null}}`), &in); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.carryOverVerdict(t.Context(), in); err != nil {
+			t.Fatal(err)
+		}
+		d.checkNote(t, edited(t,
+			wave2, wave2+"- ⬜ [#9](https://github.com/acme/web/issues/9) flaky test ^flaky\n",
+			row2, "| [#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"))
 	})
 	t.Run("keep of an item already in the note records the verdict", func(t *testing.T) {
 		t.Parallel()

@@ -23,14 +23,15 @@ type NextSetInput struct {
 type NextInput struct {
 	ID     string `json:"id" jsonschema:"a work item, manual action or anchor id"`
 	Action string `json:"action,omitempty" jsonschema:"what to do, one line; the item's title or the action's text when absent, needed for an anchor"`
-	Cost   string `json:"cost,omitempty" jsonschema:"what it costs, as: 20 min"`
+	Cost   string `json:"cost,omitempty" jsonschema:"what it costs, as: 20 min; the work item's cost when absent, none for a manual action or anchor"`
 }
 
 // NextSetOutput is next_set's result.
 type NextSetOutput struct {
 	Written
-	Next    []NextView `json:"next" jsonschema:"Next as written"`
-	Dropped []NextView `json:"dropped" jsonschema:"the lines Next held that it no longer does"`
+	Next     []NextView `json:"next" jsonschema:"Next as written"`
+	Dropped  []NextView `json:"dropped" jsonschema:"the lines Next held that it no longer does"`
+	Warnings []string   `json:"warnings,omitempty" jsonschema:"one line each: a work item in Next that is TODO with a /… route and no prompt, which has no ▶ button; the write went through"`
 }
 
 // nextSet replaces *Next* with one rendered line per id: its action, cost, details link and,
@@ -90,11 +91,15 @@ func (d Deps) nextSet(ctx context.Context, in NextSetInput) (NextSetOutput, erro
 	o := NextSetOutput{Written: w, Next: []NextView{}, Dropped: dropped}
 	for _, it := range res.Note.Next.Items {
 		o.Next = append(o.Next, nextView(res.Src, it))
+		if item := res.Note.Item(it.Ref); item != nil && noButton(item) {
+			o.Warnings = append(o.Warnings, noButtonWarning(item))
+		}
 	}
 	return o, nil
 }
 
-// nextUnit is x's line: from the work item, manual action or anchor x.ID names.
+// nextUnit is x's line: from the work item, manual action or anchor x.ID names. A work item
+// gives its title and cost where x leaves them out; nothing is read back from Next's line.
 func nextUnit(n *note.Note, x NextInput) (note.NextUnit, error) {
 	u := note.NextUnit{Action: strings.TrimSpace(x.Action), Cost: x.Cost, Ref: x.ID}
 	var was note.Box // the box of x.ID's line in Next now, NoBox for none
@@ -107,6 +112,9 @@ func nextUnit(n *note.Note, x NextInput) (note.NextUnit, error) {
 	case it != nil:
 		if u.Action == "" {
 			u.Action = note.Action(it.Title)
+		}
+		if u.Cost == "" {
+			u.Cost = it.Cost
 		}
 		if it.Prompt != nil {
 			u.Button = it.Button

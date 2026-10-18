@@ -65,18 +65,11 @@ func (n *Note) ItemsByRef(r Ref) []*Item {
 
 func appendByRef(out, items []*Item, r Ref) []*Item {
 	for _, it := range items {
-		if f, ok := titleRef(it.Title); ok && f == r {
+		if it.Ref == r.String() {
 			out = append(out, it)
 		}
 	}
 	return out
-}
-
-// Ref is the GitHub issue or PR the link opening its title names, before its summary; ok is
-// false when its title opens with no such link.
-func (it *Item) Ref() (Ref, bool) {
-	head, _ := SplitSummary(it.Title)
-	return titleRef(head)
 }
 
 // titleRef reads the ref of the link opening title, as the renderer writes it (refLink).

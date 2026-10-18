@@ -17,7 +17,7 @@ const (
 	infraRemain = "## ⏳ acme/infra\n\n### ⏳ What remains\n"
 	processEnd  = "- [x] Clean the stale workspaces\n"
 	sessionItem = "##### ⬜ [#14](https://github.com/acme/web/issues/14): which session store?\n\n" +
-		"Unblocks #15. 10 min. Route: `/grill-with-docs`.\n" +
+		"Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n" +
 		"[▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-16&_item=session-store) ^session-store\n\n" +
 		"> [!prompt]- Prompt sent to web\n> ```herdr-prompt id=session-store to=web\n" +
 		"> /grill-with-docs https://github.com/acme/web/issues/14\n> ```\n\n"

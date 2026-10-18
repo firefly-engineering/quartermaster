@@ -31,7 +31,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `day_open` | create today's note, with the previous note's open items as carry-over rows |
 | `day_read` | read a note: status, objectives, *Next*, items by project and bucket, states, parse errors |
 | `objective_set` | add, refine, progress or settle an objective |
-| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status |
+| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status; a rewrite keeps a ref, cost or route left out, and `null` clears one |
 | `item_transition` | move a work item to a new state with a summary, or to its own state to rewrite only the summary, or tick a manual action; with `part`, file a done or dropped item into that Part |
 | `part_write` | create or rewrite one Part whole: number, kind, title, icon and body |
 | `action_upsert` | create, reword or move a manual action: a checkbox with an id |
@@ -103,7 +103,7 @@ another state to change a summary; that writes a false step into the history.
 the routes. Each action is a step the user takes now: a decision to settle, a batch to
 start, a stack to review, an IaC request to send, a manual operation that is due. Each one
 names its work item, where its context and prompt live. The server renders the line, its
-details link and its button.
+details link and its button, and takes a work item's cost from the item unless you give one.
 
 Write tight. One line per item. A decision recorded on a ticket gets a line and a link,
 not a paragraph. A finished Part shrinks to a line or a short table; the jj history keeps
@@ -291,6 +291,11 @@ Give a work item a prompt with `item_upsert`: `prompt.to` is the workspace label
 button and its prompt block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
 `next_set` repeats the button on the item's line in *Next*.
+
+A TODO item whose route is a command (`/triage`, `/implement`) needs a prompt: its
+button is how that command gets sent, and without a prompt it has none. `item_upsert`
+and `next_set` write such an item all the same, and return a `warnings` line naming
+it: give it a prompt. A route that is not a command, as `inline`, does not warn.
 
 Once a prompt has been sent and done its job, drop it: `item_upsert` with
 `"prompt": null` removes the prompt, its button and the button on its *Next* line, so

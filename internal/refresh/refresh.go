@@ -246,14 +246,12 @@ func setStatus(src []byte, it *note.Item, status string, links []string) ([]byte
 	if it.Sent == nil {
 		return nil, errors.New("it has no sent status to set")
 	}
-	_, summary := note.SplitSummary(it.Title)
-	sent := note.SentUnit{To: it.Sent.To, Status: status, Note: it.Sent.Note}
+	u := it.TitleUnit()
+	u.Sent.Status = status
 	if len(links) > 0 {
-		sent.Note = strings.TrimPrefix(sent.Note+", "+strings.Join(links, ", "), ", ")
+		u.Sent.Note = strings.TrimPrefix(u.Sent.Note+", "+strings.Join(links, ", "), ", ")
 	}
-	line, err := note.Renderer{}.ItemTitle(note.ItemUnit{
-		ID: it.ID, Icon: it.Icon, Title: it.Sent.Title, Sent: &sent, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch,
-	})
+	line, err := note.Renderer{}.ItemTitle(u)
 	if err != nil {
 		return nil, err
 	}

@@ -52,7 +52,7 @@ tags:
 
 ##### <icon> [#N](url): <question>
 
-Unblocks <…>. <cost>. Route: `<skill>`, <why that route>.
+Unblocks <…>. <why that route>. Cost: <cost>. Route: `<skill>`.
 [▶ <verb> in <workspace>](obsidian://shell-commands/?vault=worklog&execute=<id>&_date=<date>&_item=<item-id>) ^<item-id>
 
 > [!prompt]- Prompt sent to <workspace label>

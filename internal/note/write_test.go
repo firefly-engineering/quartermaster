@@ -59,14 +59,14 @@ func TestRenderWriteUnits(t *testing.T) {
 				Button: "grill in web", Prompt: &PromptUnit{To: "web", Body: "/grill-with-docs u"},
 			})
 		}, "##### 🔄 [#14](https://github.com/acme/web/issues/14): which store? — grilling\n\n" +
-			"Unblocks #15. 10 min. Route: `/grill-with-docs`.\n" +
+			"Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n" +
 			"[▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=nf8lgvkx5s&_date=2026-10-18&_item=store) ^store\n\n" +
 			"> [!prompt]- Prompt sent to web\n> ```herdr-prompt id=store to=web\n> /grill-with-docs u\n> ```\n"},
 		{"heading item, route alone", func() ([]byte, error) {
 			return r.Item(ItemUnit{ID: "x", Icon: IconTodo, Heading: true, Title: "X", Route: "/triage"})
 		}, "##### ⬜ X\n\nRoute: `/triage`. ^x\n"},
 		{"list title line", func() ([]byte, error) {
-			return r.ItemTitle(ItemUnit{ID: "login", Icon: IconDone, Title: "[#12](u): login form · 20 min", Summary: "merged in abc123"})
+			return r.ItemTitle(ItemUnit{ID: "login", Icon: IconDone, Title: "[#12](u): login form", Cost: "20 min", Summary: "merged in abc123"})
 		}, "✅ [#12](u): login form · 20 min — merged in abc123 ^login\n"},
 		{"heading title line", func() ([]byte, error) {
 			return r.ItemTitle(ItemUnit{ID: "store", Icon: IconWaiting, Heading: true, Title: "which store?", Summary: "waits on — ops"})
@@ -120,6 +120,10 @@ func TestRenderWriteErrors(t *testing.T) {
 			_, err := r.Item(ItemUnit{ID: "a", Icon: IconTodo, Title: "a", Cost: "1 — 2 h"})
 			return err
 		}, SummarySep},
+		"field separator in a one-line title": {func() error {
+			_, err := r.Item(ItemUnit{ID: "a", Icon: IconTodo, Title: "a · b"})
+			return err
+		}, fieldSep},
 		"backtick in route": {func() error {
 			_, err := r.Item(ItemUnit{ID: "a", Icon: IconTodo, Title: "a", Route: "`/x`"})
 			return err
