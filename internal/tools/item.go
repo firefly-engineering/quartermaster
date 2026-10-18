@@ -82,6 +82,7 @@ type ItemUpsertOutput struct {
 	Written
 	Created bool `json:"created" jsonschema:"the item is new"`
 	ItemOutput
+	Warnings []string `json:"warnings,omitempty" jsonschema:"one line each: what the item as written lacks, as a TODO item with a /… route and no prompt, which has no ▶ button; the write went through"`
 }
 
 // itemUpsert creates a work item in a bucket, or rewrites one in place or into another bucket.
@@ -114,7 +115,23 @@ func (d Deps) itemUpsert(ctx context.Context, in ItemUpsertInput) (ItemUpsertOut
 	if err != nil {
 		return ItemUpsertOutput{}, err
 	}
-	return ItemUpsertOutput{Written: w, Created: created, ItemOutput: itemOutput(res.Note, in.ID)}, nil
+	o := ItemUpsertOutput{Written: w, Created: created, ItemOutput: itemOutput(res.Note, in.ID)}
+	if it := res.Note.Item(in.ID); noButton(it) {
+		o.Warnings = []string{noButtonWarning(it)}
+	}
+	return o, nil
+}
+
+// noButton reports whether work item it is TODO and routed to a slash command, but has no
+// prompt: its ▶ button would send that command, and with no prompt it has none.
+func noButton(it *note.Item) bool {
+	s, _ := note.StateOf(it.Icon)
+	return s == note.Todo && strings.HasPrefix(it.Route, "/") && it.Prompt == nil
+}
+
+// noButtonWarning is the warning for work item it, which noButton reports.
+func noButtonWarning(it *note.Item) string {
+	return fmt.Sprintf("^%s is routed to %s but has no ▶ button: give it a prompt", it.ID, it.Route)
 }
 
 // dropNextButtons removes the ▶ button from each *Next* line linking work item id, whose prompt

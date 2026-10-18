@@ -29,8 +29,9 @@ type NextInput struct {
 // NextSetOutput is next_set's result.
 type NextSetOutput struct {
 	Written
-	Next    []NextView `json:"next" jsonschema:"Next as written"`
-	Dropped []NextView `json:"dropped" jsonschema:"the lines Next held that it no longer does"`
+	Next     []NextView `json:"next" jsonschema:"Next as written"`
+	Dropped  []NextView `json:"dropped" jsonschema:"the lines Next held that it no longer does"`
+	Warnings []string   `json:"warnings,omitempty" jsonschema:"one line each: a work item in Next that is TODO with a /… route and no prompt, which has no ▶ button; the write went through"`
 }
 
 // nextSet replaces *Next* with one rendered line per id: its action, cost, details link and,
@@ -90,6 +91,9 @@ func (d Deps) nextSet(ctx context.Context, in NextSetInput) (NextSetOutput, erro
 	o := NextSetOutput{Written: w, Next: []NextView{}, Dropped: dropped}
 	for _, it := range res.Note.Next.Items {
 		o.Next = append(o.Next, nextView(res.Src, it))
+		if item := res.Note.Item(it.Ref); item != nil && noButton(item) {
+			o.Warnings = append(o.Warnings, noButtonWarning(item))
+		}
 	}
 	return o, nil
 }

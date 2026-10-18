@@ -292,6 +292,11 @@ button and its prompt block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
 `next_set` repeats the button on the item's line in *Next*.
 
+A TODO item whose route is a command (`/triage`, `/implement`) needs a prompt: its
+button is how that command gets sent, and without a prompt it has none. `item_upsert`
+and `next_set` write such an item all the same, and return a `warnings` line naming
+it: give it a prompt. A route that is not a command, as `inline`, does not warn.
+
 Once a prompt has been sent and done its job, drop it: `item_upsert` with
 `"prompt": null` removes the prompt, its button and the button on its *Next* line, so
 no stale button re-sends it. Give the body again to keep a `#####` item; without one

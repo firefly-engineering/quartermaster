@@ -243,3 +243,141 @@ func TestItemUpsertNullFieldsMCP(t *testing.T) {
 	}
 	d.checkNote(t, edited(t, ie11Line, "- ⬜ drop IE11? · 5 min ^ie11\n"))
 }
+
+// A TODO work item routed to a slash command with no prompt has no ▶ button to send it:
+// item_upsert and next_set warn, and write it all the same (#80).
+
+// checkWarning wants one warning, naming the item id and its route, else none when id is "".
+func checkWarning(t *testing.T, warnings []string, id, route string) {
+	t.Helper()
+	if id == "" {
+		if len(warnings) != 0 {
+			t.Errorf("warnings %q, want none", warnings)
+		}
+		return
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "^"+id) || !strings.Contains(warnings[0], route) ||
+		!strings.Contains(warnings[0], "▶") || !strings.Contains(warnings[0], "prompt") {
+		t.Errorf("warnings %q, want one for ^%s, %s", warnings, id, route)
+	}
+}
+
+func TestItemUpsertWarnsWithoutButton(t *testing.T) {
+	t.Parallel()
+	const create = `"repo": "acme/web", "bucket": "Agent queue", "title": "flaky test"`
+	for _, c := range []struct {
+		in, route string // route, when the item warns
+		line      string // the item as written, after wave2
+	}{
+		{`{"id": "flaky", ` + create + `, "route": "/triage"}`, "/triage", "- ⬜ flaky test · Route: `/triage` ^flaky\n"},
+		{`{"id": "flaky", ` + create + `, "route": "inline"}`, "", "- ⬜ flaky test · Route: `inline` ^flaky\n"},
+		{`{"id": "flaky", ` + create + `}`, "", "- ⬜ flaky test ^flaky\n"},
+		{`{"id": "flaky", ` + create + `, "route": "/triage", "state": "WAITING"}`, "", "- ⏳ flaky test · Route: `/triage` ^flaky\n"},
+	} {
+		t.Run(c.in, func(t *testing.T) {
+			t.Parallel()
+			d := fixtureDeps(t, settled(t), true)
+			out, err := d.itemUpsert(t.Context(), upsertInput(t, c.in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !out.Created || !out.Changed || !out.Committed {
+				t.Errorf("out %+v", out)
+			}
+			if c.route != "" {
+				checkWarning(t, out.Warnings, "flaky", c.route)
+			} else {
+				checkWarning(t, out.Warnings, "", "")
+			}
+			if got := d.note(t, fixtureDate); !strings.Contains(got, wave2+c.line) {
+				t.Errorf("note:\n%s", got)
+			}
+		})
+	}
+	t.Run("with a prompt", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		out, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "flaky", `+create+`, "route": "/triage",
+			"prompt": {"to": "web", "text": "/triage https://github.com/acme/web/issues/9"}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkWarning(t, out.Warnings, "", "")
+	})
+	t.Run("an update of a TODO item", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, edited(t, ie11Line, ie11Item), false)
+		out, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "ie11", "title": "drop IE11?", "route": "/wayfinder"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkWarning(t, out.Warnings, "ie11", "/wayfinder")
+		d.checkNote(t, edited(t, ie11Line, strings.Replace(ie11Item, "/grill-with-docs", "/wayfinder", 1)))
+	})
+	t.Run("a dropped prompt on a TODO item", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), true)
+		out, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
+			"body": "Unblocks #15.", "route": "/implement", "prompt": null}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkWarning(t, out.Warnings, "session-store", "/implement")
+		d.checkNote(t, edited(t, sessionStorePara, "Unblocks #15. Cost: 10 min. Route: `/implement`. ^session-store\n"))
+		if !out.Changed || !out.Committed {
+			t.Errorf("out %+v", out)
+		}
+	})
+	t.Run("a dropped prompt on an IN_PROGRESS item", func(t *testing.T) {
+		t.Parallel()
+		src := edited(t, "##### ⬜ [#14]", "##### 🔄 [#14]")
+		d := fixtureDeps(t, src, false)
+		out, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
+			"body": "Unblocks #15.", "route": "/implement", "prompt": null}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkWarning(t, out.Warnings, "", "")
+		if out.Item.Prompt != nil || out.Item.State != "IN_PROGRESS" {
+			t.Errorf("out %+v", out)
+		}
+	})
+	t.Run("a refused write does not warn", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		out, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "flaky", "repo": "acme/web", "title": "x", "route": "/triage"}`))
+		if err == nil || out.Warnings != nil {
+			t.Errorf("out %+v, err %v", out, err)
+		}
+		d.checkNote(t, settled(t))
+	})
+}
+
+func TestNextSetWarnsWithoutButton(t *testing.T) {
+	t.Parallel()
+	const loginRouted = "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review · Route: `/implement` ^login-stack\n"
+	src := edited(t, ie11Line, "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11? · Route: `/wayfinder` ^ie11\n",
+		loginStack, loginRouted, wave2, wave2+"\nThe queue. ^queue\n")
+	// One of each that does not warn: a TODO item with a prompt, a manual action, an anchor,
+	// and an IN_REVIEW item routed to a command with no prompt.
+	d := fixtureDeps(t, src, true)
+	out, err := d.nextSet(t.Context(), NextSetInput{Items: []NextInput{
+		{ID: "session-store"}, {ID: "ie11"}, {ID: "rotate-token"}, {ID: "queue", Action: "Read the queue"}, {ID: "login-stack"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkWarning(t, out.Warnings, "ie11", "/wayfinder")
+	if len(out.Next) != 5 || !out.Changed || !out.Committed {
+		t.Errorf("out %+v", out)
+	}
+	if got := d.note(t, fixtureDate); !strings.Contains(got, "2. [#16](https://github.com/acme/web/issues/16): drop IE11? · [[#^ie11|details]]\n") {
+		t.Errorf("note:\n%s", got)
+	}
+
+	out, err = d.nextSet(t.Context(), NextSetInput{Items: []NextInput{{ID: "session-store"}, {ID: "login-stack"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkWarning(t, out.Warnings, "", "")
+}

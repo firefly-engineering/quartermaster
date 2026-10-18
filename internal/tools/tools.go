@@ -127,7 +127,8 @@ func All(d Deps) []Tool {
 			Description: "Create a work item in a project's bucket, or rewrite one: title, ref (owner/repo#N, " +
 				"rendered as a full link), cost, route, body, and a prompt for its ▶ button. A new project, What " +
 				"remains or bucket is created as needed. An update rewrites the item from the input, keeping its " +
-				"state and summary; a repo or bucket moves it.",
+				"state and summary; a repo or bucket moves it. It warns, and writes all the same, when the item " +
+				"is TODO with a /… route and no prompt, so no ▶ button.",
 			Run: d.itemUpsert,
 		},
 		Def[ItemTransitionInput, ItemTransitionOutput]{
@@ -161,7 +162,8 @@ func All(d Deps) []Tool {
 		Def[NextSetInput, NextSetOutput]{
 			Name: "next_set", Verb: "next",
 			Description: "Replace Next with at most five actions, each named by its work item, manual action " +
-				"or anchor id. The server renders each line: action, cost, details link and ▶ button.",
+				"or anchor id. The server renders each line: action, cost, details link and ▶ button. It warns, " +
+				"and writes all the same, for each work item that is TODO with a /… route and no prompt, so no ▶ button.",
 			Run: d.nextSet,
 		},
 		Def[StatusSetInput, StatusSetOutput]{
