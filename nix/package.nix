@@ -28,6 +28,7 @@
   meta = {
     description = "The worklog note and its agent dispatch, as an MCP server";
     homepage = "https://github.com/firefly-engineering/quartermaster";
+    license = lib.licenses.mit;
     mainProgram = "quartermaster";
   };
 })
