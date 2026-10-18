@@ -132,7 +132,7 @@ func TestSendOneLinePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (Sent{ID: "batch-c", To: "trunk", Pane: "wZ:p6"}); got != want {
+	if want := (Sent{ID: "batch-c", To: "trunk", Pane: "wZ:p6", Path: filepath.Join(vault, "2026-10-16.md")}); got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	if got.String() != "sent batch-c to trunk (wZ:p6)" {
@@ -169,7 +169,7 @@ func TestDeliver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (Sent{ID: "o/r#3", To: "IaC", Pane: "wX:p9"}); got != want {
+	if want := (Sent{ID: "o/r#3", To: "IaC", Pane: "wX:p9", Path: "/v/2026-10-16.md"}); got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	want := "wX:p9\n/implement https://github.com/o/r/issues/3\n\nWhen this is done, update the worklog with the worklog skill: " +

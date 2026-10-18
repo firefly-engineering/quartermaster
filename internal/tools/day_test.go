@@ -281,7 +281,7 @@ func TestMCP(t *testing.T) {
 	}
 	slices.Sort(names)
 	if !slices.Equal(names, []string{"carryover_verdict", "day_open", "day_read", "item_transition", "item_upsert",
-		"next_set", "objective_set", "refresh", "status_set", "task_dispatch"}) {
+		"next_set", "objective_set", "prompt_send", "refresh", "status_set", "task_dispatch"}) {
 		t.Fatalf("tools %v", names)
 	}
 
@@ -361,7 +361,7 @@ func TestRunVerb(t *testing.T) {
 	t.Parallel()
 	d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t))}, false)
 	ts := All(d)
-	if got := Verbs(ts); !slices.Equal(got, []string{"open", "read", "objective", "item", "transition", "next", "status", "verdict", "refresh", "dispatch"}) {
+	if got := Verbs(ts); !slices.Equal(got, []string{"open", "read", "objective", "item", "transition", "next", "status", "verdict", "refresh", "send", "dispatch"}) {
 		t.Fatalf("verbs %v", got)
 	}
 	ctx := context.Background()

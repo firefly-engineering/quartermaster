@@ -37,11 +37,12 @@ Without it, stop and say so: never edit the note by hand instead.
 | `status_set` | rewrite the status line |
 | `carryover_verdict` | record keep, defer or drop on a carry-over row |
 | `refresh` | reconcile the note with GitHub and herdr |
+| `prompt_send` | send a work item's prompt to its herdr session; leaves the note alone |
 | `task_dispatch` | start work on a ref, in its project's session or in a fresh agent |
 
-`quartermaster send` is a command, not a tool: see [Buttons](#buttons). The server lists
-each tool's input schema. Every tool but `day_open` takes an optional `date`, today (UTC)
-by default.
+`prompt_send` is the tool form of the ▶ button's `quartermaster send`: see
+[Buttons](#buttons). The server lists each tool's input schema. Every tool but `day_open`
+takes an optional `date`, today (UTC) by default.
 
 No tool writes a Part, a manual action, an anchor or a *Process* entry yet
 ([#40](https://github.com/firefly-engineering/quartermaster/issues/40)). Until one does,
@@ -287,11 +288,10 @@ The judgement stays here:
 When the note shows prompts but no buttons, the vault lacks the Shell commands setup.
 Point the user at [`buttons-setup.md`](buttons-setup.md) once.
 
-To send a prompt yourself, run `quartermaster send <vault> <date> <item-id>`, where
-`<vault>` is the directory of the note's path. A tool will do this too, once `prompt_send`
-lands ([#39](https://github.com/firefly-engineering/quartermaster/issues/39)). It fails if
-herdr is not found, if the workspace is missing or has no single agent, or if that agent
-is `blocked` on an approval; leave the item as it was and say why.
+To send a prompt yourself, call `prompt_send` with the item's id. It does not touch the
+note: record the send yourself. It fails if herdr is not found, if the workspace is missing
+or has no single agent, or if that agent is `blocked` on an approval; leave the item as it
+was and say why.
 
 ## Other repos
 

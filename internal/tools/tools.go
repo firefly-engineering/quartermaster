@@ -162,6 +162,13 @@ func All(d Deps) []Tool {
 				"and derives icons. Returns what it changed and every item it checked and left, with why.",
 			Run: d.refresh,
 		},
+		Def[PromptSendInput, PromptSendOutput]{
+			Name: "prompt_send", Verb: "send",
+			Description: "Send a work item's prompt block to the one agent in the herdr workspace its to= names, " +
+				"as `quartermaster send` does, with the closing line asking it to update the item. Refuses a " +
+				"blocked agent. Does not write the note.",
+			Run: d.promptSend,
+		},
 		Def[TaskDispatchInput, TaskDispatchOutput]{
 			Name: "task_dispatch", Verb: "dispatch",
 			Description: "Start work on a ref, owner/repo#N. Mode session (the default) sends its work item's prompt, " +

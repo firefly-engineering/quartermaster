@@ -2,10 +2,9 @@
 
 quartermaster is a single Go binary that keeps the day's **worklog note** in an Obsidian
 vault and dispatches the work it lists to agents running under
-[herdr](https://github.com/herdrdev/herdr). It is to serve the note's operations as MCP
+[herdr](https://github.com/herdrdev/herdr). It serves the note's operations as MCP
 tools, so Claude Code, oh-my-pi or any MCP client mutates the note through one state
-machine instead of rewriting markdown by hand. Much of that is not built yet: see
-[Status](#status).
+machine instead of rewriting markdown by hand. [Status](#status) lists what is built.
 
 The design is in [`docs/spec.md`](docs/spec.md), decisions in [`docs/adr/`](docs/adr/),
 terms in [`GLOSSARY.md`](GLOSSARY.md).
@@ -18,8 +17,9 @@ Built today:
 - `quartermaster serve`: a stdio MCP server with the `workflow_rules` and `phase` prompts
   ([spec §8](docs/spec.md#8-mcp-prompts)) and the tools `day_open`, `day_read`,
   `objective_set`, `item_upsert`, `item_transition`, `next_set`, `status_set`,
-  `carryover_verdict`, `refresh` and `task_dispatch` ([spec §6](docs/spec.md#6-mcp-tools)).
-- `quartermaster note open|read|objective|item|transition|next|status|verdict|refresh|dispatch`:
+  `carryover_verdict`, `refresh`, `prompt_send` and `task_dispatch`
+  ([spec §6](docs/spec.md#6-mcp-tools)).
+- `quartermaster note open|read|objective|item|transition|next|status|verdict|refresh|send|dispatch`:
   the same tools from the command line.
 - `quartermaster send <vault> <date> <item-id>`: the ▶ button handler
   ([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)).
@@ -27,11 +27,6 @@ Built today:
   `config.toml` and take `--config` and `--vault`.
 - The `skills` flake package: the `worklog` skill as a Claude plugin directory.
 - The home-manager module.
-
-Not built yet:
-
-- `prompt_send` ([spec §6](docs/spec.md#6-mcp-tools)), the MCP tool form of
-  `quartermaster send`.
 
 ## Usage
 
@@ -64,6 +59,7 @@ quartermaster note transition '{"item": "login-stack", "to": "DONE", "summary": 
 | `status` | `status_set` | rewrites the status line |
 | `verdict` | `carryover_verdict` | records keep, defer or drop on a carry-over row |
 | `refresh` | `refresh` | reconciles the note with GitHub and herdr |
+| `send` | `prompt_send` | sends a work item's prompt to its herdr session |
 | `dispatch` | `task_dispatch` | starts work on a ref, in its project's session or a fresh agent |
 
 The write tools change the note through one lock, check, rename and commit sequence
@@ -89,6 +85,11 @@ item's prompt mark it **acked** and are added to its line; once GitHub moves it 
 reads **done**. Its write also ticks paired
 checkboxes and derives icons, as every write does. It returns what it changed, and every item
 it checked and left as it was, with why.
+
+`prompt_send` takes `{date, item}` and does what `quartermaster send` does
+([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)): it sends the item's prompt block,
+with its closing line, to the one agent in the herdr workspace the block names, and refuses a
+`blocked` agent. It leaves the note alone; recording the send is the skill's.
 
 `task_dispatch` takes `{ref, mode, instruction}`, the ref as `owner/repo#N`, and finds the
 ref's work item in the note by the link leading its title

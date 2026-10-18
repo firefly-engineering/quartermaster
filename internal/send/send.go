@@ -35,6 +35,7 @@ type Sender struct {
 // Sent is a prompt delivered to a herdr pane.
 type Sent struct {
 	ID, To, Pane string
+	Path         string // the note the closing line names
 }
 
 func (s Sent) String() string { return fmt.Sprintf("sent %s to %s (%s)", s.ID, s.To, s.Pane) }
@@ -105,7 +106,7 @@ func (s Sender) deliver(ctx context.Context, to, text, what, path string) (Sent,
 	if _, err := s.herdr(ctx, "agent", "prompt", pane, text); err != nil {
 		return Sent{}, err
 	}
-	return Sent{ID: what, To: to, Pane: pane}, nil
+	return Sent{ID: what, To: to, Pane: pane, Path: path}, nil
 }
 
 // Item names work item id in the closing line, as Closing's what: `work item ^<id>`.
