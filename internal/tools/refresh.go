@@ -31,6 +31,13 @@ type RefreshOutput struct {
 // that write also ticks paired checkboxes and derives icons, as every write does, so a refresh
 // that proves nothing still settles the note.
 func (d Deps) refresh(ctx context.Context, in RefreshInput) (RefreshOutput, error) {
+	return d.refreshWith(ctx, in, refresh.Reconciler{
+		GH: refresh.Command("gh", d.GH, d.Env), Herdr: refresh.Command("herdr", d.Herdr, d.Env),
+	})
+}
+
+// refreshWith is refresh asking GitHub and herdr through rec, which tests stand fakes in.
+func (d Deps) refreshWith(ctx context.Context, in RefreshInput, rec refresh.Reconciler) (RefreshOutput, error) {
 	vault, err := d.vault()
 	if err != nil {
 		return RefreshOutput{}, err
@@ -53,7 +60,7 @@ func (d Deps) refresh(ctx context.Context, in RefreshInput) (RefreshOutput, erro
 	if err != nil {
 		return RefreshOutput{}, fmt.Errorf("the note does not parse: %w", err)
 	}
-	plan := refresh.Reconciler{GH: d.GH, Herdr: d.Herdr}.Gather(ctx, n)
+	plan := rec.Gather(ctx, n)
 
 	var applied []refresh.Applied
 	var skipped []refresh.Skipped

@@ -195,11 +195,14 @@ type Item struct {
 	IconSpan Span // Icon's own bytes in Head
 	ID       string
 	Icon     Icon
-	Title    string // the source after the icon, its lines joined by one space, without the `^<id>`
+	Title    string // the source after the icon, its lines joined by one space, without the `^<id>` or a list item's dispatch marker
 	Heading  bool
 	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
 	Prompt   *Prompt
-	Dispatch *Dispatch // its dispatch marker, nil when it has none
+	Dispatch *Dispatch // where task_dispatch started an agent on it; nil when it has no marker
+
+	idAt   int  // the offset of the `^` of its `^<id>`
+	marker Span // its dispatch marker's own bytes, when it has one
 }
 
 // Prompt is a work item's `> [!prompt]-` callout and the `herdr-prompt` block inside it.
@@ -216,7 +219,7 @@ type ManualAction struct {
 	Checked bool
 	Mark    int    // the byte offset of the mark inside its `[ ]`: ` `, `x` or `X`
 	ID      string // its `^<id>`, "" without one
-	Text    string // the source after the checkbox, without the `^<id>`
+	Text    string // the source after the checkbox, without the `^<id>` or a list item's dispatch marker
 }
 
 // Anchor is a paragraph in a Part or bucket ending with `^<id>`, a link target that is not a

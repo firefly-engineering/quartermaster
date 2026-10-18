@@ -42,6 +42,12 @@ func (s Sent) String() string { return fmt.Sprintf("sent %s to %s (%s)", s.ID, s
 // Send sends work item id's prompt from vault/<date>.md to the one agent in the herdr
 // workspace its block names.
 func (s Sender) Send(ctx context.Context, vault, date, id string) (Sent, error) {
+	return s.SendItem(ctx, vault, date, id, "")
+}
+
+// SendItem is Send with extra, when not blank, added after the prompt as its own paragraph:
+// task_dispatch's instruction.
+func (s Sender) SendItem(ctx context.Context, vault, date, id, extra string) (Sent, error) {
 	if _, err := time.Parse(time.DateOnly, date); err != nil {
 		return Sent{}, fmt.Errorf("not a date: %q", date)
 	}
@@ -60,6 +66,34 @@ func (s Sender) Send(ctx context.Context, vault, date, id string) (Sent, error) 
 	if err != nil {
 		return Sent{}, err
 	}
+	if extra = strings.TrimSpace(extra); extra != "" {
+		text += "\n\n" + extra
+	}
+	sent, err := s.deliver(ctx, to, text, Item(id), path)
+	sent.ID = id
+	return sent, err
+}
+
+// Deliver sends text to the one agent in the herdr workspace labelled to, closed with the line
+// asking it to update what (Closing), in the note at path. Sent.ID is what. It is for a prompt
+// no herdr-prompt block holds; the agent's status is checked as Send checks it.
+func (s Sender) Deliver(ctx context.Context, to, text, what, path string) (Sent, error) {
+	text = strings.TrimSpace(text)
+	if to == "" || text == "" {
+		return Sent{}, fmt.Errorf("a prompt needs a workspace and a text: to %q, text %q", to, text)
+	}
+	return s.deliver(ctx, to, text, what, path)
+}
+
+// Closing is the line that ends every prompt sent, asking the agent to record its outcome on
+// what, as Item(id) or `owner/repo#N`, in the note at path.
+func Closing(what, path string) string {
+	return "When this is done, update the worklog with the worklog skill: " + what + " in " + path +
+		". Record the outcome and refresh Next."
+}
+
+// deliver sends text and the closing line about what to the agent of workspace to.
+func (s Sender) deliver(ctx context.Context, to, text, what, path string) (Sent, error) {
 	pane, status, err := s.resolve(ctx, to)
 	if err != nil {
 		return Sent{}, err
@@ -67,17 +101,20 @@ func (s Sender) Send(ctx context.Context, vault, date, id string) (Sent, error) 
 	if !slices.Contains(sendable, status) {
 		return Sent{}, fmt.Errorf("%s agent is %s; answer it first", to, status)
 	}
-	text += "\n\nWhen this is done, update the worklog with the worklog skill: " + PromptTag(id) + path +
-		". Record the outcome and refresh Next."
+	text += "\n\n" + Closing(what, path)
 	if _, err := s.herdr(ctx, "agent", "prompt", pane, text); err != nil {
 		return Sent{}, err
 	}
-	return Sent{ID: id, To: to, Pane: pane}, nil
+	return Sent{ID: what, To: to, Pane: pane}, nil
 }
 
-// PromptTag is how the closing line Send adds to every prompt names work item id, just before
-// the note's path. refresh finds an agent's reply to the prompt after it.
-func PromptTag(id string) string { return "work item ^" + id + " in " }
+// Item names work item id in the closing line, as Closing's what: `work item ^<id>`.
+func Item(id string) string { return "work item ^" + id }
+
+// PromptTag is how the closing line names work item id, just before the note's path: the part
+// of Closing(Item(id), path) before the path. refresh finds an agent's reply to the prompt
+// after it.
+func PromptTag(id string) string { return Item(id) + " in " }
 
 // prompt returns the workspace label and text of item id's herdr-prompt block. The note need
 // not parse cleanly elsewhere; a parse error is reported only when the block is not found.

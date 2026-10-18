@@ -53,9 +53,8 @@ func TestRefreshSettles(t *testing.T) {
 	t.Parallel()
 	const nextLine = "1. [ ] Rotate the staging token · 5 min · [[#^rotate-token|details]]"
 	d := fixtureDeps(t, strings.Replace(string(readFixture(t)), nextLine, strings.Replace(nextLine, "[ ]", "[x]", 1), 1), true)
-	d.GH = ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": openPR})
-	d.Herdr = noHerdr(t)
-	out, err := d.refresh(t.Context(), RefreshInput{})
+	rec := refresh.Reconciler{GH: ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": openPR}), Herdr: noHerdr(t)}
+	out, err := d.refreshWith(t.Context(), RefreshInput{}, rec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +76,8 @@ func TestRefreshSettles(t *testing.T) {
 func TestRefreshMoves(t *testing.T) {
 	t.Parallel()
 	d := fixtureDeps(t, settled(t), true)
-	d.GH = ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": mergedPR})
-	d.Herdr = noHerdr(t)
-	out, err := d.refresh(t.Context(), RefreshInput{Date: fixtureDate})
+	rec := refresh.Reconciler{GH: ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": mergedPR}), Herdr: noHerdr(t)}
+	out, err := d.refreshWith(t.Context(), RefreshInput{Date: fixtureDate}, rec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +101,7 @@ func TestRefreshMoves(t *testing.T) {
 func TestRefreshRefusesUnparseable(t *testing.T) {
 	t.Parallel()
 	d := fixtureDeps(t, settled(t)+"\n##### ⬜ stray\n", false)
-	d.GH, d.Herdr = noHerdr(t), noHerdr(t)
-	if _, err := d.refresh(t.Context(), RefreshInput{}); err == nil || !strings.Contains(err.Error(), "does not parse") {
+	if _, err := d.refreshWith(t.Context(), RefreshInput{}, refresh.Reconciler{GH: noHerdr(t), Herdr: noHerdr(t)}); err == nil || !strings.Contains(err.Error(), "does not parse") {
 		t.Errorf("err %v", err)
 	}
 }

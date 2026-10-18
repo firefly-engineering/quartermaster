@@ -254,7 +254,9 @@ func setStatus(src []byte, it *note.Item, status string, links []string) ([]byte
 	if len(links) > 0 {
 		head += ", " + strings.Join(links, ", ")
 	}
-	line, err := note.Renderer{}.ItemTitle(note.ItemUnit{ID: it.ID, Icon: it.Icon, Title: head, Summary: summary, Heading: it.Heading})
+	line, err := note.Renderer{}.ItemTitle(note.ItemUnit{
+		ID: it.ID, Icon: it.Icon, Title: head, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch,
+	})
 	if err != nil {
 		return nil, err
 	}

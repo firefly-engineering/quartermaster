@@ -10,7 +10,7 @@
 // Deps.engine; nothing else writes a note.
 //
 // Like every package but main, this one reads neither the environment nor the cwd: [Deps]
-// carries the configuration, the clock, jj, and runners for gh and herdr.
+// carries the configuration, the clock, and the paths of jj, git, gh and herdr.
 package tools
 
 import (
@@ -27,7 +27,6 @@ import (
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/engine"
-	"github.com/firefly-engineering/quartermaster/internal/refresh"
 )
 
 // Deps are what the tools need from outside, all resolved by main.
@@ -35,9 +34,10 @@ type Deps struct {
 	Config config.Config
 	Now    func() time.Time // the clock; tools read it in UTC
 	JJ     string           // jj's path, "" when not found
-	Env    []string         // jj's environment
-	GH     refresh.Runner   // runs gh, for refresh
-	Herdr  refresh.Runner   // runs herdr, for refresh
+	Git    string           // git's path, "" when not found
+	GH     string           // gh's path, "" when not found
+	Herdr  string           // herdr's path, "" when not found
+	Env    []string         // the environment jj, git, gh and herdr run with
 }
 
 // Tool is one operation, servable over MCP and runnable from the CLI.
@@ -161,6 +161,15 @@ func All(d Deps) []Tool {
 				"reply with links to an item sent to another repo marks it acked. Also ticks paired checkboxes " +
 				"and derives icons. Returns what it changed and every item it checked and left, with why.",
 			Run: d.refresh,
+		},
+		Def[TaskDispatchInput, TaskDispatchOutput]{
+			Name: "task_dispatch", Verb: "dispatch",
+			Description: "Start work on a ref, owner/repo#N. Mode session (the default) sends its work item's prompt, " +
+				"or /implement <url>, to the project's herdr session, and leaves the note alone. Mode fresh creates or " +
+				"reuses the ref's workspace (jj workspace, else git worktree, under dispatch.workspace_root), starts " +
+				"harness.worker in a new herdr tab there and prompts it, then records the pane and workspace on the " +
+				"ref's work item and moves it to IN_PROGRESS.",
+			Run: d.taskDispatch,
 		},
 	}
 }

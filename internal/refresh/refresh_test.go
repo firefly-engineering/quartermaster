@@ -111,7 +111,7 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 - 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1:p7 ws=/ws/7 --> ^gone
 - 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited
 - 🔄 [#9](https://github.com/o/r/issues/9): its agent works <!-- qm pane=w1:p9 ws=/ws/9 --> ^working
-- ⏳ [#10](https://github.com/o/r/issues/10): waits, pane gone <!-- qm pane=w1:p10 ws=/ws/10 --> — on review ^waits
+- ⏳ [#10](https://github.com/o/r/issues/10): waits, pane gone — on review <!-- qm pane=w1:p10 ws=/ws/10 --> ^waits
 - ⏳ [#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed
 - ⬜ [#12](https://github.com/o/r/issues/12): closed with no reason ^no-reason
 - ⬜ [#13](https://github.com/o/r/issues/13): gh fails ^gh-fails
@@ -232,11 +232,11 @@ func TestGatherAndApply(t *testing.T) {
 		{"- 🔍 [#5](https://github.com/o/r/pull/5): a merged PR ^merged",
 			"- ✅ [#5](https://github.com/o/r/pull/5): a merged PR — merged https://github.com/o/r/pull/5 ^merged"},
 		{"- 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1:p7 ws=/ws/7 --> ^gone",
-			"- ⏳ [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1:p7 ws=/ws/7 --> — worker exited: pane w1:p7 is gone ^gone"},
+			"- ⏳ [#7](https://github.com/o/r/issues/7): its pane is gone — worker exited: pane w1:p7 is gone <!-- qm pane=w1:p7 ws=/ws/7 --> ^gone"},
 		{"- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited",
-			"- ⏳ [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1:p8 ws=/ws/8 --> — worker exited: no agent in pane w1:p8 ^exited"},
+			"- ⏳ [#8](https://github.com/o/r/issues/8): its agent exited — worker exited: no agent in pane w1:p8 <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited"},
 		{"- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone",
-			"- ✅ [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> — closed as completed: https://github.com/o/r/issues/0 ^closed-gone"},
+			"- ✅ [#14](https://github.com/o/r/issues/14): closed, its pane gone too — closed as completed: https://github.com/o/r/issues/0 <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone"},
 		{"→ infra, **sent**, asked 10:00 ^port",
 			"→ infra, **acked**, asked 10:00, https://github.com/o/infra/pull/77, https://github.com/o/infra/actions/runs/9 ^port"},
 		{"- 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third",
@@ -386,7 +386,7 @@ func TestReplyRoutes(t *testing.T) {
 	want := strings.NewReplacer(
 		"##### ⏳ open the port → other, **sent**\n", "##### ⏳ open the port → other, **acked**, https://github.com/o/infra/pull/5\n",
 		"**acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9:p2 ws=/ws --> ^key",
-		"**acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9:p2 ws=/ws -->, https://github.com/o/infra/pull/2 ^key",
+		"**acked**, https://github.com/o/infra/pull/1, https://github.com/o/infra/pull/2 <!-- qm pane=w9:p2 ws=/ws --> ^key",
 	).Replace(src)
 	if string(out) != want {
 		t.Errorf("note:\n%s\nwant:\n%s", out, want)

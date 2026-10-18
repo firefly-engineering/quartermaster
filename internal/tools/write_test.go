@@ -286,6 +286,25 @@ func TestItemUpsertUpdate(t *testing.T) {
 			t.Errorf("out %+v", out)
 		}
 	})
+	t.Run("keeping its dispatch marker, in either form", func(t *testing.T) {
+		t.Parallel()
+		const marker = "<!-- qm pane=w1:p2 ws=/ws/acme/web/issue-12 -->"
+		withMarker := func(src string) string {
+			src = strings.Replace(src, "in review ^login-stack", "in review "+marker+" ^login-stack", 1)
+			return strings.Replace(src, "&_item=session-store) ^session-store", "&_item=session-store) "+marker+" ^session-store", 1)
+		}
+		d := fixtureDeps(t, withMarker(settled(t)), false)
+		for _, f := range []ItemFields{{ID: "login-stack", Title: "login stack, in review", Ref: "acme/web#12"}, {
+			ID: "session-store", Title: "which session store?", Ref: "#14", Body: "Unblocks #15.", Cost: "15 min",
+			Route: "/grill-with-docs", Button: "grill in web", Prompt: &PromptInput{To: "web", Text: "/grill-with-docs https://github.com/acme/web/issues/14"},
+		}} {
+			if _, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: f}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		d.checkNote(t, withMarker(edited(t, "Unblocks #15. 10 min.", "Unblocks #15. 15 min.",
+			loginStack, "- 🔍 [#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n")))
+	})
 	t.Run("moved to another project's missing bucket", func(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), false)

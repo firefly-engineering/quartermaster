@@ -11,8 +11,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/skills"
 )
+
+// TestDeps hands the tools the paths of jj, git, gh and herdr found on PATH, and the environment.
+func TestDeps(t *testing.T) {
+	t.Parallel()
+	h := testHost(t)
+	h.environ = []string{"A=1"}
+	h.lookPath = func(name string) (string, error) { return "/bin/" + name, nil }
+	d := deps(config.Config{}, h)
+	if d.JJ != "/bin/jj" || d.Git != "/bin/git" || d.GH != "/bin/gh" || d.Herdr != "/bin/herdr" || len(d.Env) != 1 {
+		t.Errorf("deps %+v", d)
+	}
+}
 
 func TestVersion(t *testing.T) {
 	t.Parallel()

@@ -550,7 +550,7 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	it.ID = id
 	it.End = p.nodeEnd(para)
 	it.Button = p.buttonLabel(para)
-	it.Dispatch = p.dispatch(para)
+	p.dispatch(it, para)
 	p.addItem(it)
 	p.bucket.Items = append(p.bucket.Items, it)
 	return it
@@ -566,6 +566,26 @@ func (p *parser) buttonLabel(para *ast.Paragraph) string {
 		}
 		if label, ok := strings.CutPrefix(p.inlineText(l), buttonMark); ok {
 			return label
+		}
+	}
+	return ""
+}
+
+// dispatch sets it's Dispatch from the first dispatch marker among block's inlines, and
+// where its `^<id>` and that marker are. It returns the marker's source, "" without one.
+func (p *parser) dispatch(it *Item, block ast.Node) string {
+	last := block.Lines().At(block.Lines().Len() - 1)
+	it.idAt = last.Start + bytes.LastIndex(last.Value(p.src), []byte("^"+it.ID))
+	for c := block.FirstChild(); c != nil; c = c.NextSibling() {
+		h, ok := c.(*ast.RawHTML)
+		if !ok || h.Segments.Len() == 0 {
+			continue
+		}
+		start, end := h.Segments.At(0).Start, h.Segments.At(h.Segments.Len()-1).Stop
+		raw := string(p.src[start:end])
+		if d, ok := parseMarker(raw); ok {
+			it.Dispatch, it.marker = &d, Span{Start: start, End: end}
+			return raw
 		}
 	}
 	return ""
@@ -834,7 +854,10 @@ func (p *parser) listItem(li, first ast.Node) {
 	icon := first.Lines().At(0).Start // a list item's text opens on its icon
 	it := &Item{
 		Span: p.blockSpan(li), Head: p.span(p.nodeStart(li), p.nodeEnd(first)), IconSpan: p.span(icon, icon+len(lead)),
-		ID: id, Icon: Icon(lead), Title: withoutID(rest, id), Dispatch: p.dispatch(first),
+		ID: id, Icon: Icon(lead), Title: withoutID(rest, id),
+	}
+	if raw := p.dispatch(it, first); raw != "" {
+		it.Title = strings.Join(strings.Fields(strings.Replace(it.Title, raw, "", 1)), " ")
 	}
 	p.addItem(it)
 	if p.part != nil {

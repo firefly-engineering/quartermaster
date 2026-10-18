@@ -1,74 +1,85 @@
 package note
 
 import (
+	"fmt"
+	"path/filepath"
 	"strings"
-
-	"github.com/yuin/goldmark/ast"
 )
 
-// Dispatch is where a work item was dispatched (spec §9.2): the herdr pane running its agent
-// and the workspace it works in. The note carries it as an HTML comment on the item's line,
-// `<!-- qm pane=<id> ws=<path> -->`, which Obsidian does not show.
-type Dispatch struct{ Pane, Workspace string }
-
-// The dispatch marker's comment: its opening, its tag, and its closing.
-const (
-	commentOpen  = "<!--"
-	commentClose = "-->"
-	markerTag    = "qm"
-)
-
-// DispatchMarker renders d as the comment a dispatched item carries on its line. Neither
-// field may hold whitespace or `--`, or the marker would not read back.
-func (r Renderer) DispatchMarker(d Dispatch) string {
-	return commentOpen + " " + markerTag + " pane=" + d.Pane + " ws=" + d.Workspace + " " + commentClose
+// Dispatch is where task_dispatch started a fresh agent on a work item (spec §9.2): its herdr
+// pane and its workspace. The item records it as an HTML comment, `<!-- qm pane=<id> ws=<path> -->`,
+// just before its `^<id>`, in a list item's line or a ##### item's paragraph; Obsidian does not
+// show it.
+type Dispatch struct {
+	Pane, Workspace string
 }
 
-// dispatch reads the first dispatch marker among the inline nodes of block: a list item's
-// first block or a ##### item's ^id paragraph. A comment in a code span is code, not a raw
-// HTML node, so it is not a marker. A `qm` comment that does not read
-// `pane=<id> ws=<path>`, once each and nothing else, is not one either.
-func (p *parser) dispatch(block ast.Node) *Dispatch {
-	for c := block.FirstChild(); c != nil; c = c.NextSibling() {
-		raw, ok := c.(*ast.RawHTML)
-		if !ok {
-			continue
+// The marker's delimiters and keyword.
+const (
+	markerOpen  = "<!--"
+	markerClose = "-->"
+	markerWord  = "qm"
+)
+
+// DispatchMarker renders d as its HTML comment, `<!-- qm pane=<id> ws=<path> -->`.
+func (r Renderer) DispatchMarker(d Dispatch) string {
+	return markerOpen + " " + markerWord + " pane=" + d.Pane + " ws=" + d.Workspace + " " + markerClose
+}
+
+// Check reports why d cannot be written as a marker that parses back to d.
+func (d Dispatch) Check() error {
+	for _, f := range []struct{ name, v string }{{"pane", d.Pane}, {"ws", d.Workspace}} {
+		if f.v == "" || strings.ContainsFunc(f.v, isSpace) || strings.Contains(f.v, "--") || strings.Contains(f.v, ">") {
+			return fmt.Errorf("dispatch %s %q: want a non-empty value with no whitespace, -- or >", f.name, f.v)
 		}
-		var b strings.Builder
-		for i := range raw.Segments.Len() {
-			seg := raw.Segments.At(i)
-			b.Write(seg.Value(p.src))
-		}
-		if d := parseMarker(b.String()); d != nil {
-			return d
-		}
+	}
+	if !filepath.IsAbs(d.Workspace) {
+		return fmt.Errorf("dispatch ws %q: want an absolute path", d.Workspace)
 	}
 	return nil
 }
 
-// parseMarker reads a raw HTML comment as a dispatch marker, or returns nil.
-func parseMarker(s string) *Dispatch {
-	body, ok := strings.CutPrefix(s, commentOpen)
+// parseMarker reads raw, an HTML comment's source, as a dispatch marker. ok is false for any
+// other comment.
+func parseMarker(raw string) (d Dispatch, ok bool) {
+	body, ok := strings.CutPrefix(raw, markerOpen)
 	if !ok {
-		return nil
+		return Dispatch{}, false
 	}
-	if body, ok = strings.CutSuffix(body, commentClose); !ok {
-		return nil
+	if body, ok = strings.CutSuffix(body, markerClose); !ok {
+		return Dispatch{}, false
 	}
-	fields := strings.Fields(body)
-	if len(fields) != 3 || fields[0] != markerTag {
-		return nil
+	f := strings.Fields(body)
+	if len(f) != 3 || f[0] != markerWord {
+		return Dispatch{}, false
 	}
-	attrs := map[string]string{}
-	for _, kv := range fields[1:] {
-		k, v, ok := strings.Cut(kv, "=")
-		if _, dup := attrs[k]; !ok || v == "" || dup {
-			return nil
+	for _, kv := range f[1:] {
+		k, v, _ := strings.Cut(kv, "=")
+		switch {
+		case k == "pane" && d.Pane == "":
+			d.Pane = v
+		case k == "ws" && d.Workspace == "":
+			d.Workspace = v
+		default:
+			return Dispatch{}, false
 		}
-		attrs[k] = v
 	}
-	if attrs["pane"] == "" || attrs["ws"] == "" {
-		return nil
+	return d, d.Pane != "" && d.Workspace != ""
+}
+
+// SetDispatch records d on work item id of n, parsed from src, and returns the new source: it
+// replaces the item's marker, or writes one just before its `^<id>`. Nothing else changes.
+func SetDispatch(n *Note, src []byte, id string, d Dispatch) ([]byte, error) {
+	if err := d.Check(); err != nil {
+		return nil, fmt.Errorf("^%s: %w", id, err)
 	}
-	return &Dispatch{Pane: attrs["pane"], Workspace: attrs["ws"]}
+	it := n.Item(id)
+	if it == nil {
+		return nil, fmt.Errorf("%w ^%s", ErrNoItem, id)
+	}
+	marker := Renderer{}.DispatchMarker(d)
+	if it.Dispatch != nil {
+		return Replace(src, it.marker, []byte(marker)), nil
+	}
+	return Insert(src, it.idAt, []byte(marker+" ")), nil
 }

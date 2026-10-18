@@ -170,6 +170,7 @@ func updateItem(n *note.Note, src []byte, r note.Renderer, it *note.Item, f Item
 	if err != nil {
 		return nil, "", err
 	}
+	u.Dispatch = it.Dispatch // task_dispatch's record, which item_upsert does not take
 	// An update rewrites the item whole, and the note is all there is of its prose and prompt.
 	if it.Heading && !u.Heading {
 		return nil, "", fmt.Errorf("^%s is a ##### item, which an update rewrites: give its body or prompt, or it would lose them", f.ID)

@@ -1,7 +1,7 @@
 // Command quartermaster keeps the day's worklog note and dispatches its work (docs/spec.md).
 //
 // main is the one place that reads the process's environment, home, cwd and clock and finds
-// jj and herdr on PATH; it passes what it found down to every package.
+// jj, git, gh and herdr on PATH; it passes what it found down to every package.
 package main
 
 import (
@@ -20,7 +20,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
-	"github.com/firefly-engineering/quartermaster/internal/refresh"
 	qmsend "github.com/firefly-engineering/quartermaster/internal/send"
 	"github.com/firefly-engineering/quartermaster/internal/server"
 	"github.com/firefly-engineering/quartermaster/internal/tools"
@@ -148,13 +147,14 @@ func absolute(p, cwd string) string {
 
 // deps are the tools' dependencies, from the configuration and the host.
 func deps(cfg config.Config, h host) tools.Deps {
-	jj, _ := h.lookPath("jj") // "" is fine until the vault turns out to be a jj repo
-	gh, _ := h.lookPath("gh") // "" makes refresh report gh missing, per item
+	// Each "" is fine until a tool needs it: jj for a jj vault or project, git for a git
+	// project, gh for refresh (which reports it missing, per item), herdr to refresh, send or
+	// dispatch.
+	jj, _ := h.lookPath("jj")
+	git, _ := h.lookPath("git")
+	gh, _ := h.lookPath("gh")
 	herdr, _ := h.lookPath("herdr")
-	return tools.Deps{
-		Config: cfg, Now: h.now, JJ: jj, Env: h.environ,
-		GH: refresh.Command("gh", gh, h.environ), Herdr: refresh.Command("herdr", herdr, h.environ),
-	}
+	return tools.Deps{Config: cfg, Now: h.now, JJ: jj, Git: git, GH: gh, Herdr: herdr, Env: h.environ}
 }
 
 // serve runs the MCP server on stdin and stdout until the client disconnects.

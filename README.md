@@ -18,9 +18,9 @@ Built today:
 - `quartermaster serve`: a stdio MCP server with the `workflow_rules` and `phase` prompts
   ([spec §8](docs/spec.md#8-mcp-prompts)) and the tools `day_open`, `day_read`,
   `objective_set`, `item_upsert`, `item_transition`, `next_set`, `status_set`,
-  `carryover_verdict` and `refresh` ([spec §6](docs/spec.md#6-mcp-tools)).
-- `quartermaster note open|read|objective|item|transition|next|status|verdict|refresh`: the
-  same tools from the command line.
+  `carryover_verdict`, `refresh` and `task_dispatch` ([spec §6](docs/spec.md#6-mcp-tools)).
+- `quartermaster note open|read|objective|item|transition|next|status|verdict|refresh|dispatch`:
+  the same tools from the command line.
 - `quartermaster send <vault> <date> <item-id>`: the ▶ button handler
   ([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)).
 - The configuration ([spec §3](docs/spec.md#3-configuration)): `serve` and `note` read
@@ -30,8 +30,8 @@ Built today:
 
 Not built yet:
 
-- The other MCP tool, and its `note` verb:
-  [#11](https://github.com/firefly-engineering/quartermaster/issues/11) (`task_dispatch`).
+- `prompt_send` ([spec §6](docs/spec.md#6-mcp-tools)), the MCP tool form of
+  `quartermaster send`.
 
 ## Usage
 
@@ -64,6 +64,7 @@ quartermaster note transition '{"item": "login-stack", "to": "DONE", "summary": 
 | `status` | `status_set` | rewrites the status line |
 | `verdict` | `carryover_verdict` | records keep, defer or drop on a carry-over row |
 | `refresh` | `refresh` | reconciles the note with GitHub and herdr |
+| `dispatch` | `task_dispatch` | starts work on a ref, in its project's session or a fresh agent |
 
 The write tools change the note through one lock, check, rename and commit sequence
 ([ADR 0006](docs/adr/0006-mutations-lock-check-rename-commit.md)), one jj change each, and
@@ -88,6 +89,19 @@ item's prompt mark it **acked** and are added to its line; once GitHub moves it 
 reads **done**. Its write also ticks paired
 checkboxes and derives icons, as every write does. It returns what it changed, and every item
 it checked and left as it was, with why.
+
+`task_dispatch` takes `{ref, mode, instruction}`, the ref as `owner/repo#N`, and finds the
+ref's work item in the note by the link leading its title
+([spec §9.2](docs/spec.md#92-task_dispatch)). Mode `session`, the default, sends the item's
+prompt, or `/implement <url>`, to the project's herdr session as `quartermaster send` does,
+and leaves the note alone. Mode `fresh` creates the ref's workspace at
+`<dispatch.workspace_root>/<owner>/<repo>/issue-<N>` with `jj workspace add`, or with
+`git worktree add -b issue-<N>` when the project has no `.jj`
+([ADR 0004](docs/adr/0004-dispatch-isolates-in-a-jj-workspace.md)), and reuses one that exists
+for the ref. It then starts `harness.worker` in a new tab of the project's herdr workspace,
+prompts it, and records `<!-- qm pane=<id> ws=<path> -->` on the item, which it moves to
+`IN_PROGRESS`. If herdr fails, the workspace stays and the item does not move; if the note
+cannot be written, the error names the agent's pane.
 
 ## Install
 

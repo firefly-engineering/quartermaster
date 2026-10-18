@@ -38,7 +38,7 @@ func TransitionItem(n *Note, src []byte, id string, to State, summary string) ([
 	if summary == "" {
 		summary = was
 	}
-	line, err := Renderer{}.ItemTitle(ItemUnit{ID: id, Icon: to.Icon(), Title: head, Summary: summary, Heading: it.Heading})
+	line, err := Renderer{}.ItemTitle(ItemUnit{ID: id, Icon: to.Icon(), Title: head, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch})
 	if err != nil {
 		return nil, err
 	}

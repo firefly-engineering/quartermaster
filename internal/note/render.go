@@ -67,6 +67,10 @@ type ItemUnit struct {
 	Body    string      // the `#####` form's prose before its button; no blank line
 	Button  string      // the ▶ label, as `grill in trunk`; needs a Prompt
 	Prompt  *PromptUnit // the collapsed `> [!prompt]-` callout
+
+	// Dispatch is the dispatch marker written just before its ` ^<id>`: on its title line in
+	// the list form, ending its paragraph in the ##### one.
+	Dispatch *Dispatch
 }
 
 // SummarySep parts a work item's title from its summary. A title holds none, so the first one
@@ -400,6 +404,13 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	if button != "" {
 		para = append(para, button)
 	}
+	if u.Dispatch != nil {
+		if len(para) == 0 {
+			para = []string{r.DispatchMarker(*u.Dispatch)}
+		} else {
+			para[len(para)-1] += " " + r.DispatchMarker(*u.Dispatch)
+		}
+	}
 	if len(para) == 0 {
 		para = []string{"^" + u.ID}
 	} else {
@@ -451,6 +462,14 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 	if strings.Contains(u.Title+u.Cost+u.Route, SummarySep) {
 		return "", "", fmt.Errorf("%s: %q starts the summary, so the title, cost and route may not hold it", what, SummarySep)
 	}
+	if u.Dispatch != nil {
+		if err := u.Dispatch.Check(); err != nil {
+			return "", "", fmt.Errorf("%s: %w", what, err)
+		}
+		if u.ID == "" {
+			return "", "", fmt.Errorf("%s: a dispatch marker needs an id", what)
+		}
+	}
 	if strings.Contains(u.Route, "`") {
 		return "", "", fmt.Errorf("%s: route %q: no backticks, it renders in a code span", what, u.Route)
 	}
@@ -475,6 +494,9 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 		title += SummarySep + u.Summary
 	}
 	if !u.Heading && u.ID != "" {
+		if u.Dispatch != nil {
+			title += " " + r.DispatchMarker(*u.Dispatch)
+		}
 		title += " ^" + u.ID
 	}
 	return what, title + "\n", nil
@@ -483,7 +505,7 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 // refLink renders a ref as a full link (ADR 0007): `[#N](<url>)` in its own project, and
 // `[<repo>#N](<url>)` in another, as the skill writes `[IaC#564](…)`.
 func refLink(f Ref, project string) (string, error) {
-	owner, repo, _ := strings.Cut(f.Repo, "/")
+	_, repo, _ := strings.Cut(f.Repo, "/")
 	if !isRepo(f.Repo) || f.N < 1 {
 		return "", fmt.Errorf("ref %+v: want owner/repo#N", f)
 	}
@@ -491,7 +513,7 @@ func refLink(f Ref, project string) (string, error) {
 	if f.Repo != project {
 		label = repo + label
 	}
-	return "[" + label + "](https://github.com/" + owner + "/" + repo + "/issues/" + strconv.Itoa(f.N) + ")", nil
+	return "[" + label + "](" + f.URL() + ")", nil
 }
 
 // Note renders a whole note from d, in template.md's layout. Its buttons carry d.Date, the
