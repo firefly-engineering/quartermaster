@@ -136,6 +136,12 @@ Both are user-invoked, so the batch starts from the ▶ button in *Next*, which 
 command to the project's session. For example:
 `/mass-implement arbora-partners/trunk #883 #871 — global context: <epic URL>`.
 
+A batch takes every ticket it can reach, not only the ones unblocked today: each
+`ready-for-agent` ticket whose blockers are all merged or in the same batch.
+`/mass-implement` runs a dependent after its dependencies, so work the batch unblocks joins
+it instead of waiting for the next one. Leave a ticket out only when it also waits on a
+human decision, another repo or a date.
+
 Record a *Part N — Agent batch* marked **running**. When it reports back, rewrite the
 Part as a table with one row per ticket: PR, then outcome (`built`, **part only**, or back
 to HITL with the reason). Then:
