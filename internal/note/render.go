@@ -139,6 +139,65 @@ func (r Renderer) Objective(u ObjectiveUnit) ([]byte, error) {
 	return tableRow(u.Objective, u.DoneWhen, progress)
 }
 
+// ClockLayout is the time layout of the status line's `HH:MM`, in UTC.
+const ClockLayout = "15:04"
+
+// Carried is an open item of the previous note, as day_open carries it over (spec §6).
+type Carried struct {
+	Text      string // the item as written: a title, an objective, an action's text, a row's item
+	Repo      string // its project, "" outside one
+	ID        string // its `^<id>` there, "" for none; the row links back to it
+	Where     string // the bucket or section it is in, "" to leave out
+	State     State  // its state, or 0 when StateText holds it
+	Manual    bool   // a manual action, which carries a checkbox rather than an icon
+	StateText string // the state as written: an objective's progress, a carried row's state
+}
+
+// CarriedRow renders c, an open item of the note of date prev, as a carry-over row with no
+// verdict: the item `<text> (<repo>) [[<prev>#^<id>|^<id>]]`, and the state
+// `<icon> <STATE> in <where>`, `<STATE>, manual action in <where>`, or StateText.
+func (r Renderer) CarriedRow(prev string, c Carried) (CarryOverUnit, error) {
+	if c.Text == "" {
+		return CarryOverUnit{}, errors.New("carried item: empty text")
+	}
+	if err := oneLine("carried item", c.Text+c.Where+c.StateText); err != nil {
+		return CarryOverUnit{}, err
+	}
+	item := c.Text
+	if c.Repo != "" {
+		if !isRepo(c.Repo) {
+			return CarryOverUnit{}, fmt.Errorf("carried item %q: repo %q: want owner/repo", c.Text, c.Repo)
+		}
+		item += " (" + c.Repo + ")"
+	}
+	if c.ID != "" {
+		if !ValidID(c.ID) {
+			return CarryOverUnit{}, fmt.Errorf("carried item %q: invalid item id ^%s", c.Text, c.ID)
+		}
+		if !IsDate(prev) {
+			return CarryOverUnit{}, fmt.Errorf("carried item %q: previous date %q: want YYYY-MM-DD", c.Text, prev)
+		}
+		item += " [[" + prev + "#^" + c.ID + "|^" + c.ID + "]]"
+	}
+	if (c.State == 0) == (c.StateText == "") {
+		return CarryOverUnit{}, fmt.Errorf("carried item %q: want one of State and StateText", c.Text)
+	}
+	if c.StateText != "" {
+		return CarryOverUnit{Item: item, State: c.StateText}, nil
+	}
+	if !c.State.valid() {
+		return CarryOverUnit{}, fmt.Errorf("carried item %q: invalid state %d", c.Text, c.State)
+	}
+	state := string(c.State.Icon()) + " " + c.State.String()
+	if c.Manual {
+		state = c.State.String() + ", manual action"
+	}
+	if c.Where != "" {
+		state += " in " + c.Where
+	}
+	return CarryOverUnit{Item: item, State: state}, nil
+}
+
 // CarryOver renders one carry-over table row.
 func (r Renderer) CarryOver(u CarryOverUnit) ([]byte, error) {
 	return tableRow(u.Item, u.State, u.Verdict)
@@ -258,11 +317,11 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 // Note renders a whole note from d, in template.md's layout. Its buttons carry d.Date, the
 // note's own date, whatever r.Date holds.
 func (r Renderer) Note(d Day) ([]byte, error) {
-	if !isDate(d.Date) {
+	if !IsDate(d.Date) {
 		return nil, fmt.Errorf("note date %q: want YYYY-MM-DD", d.Date)
 	}
 	r.Date = d.Date
-	if d.Previous != "" && !isDate(d.Previous) {
+	if d.Previous != "" && !IsDate(d.Previous) {
 		return nil, fmt.Errorf("previous date %q: want YYYY-MM-DD", d.Previous)
 	}
 	var blocks []string
@@ -420,7 +479,7 @@ func (r Renderer) button(label, id string) (string, error) {
 	if r.Vault == "" {
 		return "", errors.New("button: no vault name")
 	}
-	if !isDate(r.Date) {
+	if !IsDate(r.Date) {
 		return "", fmt.Errorf("button: note date %q: want YYYY-MM-DD", r.Date)
 	}
 	uri := "obsidian://shell-commands/?vault=" + queryValue(r.Vault) +
@@ -507,11 +566,12 @@ func isBlank(s string) bool { return strings.TrimSpace(s) == "" }
 func isSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }
 
 func isClock(s string) bool {
-	_, err := time.Parse("15:04", s)
+	_, err := time.Parse(ClockLayout, s)
 	return err == nil && len(s) == 5
 }
 
-func isDate(s string) bool {
-	_, err := time.Parse(time.DateOnly, s)
-	return err == nil
+// IsDate reports whether s is a note's date, YYYY-MM-DD, written as Go writes it.
+func IsDate(s string) bool {
+	t, err := time.Parse(time.DateOnly, s)
+	return err == nil && t.Format(time.DateOnly) == s
 }

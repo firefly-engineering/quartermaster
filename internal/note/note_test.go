@@ -234,6 +234,7 @@ func TestUnits(t *testing.T) {
 		{"", true, "Review the diff"},
 		{"rotate", false, "Rotate the token"},
 		{"", false, "Nested, and ordered"},
+		{"", false, "Ask about the budget"},
 	}
 	if len(n.Actions) != len(want) {
 		t.Fatalf("actions: %+v", n.Actions)
@@ -264,11 +265,25 @@ func TestUnits(t *testing.T) {
 		t.Errorf("heading item without prompt: %+v", it)
 	}
 	if it := q.Items[1]; it.ID != "impl-4" || it.Icon != IconInReview || it.Heading ||
-		at(src, it.Span) != "- 🔍 [#4](https://example.com/4) in review ^impl-4\n  - a note on it\n" {
+		at(src, it.Span) != "- 🔍 [#4](https://example.com/4) in review ^impl-4\n  - a note on it\n  - ⬜ a step of the item, not an entry\n" {
 		t.Errorf("list item: %+v %q", it, at(src, it.Span))
 	}
 	if it := q.Items[2]; it.ID != "deep-1" || it.Icon != IconDropped {
 		t.Errorf("nested list item: %+v", it)
+	}
+	// Entries: led by a state icon, with no id; not `—`, prose, a checkbox or a work item's step.
+	if got := q.Entries; len(got) != 2 ||
+		got[0].Icon != IconInProgress || got[0].Text != "a nested entry" || at(src, got[0].Span) != "  - 🔄 a nested entry\n" ||
+		got[1].Icon != IconTodo || got[1].Text != "[#5](https://example.com/5) an entry with no id, on two lines" ||
+		at(src, got[1].Span) != "- ⬜ [#5](https://example.com/5) an entry with no id,\n  on two lines\n" {
+		t.Errorf("queue entries: %+v", got)
+	}
+	if got := p.Remains.Buckets[1].Entries; len(got) != 0 {
+		t.Errorf("actions bucket entries: %+v", got)
+	}
+	if got := n.Process.Entries; len(got) != 1 || got[0].Text != "File a ticket for the cache" || got[0].Icon != "" ||
+		at(src, got[0].Span) != "- File a ticket for the cache\n" {
+		t.Errorf("process entries: %+v", got)
 	}
 	if len(n.Anchors) != 2 || n.Anchors[0].ID != "part-1" || n.Anchors[1].ID != "queue" {
 		t.Errorf("anchors: %+v", n.Anchors)
@@ -450,6 +465,9 @@ func checkSpans(t *testing.T, src []byte, n *Note) {
 						add(it.Prompt.Span)
 					}
 				}
+				for _, e := range b.Entries {
+					add(e.Span)
+				}
 			}
 		}
 	}
@@ -461,6 +479,9 @@ func checkSpans(t *testing.T, src []byte, n *Note) {
 	}
 	if n.Process != nil {
 		add(n.Process.Span)
+		for _, e := range n.Process.Entries {
+			add(e.Span)
+		}
 	}
 	for _, a := range n.Actions {
 		add(a.Span)

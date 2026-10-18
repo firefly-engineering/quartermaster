@@ -58,6 +58,19 @@ func (a ManualAction) State() State {
 	return Todo
 }
 
+// closedVerdicts are the verdicts that close a carry-over row: keep moves it into its project's
+// bucket, drop closes it, and the hand-written notes record a row finished during the day as
+// done. Defer, or no verdict yet, leaves it open.
+var closedVerdicts = map[string]bool{"keep": true, "kept": true, "drop": true, "dropped": true, "done": true}
+
+// Open reports whether a carry-over row is still open, by its verdict's first word, before any
+// `:` and in any case.
+func (r CarryOverRow) Open() bool {
+	word, _, _ := strings.Cut(strings.TrimSpace(r.Verdict), " ")
+	word, _, _ = strings.Cut(word, ":")
+	return !closedVerdicts[strings.ToLower(word)]
+}
+
 // The transition errors; Transition wraps them with the move it refused.
 var (
 	ErrIllegalTransition = errors.New("illegal transition")

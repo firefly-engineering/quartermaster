@@ -459,7 +459,7 @@ func (p *parser) section2(txt string, icon Icon, iconSpan Span, rest string, who
 	line := whole.Line
 	fixed := map[string]bool{
 		"Objectives": p.n.Objectives != nil, "Next": p.n.Next != nil,
-		"Carry-over": p.n.CarryOver != nil, "Process": p.n.Process != nil,
+		"Carry-over": p.n.CarryOver != nil, ProcessSection: p.n.Process != nil,
 	}
 	if seen, ok := fixed[txt]; ok && seen {
 		p.errorf(line, "repeated section %q", txt)
@@ -479,7 +479,7 @@ func (p *parser) section2(txt string, icon Icon, iconSpan Span, rest string, who
 		p.n.CarryOver = &CarryOver{Span: whole}
 		p.open(2, &p.n.CarryOver.Span)
 		p.sec = secCarryOver
-	case "Process":
+	case ProcessSection:
 		p.n.Process = &Process{Span: whole}
 		p.open(2, &p.n.Process.Span)
 		p.sec = secProcess
@@ -597,7 +597,7 @@ func (p *parser) status(para *ast.Paragraph) {
 		p.errorf(line, "%s", form)
 		return
 	}
-	if _, err := time.Parse("15:04", s[:5]); err != nil {
+	if _, err := time.Parse(ClockLayout, s[:5]); err != nil {
 		p.errorf(line, "%s", form)
 		return
 	}
@@ -694,6 +694,18 @@ func (p *parser) list(l *ast.List) {
 		}
 		s := p.blockSpan(l)
 		p.n.Process.List = &s
+		for li := l.FirstChild(); li != nil; li = li.NextSibling() {
+			first := li.FirstChild()
+			if first == nil {
+				continue
+			}
+			if _, box := first.FirstChild().(*extast.TaskCheckBox); box {
+				continue // a manual action, recorded already
+			}
+			if txt := p.blockLine(first); txt != string(IconNone) {
+				p.n.Process.Entries = append(p.n.Process.Entries, Entry{Span: p.blockSpan(li), Text: txt})
+			}
+		}
 	case secProject:
 		p.projectList(l)
 	}
@@ -750,8 +762,37 @@ func (p *parser) projectList(l *ast.List) {
 	}
 }
 
+// entry records a bucket's list item with no id as an entry when a state icon leads it. `—`,
+// which is not a state, prose, and a list item nested in a work item are not entries.
+func (p *parser) entry(li, first ast.Node) {
+	for a := li.Parent(); a != nil; a = a.Parent() {
+		if anc, ok := a.(*ast.ListItem); ok && p.placed[anc.FirstChild()] {
+			return // a step of a work item, part of its span
+		}
+	}
+	lead, rest, _ := strings.Cut(p.blockLine(first), " ")
+	if !Icon(lead).isState() {
+		return
+	}
+	p.bucket.Entries = append(p.bucket.Entries, Entry{Span: p.blockSpan(li), Icon: Icon(lead), Text: strings.TrimSpace(rest)})
+}
+
+// blockLine is a block's source on one line: each line trimmed, joined by one space.
+func (p *parser) blockLine(n ast.Node) string {
+	parts := make([]string, n.Lines().Len())
+	for i := range parts {
+		seg := n.Lines().At(i)
+		parts[i] = strings.TrimSpace(string(seg.Value(p.src)))
+	}
+	return strings.Join(parts, " ")
+}
+
 func (p *parser) listItem(li, first ast.Node) {
 	id, ok, bad := p.trailingID(first)
+	if !ok && p.part == nil && p.bucket != nil {
+		p.entry(li, first)
+		return
+	}
 	if !ok || (p.part == nil && p.bucket == nil) {
 		return // no id, or one reported as unplaced
 	}

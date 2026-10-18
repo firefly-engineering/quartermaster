@@ -322,6 +322,30 @@ func TestMutateCreatesAMissingNote(t *testing.T) {
 	}
 }
 
+// TestMutateEmptyNote reads an empty or whitespace-only note as a missing one, and writes over
+// it: there is nothing in it to splice.
+func TestMutateEmptyNote(t *testing.T) {
+	t.Parallel()
+	for name, src := range map[string]string{"empty": "", "whitespace": "\n \t\r\n"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			v := newVault(t, src, false)
+			res, err := v.Mutate(t.Context(), date, "day_open", func(n *note.Note, src []byte) ([]byte, string, error) {
+				if n != nil || src != nil {
+					t.Errorf("an empty note reads as %v, %q", n, src)
+				}
+				return []byte(fixture), "open", nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := v.read(t); got != fixture || !res.Changed {
+				t.Errorf("wrote %q, result %+v", got, res)
+			}
+		})
+	}
+}
+
 // TestMutateReconcilesNextPairs: ticking a *Next* line ticks the action it points at (spec §4.4).
 func TestMutateReconcilesNextPairs(t *testing.T) {
 	t.Parallel()

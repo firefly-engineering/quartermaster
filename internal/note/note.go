@@ -4,6 +4,7 @@
 package note
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 )
@@ -57,6 +58,12 @@ var BucketNames = []string{
 	"Outside input: chase",
 	"Waiting",
 }
+
+// ProcessSection is the name of the `## Process` section.
+const ProcessSection = "Process"
+
+// Empty reports whether a note's source holds only whitespace: such a note counts as missing.
+func Empty(src []byte) bool { return len(bytes.TrimSpace(src)) == 0 }
 
 // PartKinds are the kinds a Part heading names.
 var PartKinds = []string{"Human session", "Agent batch", "Land"}
@@ -160,6 +167,16 @@ type Bucket struct {
 	IconSpan Span   // Icon's own bytes in Heading
 	Name     string // one of BucketNames
 	Items    []*Item
+	Entries  []Entry // its list items led by a state icon with no `^<id>`, at any depth
+}
+
+// Entry is a list item that is not a work item or a manual action: a bucket's line led by a
+// state icon with no `^<id>`, as `- ⬜ [#M](url): a decision with no prompt yet`, or a line of
+// *Process*. Its span covers its nested lists.
+type Entry struct {
+	Span
+	Icon Icon   // its state icon; "" in Process
+	Text string // its first block's source after the icon, its lines joined by one space
 }
 
 // Item is a work item: a `#####` heading whose paragraph ends with `^<id>` (Heading), or a
@@ -214,7 +231,8 @@ type CarryOverRow struct {
 // Process is the `## Process` section and its list.
 type Process struct {
 	Span
-	List *Span
+	List    *Span
+	Entries []Entry // the list's items but its checkboxes (manual actions) and `—`
 }
 
 // ParseError is a unit that cannot be placed, at a 1-based line.

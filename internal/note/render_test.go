@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 var testRenderer = Renderer{Vault: "worklog", Date: "2026-10-18", CommandID: "nf8lgvkx5s"}
@@ -310,5 +311,85 @@ func TestMinimalDay(t *testing.T) {
 	}
 	if strings.Contains(string(got), "previous:") || strings.Contains(string(got), "From [[") {
 		t.Errorf("no previous note, yet:\n%s", got)
+	}
+}
+
+func TestCarriedRow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   Carried
+		want CarryOverUnit
+	}{
+		{"objective", Carried{Text: "Ship it (o/r)", StateText: "🔄 2/3"}, CarryOverUnit{Item: "Ship it (o/r)", State: "🔄 2/3"}},
+		{"work item", Carried{Text: "[#4](u) build", Repo: "o/r", ID: "impl-4", Where: "Agent queue", State: InReview},
+			CarryOverUnit{Item: "[#4](u) build (o/r) [[2026-10-16#^impl-4|^impl-4]]", State: "🔍 IN_REVIEW in Agent queue"}},
+		{"entry", Carried{Text: "drop IE11?", Repo: "o/r", Where: "Decisions for you", State: Todo},
+			CarryOverUnit{Item: "drop IE11? (o/r)", State: "⬜ TODO in Decisions for you"}},
+		{"manual action", Carried{Text: "Rotate", Manual: true, State: Todo},
+			CarryOverUnit{Item: "Rotate", State: "TODO, manual action"}},
+		{"manual action in a bucket", Carried{Text: "Rotate", Repo: "o/r", ID: "rotate", Where: "Your actions", Manual: true, State: Todo},
+			CarryOverUnit{Item: "Rotate (o/r) [[2026-10-16#^rotate|^rotate]]", State: "TODO, manual action in Your actions"}},
+	}
+	for _, tt := range tests {
+		got, err := testRenderer.CarriedRow("2026-10-16", tt.in)
+		if err != nil || got != tt.want {
+			t.Errorf("%s: got %+v, %v; want %+v", tt.name, got, err, tt.want)
+		}
+	}
+	// The backlink's `|` is escaped in the table row.
+	u, err := testRenderer.CarriedRow("2026-10-16", tests[1].in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := testRenderer.CarryOver(u)
+	if err != nil || !strings.Contains(string(row), `[[2026-10-16#^impl-4\|^impl-4]]`) {
+		t.Fatalf("row %q: %v", row, err)
+	}
+
+	for name, c := range map[string]Carried{
+		"no text":     {State: Todo},
+		"two lines":   {Text: "a\nb", State: Todo},
+		"no state":    {Text: "a"},
+		"bad state":   {Text: "a", State: State(42)},
+		"bad id":      {Text: "a", ID: "Bad_ID", State: Todo},
+		"both states": {Text: "a", State: Todo, StateText: "open"},
+		"bad repo":    {Text: "a", Repo: "nope", State: Todo},
+	} {
+		if _, err := testRenderer.CarriedRow("2026-10-16", c); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+	if _, err := testRenderer.CarriedRow("yesterday", Carried{Text: "a", ID: "x", State: Todo}); err == nil {
+		t.Error("a backlink needs the previous note's date")
+	}
+}
+
+func TestIsDate(t *testing.T) {
+	t.Parallel()
+	for s, want := range map[string]bool{
+		"2026-10-19": true, "2026-1-19": false, "2026-02-30": false, "../x": false, "": false, "2026-10-19 ": false,
+	} {
+		if got := IsDate(s); got != want {
+			t.Errorf("IsDate(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
+
+func TestEmpty(t *testing.T) {
+	t.Parallel()
+	for s, want := range map[string]bool{"": true, "\n \t\r\n": true, "# Worklog — 2026-10-19\n": false, " x ": false} {
+		if got := Empty([]byte(s)); got != want {
+			t.Errorf("Empty(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
+
+func TestClockLayout(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 19, 8, 5, 0, 0, time.UTC)
+	b, err := testRenderer.Status(StatusUnit{Time: now.Format(ClockLayout), Text: "x"})
+	if err != nil || string(b) != "**08:05 UTC:** x\n" {
+		t.Fatalf("%q %v", b, err)
 	}
 }

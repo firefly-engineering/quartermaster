@@ -51,6 +51,19 @@ func TestTransitionTable(t *testing.T) {
 	}
 }
 
+func TestCarryOverRowOpen(t *testing.T) {
+	t.Parallel()
+	for verdict, want := range map[string]bool{
+		"": true, "defer": true, "defer: device": true, "  Defer ": true, "later": true,
+		"keep": false, "Keep: today": false, "kept": false, "drop": false, "drop: gone": false,
+		"dropped": false, "done": false,
+	} {
+		if got := (CarryOverRow{Verdict: verdict}).Open(); got != want {
+			t.Errorf("verdict %q: open %v, want %v", verdict, got, want)
+		}
+	}
+}
+
 func TestTransitionUnknownState(t *testing.T) {
 	t.Parallel()
 	for _, c := range [][2]State{{0, Todo}, {Todo, 0}, {Todo, 99}} {
