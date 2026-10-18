@@ -171,6 +171,12 @@ The server may create, reword or move a manual action, and may tick one when the
 it to, but never unticks one ([ADR 0001]). A *Next* line that points at a manual action is
 itself a checkbox (`1. [ ] …`), and ticking either one ticks both at the next write.
 
+A write knows a box by its `^<id>`, a *Next* line by the item its details link points at,
+and any other box by its text. A write may remove a ticked box with its line, as `next_set`
+drops a done *Next* line, but may not leave an open box in its place. A box known by its text
+cannot be told from a new one once reworded, so a write that removes a ticked box known by its
+text may add no open box known by its text: making both changes takes two writes.
+
 ## 5. Phases
 
 The day's cycle (open, unblock, AFK, land, capture, close) is judgement, and stays in the

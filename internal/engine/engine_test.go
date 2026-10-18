@@ -338,23 +338,72 @@ func TestMutateReconcilesNextPairs(t *testing.T) {
 func TestMutateRefusesUntick(t *testing.T) {
 	t.Parallel()
 	src := strings.Replace(fixture, "- [ ] Renew", "- [x] Renew", 1)
-	src = strings.Replace(src, "- ⬜ Build it", "- [x] Plain box", 1)
-	for name, edit := range map[string]Edit{
-		"with an id":   replace("- [x] Renew", "- [ ] Renew"),
-		"without one":  replace("- [x] Plain box", "- [ ] Plain box"),
-		"and reworded": replace("- [x] Renew the cert", "- [ ] Renew the certificate"),
+	src = strings.Replace(src, "- ⬜ Build it ^build", "- [x] Plain box", 1)
+	// A *Next* checkbox pointing at a work item, not at a manual action: nothing re-ticks it.
+	nextDone := strings.Replace(fixture, "1. [ ] Rotate the token · [[#^rotate|details]]",
+		"1. [x] Ship it · [[#^build|details]]", 1)
+	two := strings.Replace(fixture, "- ⬜ Build it ^build\n", "- [x] Plain box\n- [ ] Open box\n", 1)
+	for name, c := range map[string]struct {
+		src  string
+		edit Edit
+	}{
+		"with an id":           {src, replace("- [x] Renew", "- [ ] Renew")},
+		"without one":          {src, replace("- [x] Plain box", "- [ ] Plain box")},
+		"and reworded":         {src, replace("- [x] Renew the cert", "- [ ] Renew the certificate")},
+		"reworded without id":  {src, replace("- [x] Plain box", "- [ ] Plainer box")},
+		"replaced without id":  {src, replace("- [x] Plain box\n", "- [ ] Another box\n")},
+		"a Next line reworded": {nextDone, replace("1. [x] Ship it", "1. [ ] Ship it now")},
+		// Without an id, these read as a box reworded and unticked: they take two writes.
+		"reworded as another is ticked": {two,
+			replace("- [x] Plain box\n- [ ] Open box\n", "- [ ] Plainer box\n- [x] Open box\n")},
+		"reworded as an open one goes": {two,
+			replace("- [x] Plain box\n- [ ] Open box\n", "- [ ] Plainer box\n")},
+		"reworded and moved": {two, func(n *note.Note, src []byte) ([]byte, string, error) {
+			out, _, err := replace("- [x] Plain box\n", "")(n, src)
+			if err != nil {
+				return nil, "", err
+			}
+			return replace("^renew\n", "^renew\n- [ ] Plainer box\n")(n, out)
+		}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			v := newVault(t, src, false)
-			_, err := v.Mutate(t.Context(), date, "t", edit)
+			v := newVault(t, c.src, false)
+			_, err := v.Mutate(t.Context(), date, "t", c.edit)
 			if !errors.Is(err, ErrUntick) {
 				t.Errorf("got %v, want ErrUntick", err)
 			}
-			if v.read(t) != src {
+			if v.read(t) != c.src {
 				t.Error("the note was written")
 			}
 			v.noStrays(t)
+		})
+	}
+}
+
+// TestMutateAllowsDroppingATickedBox: a write may remove a ticked box with its line (spec §4.4),
+// as next_set does when it replaces a done *Next* line with a new open one.
+func TestMutateAllowsDroppingATickedBox(t *testing.T) {
+	t.Parallel()
+	done := strings.Replace(fixture, "[ ] Rotate", "[x] Rotate", 2)
+	plain := strings.Replace(fixture, "- ⬜ Build it ^build\n", "- [x] Plain box\n- [ ] Open box\n", 1)
+	for name, c := range map[string]struct {
+		src, old, new string
+	}{
+		"next_set": {done, "1. [x] Rotate the token · [[#^rotate|details]]",
+			"1. [ ] Renew the cert · [[#^renew|details]]"},
+		"without an id":        {plain, "- [x] Plain box\n", ""},
+		"for a new ticked one": {plain, "- [x] Plain box\n", "- [x] Other done box\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			v := newVault(t, c.src, false)
+			if _, err := v.Mutate(t.Context(), date, "t", replace(c.old, c.new)); err != nil {
+				t.Fatal(err)
+			}
+			if got := v.read(t); strings.Contains(got, c.old) || !strings.Contains(got, c.new) {
+				t.Errorf("wrote\n%s", got)
+			}
 		})
 	}
 }
