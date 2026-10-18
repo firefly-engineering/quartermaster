@@ -29,10 +29,9 @@ in
       example = lib.literalExpression ''
         {
           vault.repo = "~/src/github.com/sigma/worklog";
-          projects."arbora-partners/trunk" = {
-            path = "~/src/github.com/arbora-partners/trunk";
-            workspace = "trunk";
-          };
+          projects.root = "~/src/github.com";
+          # Optional: an override for a project off the convention.
+          projects."arbora-partners/IaC".workspace = "infra";
         }
       '';
       description = "worklog.toml, key for key (spec §3).";

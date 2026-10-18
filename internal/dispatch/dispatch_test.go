@@ -45,14 +45,18 @@ const testNote = "# Worklog — " + date + "\n" + `
 
 // fakeHerdr answers the herdr calls dispatch makes, logging each call's arguments as
 // `[arg]` runs, one call per line. A file named fail-<verb> in its directory makes that call
-// fail; a file named clobber makes `agent start` overwrite the note whose path it holds.
+// fail; a file named clobber makes `agent start` overwrite the note whose path it holds. Files
+// named workspaces and panes, when present, are the answers of `workspace list` and
+// `pane list`.
 const fakeHerdr = `#!/bin/sh
 dir=$(dirname "$0")
 for a in "$@"; do printf '[%s]' "$a" >> "$dir/calls"; done
 echo >> "$dir/calls"
 if [ -e "$dir/fail-$2" ]; then echo "$2 failed" >&2; exit 1; fi
 case "$1 $2" in
-  "workspace list") echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"r"},{"workspace_id":"w2","label":"iac"}]}}' ;;
+  "workspace list") if [ -e "$dir/workspaces" ]; then cat "$dir/workspaces"; else
+    echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"r"},{"workspace_id":"w2","label":"iac"}]}}'; fi ;;
+  "pane list") if [ -e "$dir/panes" ]; then cat "$dir/panes"; else echo '{"result":{"panes":[]}}'; fi ;;
   "agent list") echo '{"result":{"agents":[{"workspace_id":"w1","pane_id":"w1:p1","agent_status":"idle"},{"workspace_id":"w2","pane_id":"w2:p1","agent_status":"idle"}]}}' ;;
   "tab create") echo '{"result":{"tab":{"tab_id":"w1:t5"},"root_pane":{"pane_id":"w1:p7"}}}' ;;
   "agent start") if [ -e "$dir/clobber" ]; then read -r p < "$dir/clobber"; printf '# Worklog — 2026-10-18\n' > "$p"; fi ;;
@@ -109,10 +113,11 @@ func newFixture(t *testing.T) *fixture {
 		Config: config.Config{
 			Dispatch: config.Dispatch{WorkspaceRoot: f.root},
 			Harness:  config.Harness{Worker: config.Worker{Kind: "omp", Args: []string{"--model", "glm-5"}}},
-			Projects: map[string]config.Project{
-				"o/r": {Path: f.jjRepo, Workspace: "r"},
+			// o/r's workspace is found by its label, r; o/g's is set.
+			Projects: config.Projects{Repos: map[string]config.Project{
+				"o/r": {Path: f.jjRepo},
 				"o/g": {Path: f.gitRepo, Workspace: "r"},
-			},
+			}},
 		},
 		Engine: &engine.Engine{Repo: vaultRepo, Dir: "worklog"},
 		Herdr:  herdr, JJ: f.jjBin, Git: f.gitBin, Env: f.toolchain,
@@ -153,6 +158,12 @@ func (f *fixture) calls(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// started reports whether dispatch made anything in herdr: finding a workspace only reads.
+func (f *fixture) started(t *testing.T) bool {
+	t.Helper()
+	return strings.Contains(f.calls(t), "[tab]")
 }
 
 func (f *fixture) item(t *testing.T, id string) *note.Item {
@@ -205,7 +216,7 @@ func same(t *testing.T, a, b string) bool {
 
 // freshCalls are the herdr calls of a fresh dispatch of o/r#11 into ws, then its prompt.
 func freshCalls(ws string, n int, prompt string) string {
-	return "[workspace][list]\n" +
+	return "[workspace][list]\n[pane][list]\n" +
 		"[tab][create][--workspace][w1][--cwd][" + ws + "][--label][issue-" + strconv.Itoa(n) + "][--no-focus]\n" +
 		"[agent][start][issue-" + strconv.Itoa(n) + "][--kind][omp][--pane][w1:p7][--][--model][glm-5]\n" +
 		"[agent][prompt][w1:p7][" + prompt + "]\n"
@@ -275,7 +286,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), filepath.Base(elsewhere)) {
 			t.Fatalf("err %v, want the other workspace's path", err)
 		}
-		if f.calls(t) != "" || f.noteSrc(t) != testNote {
+		if f.started(t) || f.noteSrc(t) != testNote {
 			t.Error("dispatch went on")
 		}
 	})
@@ -294,7 +305,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "jj workspace forget issue-11") {
 			t.Fatalf("err %v, want the way out", err)
 		}
-		if f.calls(t) != "" {
+		if f.started(t) {
 			t.Error("dispatch went on")
 		}
 	})
@@ -307,7 +318,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), ws) {
 			t.Fatalf("err %v, want the path", err)
 		}
-		if f.calls(t) != "" {
+		if f.started(t) {
 			t.Error("dispatch went on")
 		}
 	})
@@ -320,7 +331,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), filepath.Base(elsewhere)) {
 			t.Fatalf("err %v, want the other worktree's path", err)
 		}
-		if f.calls(t) != "" {
+		if f.started(t) {
 			t.Error("dispatch went on")
 		}
 	})
@@ -423,7 +434,7 @@ func TestSession(t *testing.T) {
 				t.Errorf("result %+v", res)
 			}
 			n := strings.TrimPrefix(c.ref, "o/r#")
-			want := "[workspace][list]\n[agent][list]\n[agent][prompt][w1:p1][/implement https://github.com/o/r/issues/" + n +
+			want := "[workspace][list]\n[pane][list]\n[agent][list]\n[agent][prompt][w1:p1][/implement https://github.com/o/r/issues/" + n +
 				"\n\nWhen this is done, update the worklog with the worklog skill: " + c.what + " in " + f.notePath +
 				". Record the outcome and refresh Next.]\n"
 			if got := f.calls(t); got != want {
@@ -469,5 +480,183 @@ func TestRefuses(t *testing.T) {
 	}
 	if _, err := os.Stat(f.root); !os.IsNotExist(err) {
 		t.Errorf("workspace root: %v", err)
+	}
+}
+
+// TestHerdrWorkspace resolves a project's herdr workspace: the override, else the one
+// workspace with a pane in the checkout, else the one labelled with the repo's name.
+func TestHerdrWorkspace(t *testing.T) {
+	t.Parallel()
+	const spaces = `{"result":{"workspaces":[` +
+		`{"workspace_id":"w1","label":"r"},{"workspace_id":"w2","label":"iac"},` +
+		`{"workspace_id":"w3","label":"misc"},{"workspace_id":"w4","label":"dup"},{"workspace_id":"w5","label":"dup"}]}}`
+	pane := func(ws, cwd string) string { return `{"workspace_id":"` + ws + `","cwd":"` + cwd + `"}` }
+	panes := func(ps ...string) string { return `{"result":{"panes":[` + strings.Join(ps, ",") + `]}}` }
+	for _, c := range []struct {
+		name     string
+		repo     string
+		override config.Project
+		panes    string
+		want     string   // the workspace id; "" for an error
+		errs     []string // what the error names
+		calls    string
+	}{
+		{
+			name:     "the override wins over a pane and the label",
+			repo:     "o/r",
+			override: config.Project{Workspace: "iac"},
+			panes:    panes(pane("w3", "/src/o/r")),
+			want:     "w2",
+			calls:    "[workspace][list]\n",
+		},
+		{
+			name:     "an override labelling no workspace",
+			repo:     "o/r",
+			override: config.Project{Workspace: "gone"},
+			errs:     []string{`projects."o/r".workspace`, `0 herdr workspaces labelled "gone"`},
+		},
+		{
+			name:  "a pane in the checkout wins over the label",
+			repo:  "o/r",
+			panes: panes(pane("w2", "/src/o/other"), pane("w3", "/src/o/r")),
+			want:  "w3",
+			calls: "[workspace][list]\n[pane][list]\n",
+		},
+		{
+			name:  "a pane under the checkout, its path uncleaned",
+			repo:  "o/r",
+			panes: panes(pane("w3", "/src/o/r/./sub/../sub/")),
+			want:  "w3",
+		},
+		{
+			name:  "panes of one workspace are one match",
+			repo:  "o/r",
+			panes: panes(pane("w3", "/src/o/r"), pane("w3", "/src/o/r/a")),
+			want:  "w3",
+		},
+		{
+			name:  "a sibling sharing the checkout's prefix is not under it",
+			repo:  "o/r",
+			panes: panes(pane("w3", "/src/o/rc"), pane("w2", "/src/o"), pane("w2", "relative/src/o/r")),
+			want:  "w1",
+		},
+		{
+			name:  "panes of two workspaces in the checkout",
+			repo:  "o/r",
+			panes: panes(pane("w2", "/src/o/r"), pane("w3", "/src/o/r/x")),
+			errs:  []string{`"iac" (w2)`, `"misc" (w3)`, "/src/o/r", `projects."o/r".workspace`},
+		},
+		{
+			name:     "a path override is where panes are looked for",
+			repo:     "o/r",
+			override: config.Project{Path: "/elsewhere/r"},
+			panes:    panes(pane("w3", "/src/o/r"), pane("w2", "/elsewhere/r")),
+			want:     "w2",
+		},
+		{
+			name:  "no pane and no label",
+			repo:  "o/nothing",
+			panes: panes(pane("w3", "/src/o/r")),
+			errs:  []string{"no herdr workspace for o/nothing", "/src/o/nothing", `"nothing"`, `projects."o/nothing".workspace`},
+		},
+		{
+			name: "two workspaces labelled with the repo's name",
+			repo: "o/dup",
+			errs: []string{`2 herdr workspaces labelled "dup"`, `projects."o/dup".workspace`},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			bin := t.TempDir()
+			herdr := filepath.Join(bin, "herdr")
+			if err := os.WriteFile(herdr, []byte(fakeHerdr), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			write(t, filepath.Join(bin, "workspaces"), spaces)
+			if c.panes != "" {
+				write(t, filepath.Join(bin, "panes"), c.panes)
+			}
+			d := Dispatcher{Herdr: herdr, Config: config.Config{Projects: config.Projects{
+				Root: "/src", Repos: map[string]config.Project{c.repo: c.override},
+			}}}
+			got, err := d.herdrWorkspace(context.Background(), c.repo)
+			if c.want == "" {
+				if err == nil {
+					t.Fatalf("got %+v, want an error", got)
+				}
+				for _, e := range c.errs {
+					if !strings.Contains(err.Error(), e) {
+						t.Errorf("error %q lacks %q", err, e)
+					}
+				}
+				return
+			}
+			if err != nil || got.ID != c.want {
+				t.Fatalf("got %+v %v, want %s", got, err, c.want)
+			}
+			if c.calls != "" {
+				if b, _ := os.ReadFile(filepath.Join(bin, "calls")); string(b) != c.calls {
+					t.Errorf("herdr calls %q, want %q", b, c.calls)
+				}
+			}
+		})
+	}
+}
+
+func TestWithin(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		root, dir string
+		want      bool
+	}{
+		{"/a/b", "/a/b", true},
+		{"/a/b", "/a/b/", true},
+		{"/a/b/", "/a/b/c/d", true},
+		{"/a/b", "/a/bc", false},
+		{"/a/b", "/a", false},
+		{"/a/b", "/a/b/../c", false},
+		{"/a/b", "a/b", false},
+		{"/a/b", "", false},
+		{"/", "/x", true},
+	} {
+		if got := within(c.root, c.dir); got != c.want {
+			t.Errorf("within(%q, %q) = %v, want %v", c.root, c.dir, got, c.want)
+		}
+	}
+}
+
+// TestFreshByConvention dispatches a ref of a project with no entry: its checkout is under
+// projects.root, and its herdr workspace the one with a pane there.
+func TestFreshByConvention(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	root := t.TempDir()
+	f.d.Config.Projects = config.Projects{Root: root}
+	checkout := filepath.Join(root, "o", "r")
+	if err := os.MkdirAll(filepath.Dir(checkout), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(f.jjRepo, checkout); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(f.bin, "panes"), `{"result":{"panes":[{"workspace_id":"w2","cwd":"`+filepath.Join(checkout, "sub")+`"}]}}`)
+	res, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.To != "iac" || !strings.Contains(f.calls(t), "[tab][create][--workspace][w2]") {
+		t.Errorf("result %+v, calls:\n%s", res, f.calls(t))
+	}
+
+	// A project with no checkout under the root is refused before herdr is asked.
+	if err := os.Remove(filepath.Join(f.bin, "calls")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.d.Dispatch(context.Background(), date, ref(t, "o/g#5"), Fresh, "")
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(root, "o", "g")) {
+		t.Fatalf("err %v, want the conventional path", err)
+	}
+	if f.calls(t) != "" {
+		t.Errorf("herdr was asked: %s", f.calls(t))
 	}
 }

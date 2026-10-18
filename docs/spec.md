@@ -81,17 +81,23 @@ workspace_root = "~/.local/share/quartermaster/worklog/workspaces"  # <root>/<ow
 kind = "omp"                    # a herdr agent kind
 args = ["--model", "glm-5"]
 
-[projects."arbora-partners/trunk"]
-path = "~/src/github.com/arbora-partners/trunk"
-workspace = "trunk"             # herdr workspace label of the project's session
+[projects]
+root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<repo>
 
-[projects."arbora-partners/IaC"]
-path = "~/src/github.com/arbora-partners/IaC"
-workspace = "IaC"
+# Optional: an override, only for a project that breaks the convention.
+# [projects."arbora-partners/IaC"]
+# path = "~/work/IaC"           # its checkout, instead of <root>/<owner>/<repo>
+# workspace = "infra"           # its herdr workspace label, instead of finding it (§9.2)
 ```
 
 A **project** is keyed by `owner/repo`. Every ref the server handles is `owner/repo#N`
 ([ADR 0007]); a bare `#N` is accepted only where a project is already in scope.
+
+Any `owner/repo` is a project, with no entry: its checkout is `<root>/<owner>/<repo>`, and
+its herdr workspace is found in herdr's live state when it is needed (§9.2). In the
+`projects` table, `root` is a string and every other key an `owner/repo` table overriding
+that project's `path`, `workspace`, or both; `root` is never an `owner/repo`, so the two do
+not collide. `root`, like every path here, expands a leading `~`.
 
 ## 4. The note
 
@@ -267,13 +273,27 @@ Behaviour is a strict port of `worklog-send`; its self-check becomes the Go test
 
 Input: `{ref: "owner/repo#N", mode: "session" | "fresh", instruction?}`.
 
+The **project's herdr workspace** is resolved at use, from herdr's live state, the first of:
+
+1. the workspace labelled `projects."<owner>/<repo>".workspace`, when set;
+2. the workspace with a pane whose cwd (`herdr pane list`) is the project's checkout (§3) or
+   a directory under it, compared by whole path components once cleaned, so `/a/bc` is not
+   under `/a/b`. Panes of two workspaces there is an error naming both and asking for an
+   override;
+3. the workspace labelled with the repo's name (`herdr workspace list`).
+
+No match is an error asking for an override. A `herdr-prompt` block's `to=` still names a
+workspace by its label (§9.1).
+
 - **`session`** (default): build the prompt from the ref's work item (or `/implement <url>`
-  when none exists) and send it to the project's session, as in §9.1.
+  when none exists) and send it to the session, as in §9.1: the block's `to=` for an item
+  with a prompt, else the project's herdr workspace.
 - **`fresh`**: an isolated workspace and a new agent:
   1. `gh issue view` for title and body.
-  2. Create the workspace at `<workspace_root>/<owner>/<repo>/issue-<N>`: `jj workspace add`
-     when the project has `.jj`, else `git worktree add -b issue-<N>` ([ADR 0004]). An
-     existing workspace for the ref is reused, never clobbered.
+  2. Resolve the project's herdr workspace, which only reads, then create the workspace at
+     `<workspace_root>/<owner>/<repo>/issue-<N>` from the project's checkout:
+     `jj workspace add` when the checkout has `.jj`, else `git worktree add -b issue-<N>`
+     ([ADR 0004]). An existing workspace for the ref is reused, never clobbered.
   3. `herdr tab create` in the project's herdr workspace, cwd at the new workspace.
   4. `herdr agent start issue-<N> --kind <harness.kind> --pane <pane> -- <args>`.
   5. `herdr agent prompt` with the issue and the instruction.
@@ -305,7 +325,7 @@ and the package's Go come from toolbox.
 programs.quartermaster.worklog = {
   enable = true;
   package = …;                 # default: this flake's
-  settings = { vault.repo = "…"; projects."o/r" = { … }; };   # → quartermaster/worklog.toml
+  settings = { vault.repo = "…"; projects.root = "…"; };   # → quartermaster/worklog.toml
 };
 ```
 

@@ -70,18 +70,32 @@ func (s Sender) SendItem(ctx context.Context, vault, date, id, extra string) (Se
 	if extra = strings.TrimSpace(extra); extra != "" {
 		text += "\n\n" + extra
 	}
-	sent, err := s.deliver(ctx, to, text, Item(id), path)
+	ws, err := s.labelled(ctx, to)
+	if err != nil {
+		return Sent{}, err
+	}
+	sent, err := s.deliver(ctx, ws, text, Item(id), path)
 	sent.ID = id
 	return sent, err
 }
 
-// Deliver sends text to the one agent in the herdr workspace labelled to, closed with the line
-// asking it to update what (Closing), in the note at path. Sent.ID is what. It is for a prompt
-// no herdr-prompt block holds; the agent's status is checked as Send checks it.
-func (s Sender) Deliver(ctx context.Context, to, text, what, path string) (Sent, error) {
+// Workspace is one herdr workspace, as `herdr workspace list` has it: its id, and the label
+// messages and Sent.To name it by.
+type Workspace struct {
+	ID    string `json:"workspace_id"`
+	Label string `json:"label"`
+}
+
+// Deliver sends text to the one agent in herdr workspace to, closed with the line asking it to
+// update what (Closing), in the note at path. Sent.ID is what. It is for a prompt no
+// herdr-prompt block holds; the agent's status is checked as Send checks it.
+func (s Sender) Deliver(ctx context.Context, to Workspace, text, what, path string) (Sent, error) {
 	text = strings.TrimSpace(text)
-	if to == "" || text == "" {
-		return Sent{}, fmt.Errorf("a prompt needs a workspace and a text: to %q, text %q", to, text)
+	if to.ID == "" || text == "" {
+		return Sent{}, fmt.Errorf("a prompt needs a workspace and a text: to %q, text %q", to.ID, text)
+	}
+	if to.Label == "" {
+		to.Label = to.ID
 	}
 	return s.deliver(ctx, to, text, what, path)
 }
@@ -94,19 +108,19 @@ func Closing(what, path string) string {
 }
 
 // deliver sends text and the closing line about what to the agent of workspace to.
-func (s Sender) deliver(ctx context.Context, to, text, what, path string) (Sent, error) {
-	pane, status, err := s.resolve(ctx, to)
+func (s Sender) deliver(ctx context.Context, to Workspace, text, what, path string) (Sent, error) {
+	pane, status, err := s.agent(ctx, to)
 	if err != nil {
 		return Sent{}, err
 	}
 	if !slices.Contains(sendable, status) {
-		return Sent{}, fmt.Errorf("%s agent is %s; answer it first", to, status)
+		return Sent{}, fmt.Errorf("%s agent is %s; answer it first", to.Label, status)
 	}
 	text += "\n\n" + Closing(what, path)
 	if _, err := s.herdr(ctx, "agent", "prompt", pane, text); err != nil {
 		return Sent{}, err
 	}
-	return Sent{ID: what, To: to, Pane: pane, Path: path}, nil
+	return Sent{ID: what, To: to.Label, Pane: pane, Path: path}, nil
 }
 
 // Item names work item id in the closing line, as Closing's what: `work item ^<id>`.
@@ -163,28 +177,30 @@ func dedent(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// resolve maps a workspace label (one session per project) to the one agent pane in it.
-func (s Sender) resolve(ctx context.Context, label string) (pane, status string, err error) {
+// labelled is the one herdr workspace labelled label (one session per project).
+func (s Sender) labelled(ctx context.Context, label string) (Workspace, error) {
 	var spaces struct {
 		Result struct {
-			Workspaces []struct {
-				ID    string `json:"workspace_id"`
-				Label string `json:"label"`
-			} `json:"workspaces"`
+			Workspaces []Workspace `json:"workspaces"`
 		} `json:"result"`
 	}
 	if err := s.herdrJSON(ctx, &spaces, "workspace", "list"); err != nil {
-		return "", "", err
+		return Workspace{}, err
 	}
-	ids := map[string]bool{}
+	var ids []string
 	for _, w := range spaces.Result.Workspaces {
-		if w.Label == label {
-			ids[w.ID] = true
+		if w.Label == label && !slices.Contains(ids, w.ID) {
+			ids = append(ids, w.ID)
 		}
 	}
 	if len(ids) != 1 {
-		return "", "", fmt.Errorf("%d herdr workspaces labelled %q", len(ids), label)
+		return Workspace{}, fmt.Errorf("%d herdr workspaces labelled %q", len(ids), label)
 	}
+	return Workspace{ID: ids[0], Label: label}, nil
+}
+
+// agent is the one agent pane in workspace ws, and its status.
+func (s Sender) agent(ctx context.Context, ws Workspace) (pane, status string, err error) {
 	var agents struct {
 		Result struct {
 			Agents []struct {
@@ -199,12 +215,12 @@ func (s Sender) resolve(ctx context.Context, label string) (pane, status string,
 	}
 	var in []int
 	for i, a := range agents.Result.Agents {
-		if ids[a.Workspace] {
+		if a.Workspace == ws.ID {
 			in = append(in, i)
 		}
 	}
 	if len(in) != 1 {
-		return "", "", fmt.Errorf("%d agents in workspace %q; expected one", len(in), label)
+		return "", "", fmt.Errorf("%d agents in workspace %q; expected one", len(in), ws.Label)
 	}
 	a := agents.Result.Agents[in[0]]
 	return a.Pane, a.Status, nil
