@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Builds the package with its tests, the skill bundle, and the home-manager module check.
+  # Builds the package, the skill bundle, and the home-manager module check.
   flake:
     name: nix flake check
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
