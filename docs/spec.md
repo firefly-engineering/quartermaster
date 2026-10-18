@@ -169,8 +169,8 @@ skill writes the note.
 ## 6. MCP tools
 
 Every mutating tool takes the note's lock ([§7]), re-reads the note, applies one
-transition, writes, and commits one jj change. Every tool returns the affected units as
-structured JSON and the note's path.
+transition, writes, and commits one jj change. It does not run `refresh` first
+([ADR 0008]). Every tool returns the affected units as structured JSON and the note's path.
 
 | Tool | Does | Draft equivalent |
 |---|---|---|
@@ -302,7 +302,8 @@ own way; the README shows the snippets for `programs.agentSkills`,
 
 ## 12. Open questions
 
-- Should `refresh` run automatically at the start of each mutating tool, or only on demand?
+- ~~Should `refresh` run automatically at the start of each mutating tool, or only on demand?~~
+  Settled: on demand only ([ADR 0008]).
   [#14](https://github.com/firefly-engineering/quartermaster/issues/14)
 - Is a `## Log` section worth its noise, given that jj history already keeps the timeline?
   [#15](https://github.com/firefly-engineering/quartermaster/issues/15)
@@ -314,6 +315,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [ADR 0005]: adr/0005-the-skill-is-the-single-source-of-workflow-rules.md
 [ADR 0006]: adr/0006-mutations-lock-check-rename-commit.md
 [ADR 0007]: adr/0007-refs-are-owner-repo-number.md
+[ADR 0008]: adr/0008-mutating-tools-do-not-refresh.md
 [§4]: #4-the-note
 [§4.3]: #43-transitions
 [§6]: #6-mcp-tools
