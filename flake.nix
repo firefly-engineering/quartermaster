@@ -34,10 +34,10 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems f;
 
       # One go-toolchain version for the shell and the package: the package's Go is read from
-      # that version's pin map, so the two cannot disagree. Pinned to "5", not toolbox's default
-      # "6", because 6's golangci-lint is built with Go 1.26 and cannot type-check 1.27's
-      # standard library: https://github.com/firefly-engineering/toolbox/issues/7
-      goToolchainVersion = "5";
+      # that version's pin map, so the two cannot disagree. Pick a version whose golangci-lint is
+      # built with its own Go minor: toolbox does not enforce that yet, and a mismatch fails lint
+      # on Linux (https://github.com/firefly-engineering/toolbox/issues/7).
+      goToolchainVersion = "7";
       goToolchainFor = system: toolbox.registry.${system}.go-toolchain.versions.${goToolchainVersion};
       goFor =
         system:
