@@ -1,0 +1,71 @@
+# quartermaster — glossary
+
+The ubiquitous language of the worklog. Definitions only; behaviour lives in
+[`docs/spec.md`](docs/spec.md).
+
+## Note
+
+One markdown file per working day, `YYYY-MM-DD.md` in the vault, holding the day's live
+state across every project. A living document: each update rewrites it into the current
+state, and the vault's jj history keeps the timeline. The **previous note** is the latest
+dated note before today.
+
+## Objective
+
+A goal for the day, naming its project and a checkable **done-condition**.
+
+## Next
+
+The ordered list of the user's next actions, at most five, each pointing at a **work item**.
+
+## Project
+
+A GitHub repo, `owner/repo`, worked on that day. Has one section in the note and one herdr
+**session**.
+
+## Part
+
+A dated chunk of a project's day: a human session, an agent batch, or a land.
+
+## Bucket
+
+A fixed-name group under a project's *What remains*: *Decisions for you*, *Your actions*,
+*Agent queue*, *Sent to other repos*, *Outside input: chase*, *Waiting*.
+
+## Work item
+
+An addressable entry in a bucket or Part, with an **item id** (`^<id>`) and a **state**.
+Agent-tracked ones carry a status icon. A **manual action** carries a task checkbox
+instead and belongs to the user.
+
+## Route
+
+The next skill that moves a work item, such as `/triage`, `/implement` or
+`/grill-with-docs`.
+
+## Prompt
+
+The self-contained text a work item sends to a session, kept in its `herdr-prompt` block.
+
+## Button
+
+A ▶ link in the note that makes Obsidian run `quartermaster send` for one work item's
+prompt.
+
+## Session
+
+The agent pane in the herdr workspace labelled with a project's name, which receives that
+project's prompts.
+
+## Dispatch
+
+Starting work on a ref, by prompting the project's session (`session`) or by creating an
+isolated workspace and a new agent (`fresh`).
+
+## Ref
+
+`owner/repo#N`: an issue or PR, unambiguous across projects.
+
+## Carry-over
+
+The open items of the previous note, each given a **verdict**: keep, defer or drop.
