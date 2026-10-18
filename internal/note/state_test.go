@@ -16,7 +16,7 @@ func TestTransitionTable(t *testing.T) {
 	t.Parallel()
 	legal := map[State][]State{
 		Todo:       {InProgress, Done, Dropped, Waiting},
-		InProgress: {InReview, Waiting, Dropped},
+		InProgress: {InReview, Done, Waiting, Dropped},
 		InReview:   {Done, InProgress, Waiting, Dropped},
 		Waiting:    {InProgress, Waiting, Dropped},
 		Done:       nil,
@@ -25,7 +25,7 @@ func TestTransitionTable(t *testing.T) {
 	for _, from := range allStates {
 		for _, to := range allStates {
 			ok := slices.Contains(legal[from], to)
-			needsReason := to == Waiting || to == Dropped
+			needsReason := to == Waiting || to == Dropped || from == InProgress && to == Done
 			t.Run(fmt.Sprintf("%s->%s", from, to), func(t *testing.T) {
 				t.Parallel()
 				err := Transition(from, to, "https://example.com/pr/1")
@@ -91,7 +91,9 @@ func TestDeriveRule(t *testing.T) {
 		{[]State{Dropped}, IconDone},
 		{[]State{Done, Dropped}, IconDone},
 		{[]State{Todo}, IconTodo},
-		{[]State{Done, Todo}, IconTodo},
+		{[]State{Done, Todo}, IconInProgress},
+		{[]State{Dropped, Todo}, IconInProgress},
+		{[]State{Done, InReview}, IconInProgress},
 		{[]State{Todo, InReview}, IconInReview},
 		{[]State{InReview, InProgress, Todo}, IconInProgress},
 		{[]State{InProgress, Waiting, Done}, IconWaiting},
@@ -167,15 +169,12 @@ func TestDeriveIcons(t *testing.T) {
 		was, now Icon
 	}{
 		{"## ⬜ o/r\n", IconTodo, IconWaiting},
-		{"### ⬜ Part 1 — Human session: decisions, done\n", IconTodo, IconDone},
-		{"### ✅ Part 2 — Land: nothing tracked\n", IconDone, IconNone},
 		{"### ✅ What remains\n", IconDone, IconWaiting},
 		{"#### ✅ Decisions for you\n", IconDone, IconNone},
-		{"#### ✅ Your actions\n", IconDone, IconTodo},
-		{"#### ✅ Agent queue\n", IconDone, IconInReview},
+		{"#### ✅ Your actions\n", IconDone, IconInProgress},
+		{"#### ✅ Agent queue\n", IconDone, IconInProgress},
 		{"#### ✅ Waiting\n", IconDone, IconWaiting},
-		{"## ✅ p/q\n", IconDone, IconDone},
-		{"### ⬜ Part 1 — Agent batch: all done\n", IconTodo, IconDone},
+		{"## ✅ p/q\n", IconDone, IconInProgress}, // Part 1's written ⬜ counts
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d headings: %+v", len(got), got)
@@ -200,7 +199,7 @@ func TestDeriveIconsUnits(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	got := n.DeriveIcons()
-	if len(got) != 5 {
+	if len(got) != 4 { // Part icons are written, not derived
 		t.Fatalf("headings: %+v", got)
 	}
 	for _, d := range got {

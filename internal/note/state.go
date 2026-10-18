@@ -68,16 +68,17 @@ var (
 // WAITING or DROPPED; DONE and DROPPED are terminal.
 var moves = map[State][]State{
 	Todo:       {InProgress, Done}, // start, direct close
-	InProgress: {InReview},         // review
+	InProgress: {InReview, Done},   // review, complete without review
 	InReview:   {Done, InProgress}, // complete, rework
 	Waiting:    {InProgress},       // unblock
 }
 
 // Transition reports whether a work item may move from one state to another (spec §4.3),
 // as nil or an error wrapping ErrIllegalTransition or ErrReasonRequired. A move to WAITING or
-// DROPPED needs a summary naming what it waits on or why it was dropped.
+// DROPPED needs a summary naming what it waits on or why it was dropped, and IN_PROGRESS to
+// DONE one naming the evidence, since no review stands in for it.
 func Transition(from, to State, summary string) error {
-	needsReason := to == Waiting || to == Dropped
+	needsReason := to == Waiting || to == Dropped || from == InProgress && to == Done
 	terminal := from == Done || from == Dropped
 	if !from.valid() || !to.valid() || terminal || !needsReason && !slices.Contains(moves[from], to) {
 		return fmt.Errorf("%w: %s to %s", ErrIllegalTransition, from, to)
@@ -89,17 +90,23 @@ func Transition(from, to State, summary string) error {
 }
 
 // derive is the heading rule of spec §4.2: `—` over nothing, ✅ when everything is DONE or
-// DROPPED, else the least done icon present, ⏳ before 🔄 before 🔍 before ⬜.
+// DROPPED, else ⏳ if anything waits, else 🔄 if anything is in progress or already finished,
+// else 🔍 if anything is in review, else ⬜.
 func derive(states []State) Icon {
-	if len(states) == 0 {
+	open := func(s State) bool { return s != Done && s != Dropped }
+	switch {
+	case len(states) == 0:
 		return IconNone
+	case !slices.ContainsFunc(states, open):
+		return IconDone
+	case slices.Contains(states, Waiting):
+		return IconWaiting
+	case slices.Contains(states, InProgress) || slices.ContainsFunc(states, func(s State) bool { return !open(s) }):
+		return IconInProgress
+	case slices.Contains(states, InReview):
+		return IconInReview
 	}
-	for _, s := range []State{Waiting, InProgress, InReview, Todo} {
-		if slices.Contains(states, s) {
-			return s.Icon()
-		}
-	}
-	return IconDone
+	return IconTodo
 }
 
 // DerivedIcon is a heading's icon as derived from what is under it.
@@ -109,13 +116,19 @@ type DerivedIcon struct {
 	Icon    Icon // the icon the rule gives
 }
 
-// DeriveIcons derives the icon of every project, Part, *What remains* and bucket heading, in
-// note order, from the work items and manual actions in its section (spec §4.2). A write
-// applies each one whose Icon differs from Was; derivation never touches a checkbox.
+// DeriveIcons derives the icon of every project, *What remains* and bucket heading, in note
+// order, from the work items and manual actions in its section (spec §4.2). A Part's icon is
+// written with the Part, never derived, and counts toward its project's. A write applies
+// each one whose Icon differs from Was; derivation never touches a checkbox.
 func (n *Note) DeriveIcons() []DerivedIcon {
 	var out []DerivedIcon
-	deriveSection := func(section, heading Span, was Icon) {
+	deriveSection := func(section, heading Span, was Icon, parts []*Part) {
 		var states []State
+		for _, pt := range parts {
+			if s, ok := StateOf(pt.Icon); ok {
+				states = append(states, s)
+			}
+		}
 		for _, it := range n.items {
 			if within(it.Span, section) {
 				states = append(states, mustState(it.Icon))
@@ -129,14 +142,11 @@ func (n *Note) DeriveIcons() []DerivedIcon {
 		out = append(out, DerivedIcon{Heading: heading, Was: was, Icon: derive(states)})
 	}
 	for _, p := range n.Projects {
-		deriveSection(p.Span, p.Heading, p.Icon)
-		for _, pt := range p.Parts {
-			deriveSection(pt.Span, pt.Heading, pt.Icon)
-		}
+		deriveSection(p.Span, p.Heading, p.Icon, p.Parts)
 		if r := p.Remains; r != nil {
-			deriveSection(r.Span, r.Heading, r.Icon)
+			deriveSection(r.Span, r.Heading, r.Icon, nil)
 			for _, b := range r.Buckets {
-				deriveSection(b.Span, b.Heading, b.Icon)
+				deriveSection(b.Span, b.Heading, b.Icon, nil)
 			}
 		}
 	}

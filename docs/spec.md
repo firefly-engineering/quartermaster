@@ -135,23 +135,32 @@ draft's *in review*.
 | `DONE` | ✅ | done |
 | `DROPPED` | ❌ | missed or dropped, with the reason |
 
-A heading's icon is derived, never written by hand: ✅ only when every item under it is
-`DONE` or `DROPPED`; otherwise the "least done" icon below it, in the order
-⏳ > 🔄 > 🔍 > ⬜. A heading with nothing under it shows `—`, which is never a work item's
-state. The server recomputes every derived icon on each write.
+A project, *What remains* or bucket heading's icon is derived, never written by hand. It
+is ✅ when every item under it is `DONE` or `DROPPED`. Otherwise it is ⏳ if anything waits,
+else 🔄 if anything is in progress or already finished, else 🔍 if anything is in review,
+else ⬜. A heading with nothing under it shows `—`, which is never a work item's state. The
+server recomputes every derived icon on each write.
+
+A Part's icon is written with the Part, never derived: 🔄 while it runs, 🔍 while its work is
+in review, ✅ when it is done. A finished Part holds plain lines, not work items, so there is
+nothing to derive it from. A project's icon counts its Parts' icons along with its items.
 
 ### 4.3 Transitions
 
 ```
 TODO ──start──► IN_PROGRESS ──review──► IN_REVIEW ──complete──► DONE
-  │                 │   ▲                   │
-  │                 │   └──────rework───────┘
-  │                 └──block──► WAITING ──unblock──► IN_PROGRESS
-  └──────────complete / drop (direct close)─────────────────► DONE / DROPPED
+  │              │  │  ▲                  │                     ▲
+  │              │  │  └──────rework──────┘                     │
+  │              │  └──complete, no review (evidence required)──┘
+  │              └──block──► WAITING ──unblock──► IN_PROGRESS
+  └──────────complete / drop (direct close)──────────────────► DONE / DROPPED
 ```
 
-Any state may go to `DROPPED` (with a reason) or `WAITING` (with what it waits on). `DONE`
-and `DROPPED` are terminal; reopening is a new item. A transition carries a `summary`
+Any state may go to `DROPPED` (with a reason) or `WAITING` (with what it waits on);
+`WAITING` to `WAITING` re-states what the item waits on, and no other state moves to itself.
+`IN_PROGRESS` may complete without a review (a manual operation, a push to `main`), but its
+summary must name the evidence: the commit, run or result. `DONE` and `DROPPED` are
+terminal; reopening is a new item. A transition carries a `summary`
 (PR URL, commit, reason), rendered into the item's line or paragraph.
 
 ### 4.4 Manual actions

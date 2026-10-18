@@ -55,8 +55,9 @@ project and Part heading, and each work item and bucket starts with one:
 | ⬜ | not started |
 | ❌ | missed or dropped, with the reason |
 
-A heading's icon sums up what is under it: ✅ only when everything under it is done. Refresh
-every icon at each update.
+A heading's icon sums up what is under it: ✅ only when everything under it is done, and 🔄
+once some of it is, unless something waits (⏳). A Part's icon is set when the Part is
+written: 🔄 running, 🔍 in review, ✅ done. Refresh every icon at each update.
 
 **Next** is rebuilt at every update, from the *What remains* buckets and the routes.
 Each action is a step the user takes now: a decision to settle, a batch to start, a stack
