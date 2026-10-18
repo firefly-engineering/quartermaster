@@ -1,7 +1,8 @@
 # Note template
 
 The skeleton of a day's note. Fill in the `<angle brackets>`. `<icon>` is one of the status icons in SKILL.md. Keep empty buckets as `—`, so
-tomorrow's open can tell "nothing" from "forgot".
+tomorrow's open can tell "nothing" from "forgot". The status line may name the phase after the time:
+`**<HH:MM> UTC, <phase>:**`.
 
 Bucket names stay the same from day to day, because the next morning's open reads them back:
 

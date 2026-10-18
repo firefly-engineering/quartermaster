@@ -208,7 +208,7 @@ that prompt into the session for the user; nothing is pasted by hand.
 Any web page can open the button's `obsidian://` URI. So the URI carries only the note's
 date and an item id. The prompt text lives in the note, inside the **work item** it
 starts, so the user reads the context, the button and exactly what it sends together.
-The work item is the item's entry in its project's *What remains* (or its Part). A work
+The work item is the item's entry in its project's *What remains*, never in a Part. A work
 item that carries a prompt is a `#####` heading under its bucket, never a list item:
 Obsidian renders a callout nested in a list as raw text. Its paragraph ends with the button
 and then the block id `^<item-id>`, and the prompt follows as a top-level callout:
@@ -249,8 +249,8 @@ one-line list entries, and each bucket is a `####` heading.
 - `worklog-send` adds a closing line to every prompt: when the work is done, update the
   worklog's `^<item-id>` work item and refresh *Next*. Leave that line out of the block.
   A session that receives it runs the matching phase here, against that work item.
-- Once an action is done, its work item moves to its Part or shrinks to a line. Drop its
-  button and prompt, and its line in *Next*.
+- Once an action is done, its work item leaves its bucket and becomes a plain line in its
+  Part, with no `^<item-id>`. Drop its button and prompt, and its line in *Next*.
 
 ## Other repos
 

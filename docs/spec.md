@@ -103,20 +103,23 @@ it changes, so everything else, including user prose, round-trips byte for byte
 
 | Unit | Located by |
 |---|---|
-| Front matter | the leading `---` YAML block |
-| Status line | the first paragraph after `# Worklog — <date>` starting `**HH:MM UTC:**` |
+| Front matter | the leading `---` YAML block, LF or CRLF line ends |
+| Status line | the first paragraph after `# Worklog — <date>` starting `**HH:MM UTC:**`, or `**HH:MM UTC, <label>:**` where the label names the phase |
 | Objectives | the table under `## Objectives`, one row each |
 | Next | the ordered list under `## Next` |
 | Project section | `## <icon> <owner/repo>` |
-| Part | `### <icon> Part N — <kind>: <title>` |
+| Part | `### <icon> Part N — <kind>: <title>`, where the kind is `Human session`, `Agent batch` or `Land`, and nothing else |
 | Bucket | `#### <icon> <bucket name>` under `### <icon> What remains` |
-| Work item | a `#####` heading under a bucket whose paragraph ends with `^<item-id>`, or a list item carrying `^<item-id>` |
+| Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>` |
+| Anchor | a paragraph in a Part or bucket ending with `^<id>`: a link target, with no state |
 | Prompt block | a ```` ```herdr-prompt id=<item-id> to=<label> ```` fence, inside a `> [!prompt]-` callout |
 | Manual action | a task list item `- [ ]` / `- [x]`, or an ordered one `1. [ ]` in *Next* |
 | Carry-over | the table under `## Carry-over` |
 | Process | the list under `## Process` |
 
-Item ids are lowercase letters, digits and `-`, unique within a note.
+Item and anchor ids are lowercase letters, digits and `-`, unique within a note. Every
+`[[#^<id>|details]]` link in *Next* names a work item or an anchor. A section the note lacks
+parses as absent, and a checkbox in any section is a manual action.
 
 ### 4.2 States
 
@@ -134,7 +137,8 @@ draft's *in review*.
 
 A heading's icon is derived, never written by hand: ✅ only when every item under it is
 `DONE` or `DROPPED`; otherwise the "least done" icon below it, in the order
-⏳ > 🔄 > 🔍 > ⬜. The server recomputes every derived icon on each write.
+⏳ > 🔄 > 🔍 > ⬜. A heading with nothing under it shows `—`, which is never a work item's
+state. The server recomputes every derived icon on each write.
 
 ### 4.3 Transitions
 

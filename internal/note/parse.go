@@ -38,6 +38,7 @@ func Parse(src []byte) (*Note, error) {
 	p.structure(doc)
 	p.unplaced(doc)
 	p.duplicates()
+	p.nextRefs()
 	return p.n, p.err()
 }
 
@@ -103,12 +104,12 @@ func (p *parser) err() error {
 // frontMatter records the leading `---` block and returns the source with its bytes blanked,
 // so goldmark reads blank lines there and every offset stays the source's.
 func (p *parser) frontMatter() []byte {
-	if !bytes.HasPrefix(p.src, []byte("---\n")) {
+	if len(p.src) == 0 || !isFence(p.src[:p.lineEnd(0)]) {
 		return p.src
 	}
-	for off := 4; off < len(p.src); {
+	for off := p.lineEnd(0); off < len(p.src); {
 		end := p.lineEnd(off)
-		if string(bytes.TrimSuffix(p.src[off:end], []byte("\n"))) == "---" {
+		if isFence(p.src[off:end]) {
 			p.n.FrontMatter = &Span{Start: 0, End: end, Line: 1}
 			masked := bytes.Clone(p.src)
 			for i := range end {
@@ -122,6 +123,11 @@ func (p *parser) frontMatter() []byte {
 	}
 	p.errorf(1, "front matter opens with `---` but never closes")
 	return p.src
+}
+
+// isFence reports whether line, with its LF or CRLF end, is a front matter `---` fence.
+func isFence(line []byte) bool {
+	return string(bytes.TrimSuffix(bytes.TrimSuffix(line, []byte("\n")), []byte("\r"))) == "---"
 }
 
 // Source positions.
@@ -853,5 +859,17 @@ func (p *parser) duplicates() {
 			continue
 		}
 		first[x.id] = x.line
+	}
+}
+
+// nextRefs reports each *Next* details link whose id names no work item or anchor.
+func (p *parser) nextRefs() {
+	if p.n.Next == nil {
+		return
+	}
+	for _, it := range p.n.Next.Items {
+		if it.Ref != "" && !slices.ContainsFunc(p.ids, func(x idAt) bool { return x.id == it.Ref }) {
+			p.errorf(it.Line, "details link ^%s names no work item or anchor", it.Ref)
+		}
 	}
 }

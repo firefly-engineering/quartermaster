@@ -329,6 +329,7 @@ func TestParseErrors(t *testing.T) {
 		{"carry-over header", head + "## Carry-over\n\n| A | B | C |\n|---|---|---|\n", 7, "header"},
 		{"two process lists", head + "## Process\n\n- x\n\ntext\n\n- y\n", 11, "one list"},
 		{"bad next ref", head + "## Next\n\n1. go · [[#^Bad|details]]\n", 7, "item id"},
+		{"dangling next ref", head + "## Next\n\n1. go · [[#^gone|details]]\n", 7, "^gone"},
 		{"expanded prompt callout", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt] p\n> ```herdr-prompt id=a to=b\n> x\n> ```\n", 15, "[!prompt]-"},
 	}
 	for _, c := range cases {
@@ -356,6 +357,29 @@ func TestPartialResult(t *testing.T) {
 	n, err := Parse([]byte(src))
 	if err == nil || n == nil || n.Next == nil || len(n.Next.Items) != 1 {
 		t.Fatalf("err %v, note %+v", err, n)
+	}
+}
+
+// TestNextRefResolves: a *Next* link may point at a work item or an anchor (#21).
+func TestNextRefResolves(t *testing.T) {
+	t.Parallel()
+	src := "# Worklog — 2026-10-18\n\n**09:00 UTC:** open.\n\n## Next\n\n1. a · [[#^it|details]]\n2. b · [[#^part-1|details]]\n\n" +
+		"## ⬜ o/r\n\n### ⬜ Part 1 — Land: x, done\n\nmerged. ^part-1\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n- ⬜ y ^it\n"
+	if _, err := Parse([]byte(src)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCRLFFrontMatter: front matter written with CRLF line ends is read, not refused (#21).
+func TestCRLFFrontMatter(t *testing.T) {
+	t.Parallel()
+	src := "---\r\ndate: 2026-10-18\r\n---\r\n\n# Worklog — 2026-10-18\n"
+	n, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.FrontMatter == nil || n.FrontMatter.End != len("---\r\ndate: 2026-10-18\r\n---\r\n") {
+		t.Fatalf("front matter: %+v", n.FrontMatter)
 	}
 }
 
