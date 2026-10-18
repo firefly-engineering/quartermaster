@@ -1,0 +1,5 @@
+{
+  "name": "quartermaster",
+  "description": "The worklog skill: keep the day's Obsidian worklog note and dispatch its work to herdr sessions.",
+  "skills": ["./skills/worklog"]
+}
