@@ -303,7 +303,9 @@ own way; the README shows the snippets for `programs.agentSkills`,
 ## 12. Open questions
 
 - Should `refresh` run automatically at the start of each mutating tool, or only on demand?
+  [#14](https://github.com/firefly-engineering/quartermaster/issues/14)
 - Is a `## Log` section worth its noise, given that jj history already keeps the timeline?
+  [#15](https://github.com/firefly-engineering/quartermaster/issues/15)
 
 [ADR 0001]: adr/0001-the-worklog-note-is-the-canonical-format.md
 [ADR 0002]: adr/0002-structural-patching-by-source-range.md
