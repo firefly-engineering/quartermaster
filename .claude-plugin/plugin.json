@@ -1,5 +1,6 @@
 {
   "name": "quartermaster",
   "description": "The worklog skill: keep the day's Obsidian worklog note and dispatch its work to herdr sessions.",
+  "author": { "name": "Firefly Engineering" },
   "skills": ["./skills/worklog"]
 }

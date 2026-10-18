@@ -1,5 +1,5 @@
-# The package builds with its tests, the skill bundle builds, and the home-manager module
-# installs the binary and emits config.toml.
+# The package builds with its tests, the skill bundle builds with the package's version, and
+# the home-manager module installs the binary and emits config.toml.
 {
   self,
   nixpkgs,
@@ -33,7 +33,11 @@ in
 assert builtins.elem qm.quartermaster config.home.packages;
 {
   package = qm.quartermaster;
-  skills = qm.skills;
+  skills = pkgs.runCommand "quartermaster-skills-check" { nativeBuildInputs = [ pkgs.jq ]; } ''
+    jq -e --arg v ${qm.quartermaster.version} '.version == $v' \
+      ${qm.skills}/.claude-plugin/plugin.json
+    touch "$out"
+  '';
   module = pkgs.runCommand "quartermaster-module-check" { } ''
     grep -qFx 'repo = "/vault"' ${config.xdg.configFile."quartermaster/config.toml".source}
     touch "$out"
