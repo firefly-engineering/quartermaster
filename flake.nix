@@ -54,7 +54,7 @@
         in
         rec {
           quartermaster = pkgs.callPackage ./nix/package.nix { go = goFor system; };
-          skills = pkgs.callPackage ./nix/skills.nix { };
+          skills = pkgs.callPackage ./nix/skills.nix { inherit (quartermaster) version; };
           default = quartermaster;
         }
       );
