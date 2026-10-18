@@ -90,6 +90,22 @@ const (
 	byCommit = `{"__typename":"Commit","url":"https://github.com/o/r/commit/abc1234"}`
 )
 
+// paneText is what herdr 0.9.5's `agent read` prints for a pane whose agent took item id's
+// prompt and replied: earlier transcript, the prompt with the tag `worklog send` closes it with,
+// then the reply. It is plain text, not JSON.
+func paneText(id, prompt, reply string) string {
+	return "  ⎿  Working copy  (@) : uoytrlvu 201be9fb (empty)\n" +
+		"     … +3 lines (ctrl+o to expand)\n\n" +
+		"⏺ Earlier work landed in https://github.com/o/infra/pull/1.\n\n" +
+		"❯ " + prompt + "\n\n" +
+		"  When this is done, update the worklog with the worklog skill: work item ^" + id + " in /v/2026-10-18.md. Record the outcome and refresh Next.\n\n" +
+		"⏺ Bash(jj st | tail -2)\n" +
+		"  ⎿  Parent commit (@-): kxkkuqqz 88a136f1 main\n\n" +
+		reply + "\n\n" +
+		"──────────────────────────────\n" +
+		"❯ \n"
+}
+
 // refreshNote has an item for each case refresh tells apart.
 const refreshNote = "# Worklog — 2026-10-18\n" + `
 ## Next
@@ -163,8 +179,10 @@ func TestGatherAndApply(t *testing.T) {
 		"agent list": {out: `{"id":"1","result":{"type":"agent_list","agents":[` +
 			`{"workspace_id":"w1","pane_id":"w1:p9","agent_status":"working"},` +
 			`{"workspace_id":"w5","pane_id":"w5:p1","agent_status":"idle"}]}}`},
-		"agent read w5:p1 --source recent-unwrapped --lines 400": {out: `{"id":"1","result":{"type":"pane_read","read":{"pane_id":"w5:p1","text":` +
-			`"earlier work, https://github.com/o/infra/pull/1\n> open the port for https://github.com/o/infra/issues/40\n> When this is done, update the worklog with the worklog skill: work item ^port in /v/2026-10-18.md. Record the outcome and refresh Next.\nOpened the port in https://github.com/o/infra/pull/77 (merged), run: https://github.com/o/infra/actions/runs/9.\nSee also [the issue](https://github.com/o/infra/issues/40).\n"}}}`},
+		"agent read w5:p1 --source recent-unwrapped --lines 400 --format text": {out: paneText("port",
+			"open the port for https://github.com/o/infra/issues/40",
+			"⏺ Opened the port in https://github.com/o/infra/pull/77 (merged), run: https://github.com/o/infra/actions/runs/9.\n"+
+				"  See also [the issue](https://github.com/o/infra/issues/40).")},
 	}}
 	src := []byte(refreshNote)
 	n, err := note.Parse(src)
@@ -372,15 +390,13 @@ func TestReplyRoutes(t *testing.T) {
 		"Body. [▶ send to infra](obsidian://shell-commands/?vault=w&execute=abc&_date=2026-10-18&_item=port) ^port\n\n" +
 		"> [!prompt]- Prompt sent to infra\n> ```herdr-prompt id=port to=infra\n> open the port\n> ```\n\n" +
 		"- ⏳ rotate the key → infra, **acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9:p2 ws=/ws --> ^key\n"
-	read := func(id, links string) reply {
-		return reply{out: `{"result":{"type":"pane_read","read":{"text":"> work item ^` + id + ` in /v.md.\n` + links + `\n"}}}`}
-	}
+	read := func(id, links string) reply { return reply{out: paneText(id, "do the thing", "⏺ "+links)} }
 	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
 		"workspace list": {out: `{"result":{"workspaces":[{"workspace_id":"w5","label":"infra"},{"workspace_id":"w6","label":"other"}]}}`},
 		"agent list": {out: `{"result":{"agents":[{"workspace_id":"w5","pane_id":"w5:p1","agent_status":"done"},` +
 			`{"workspace_id":"w6","pane_id":"w6:p1","agent_status":"idle"},{"workspace_id":"w9","pane_id":"w9:p2","agent_status":"idle"}]}}`},
-		"agent read w5:p1 --source recent-unwrapped --lines 400": read("port", "PR: https://github.com/o/infra/pull/5"),
-		"agent read w9:p2 --source recent-unwrapped --lines 400": read("key", "https://github.com/o/infra/pull/1 and https://github.com/o/infra/pull/2"),
+		"agent read w5:p1 --source recent-unwrapped --lines 400 --format text": read("port", "PR: https://github.com/o/infra/pull/5"),
+		"agent read w9:p2 --source recent-unwrapped --lines 400 --format text": read("key", "https://github.com/o/infra/pull/1 and https://github.com/o/infra/pull/2"),
 	}}
 	n, err := note.Parse([]byte(src))
 	if err != nil {
@@ -397,5 +413,30 @@ func TestReplyRoutes(t *testing.T) {
 	).Replace(src)
 	if string(out) != want {
 		t.Errorf("note:\n%s\nwant:\n%s", out, want)
+	}
+}
+
+// TestReplyReadFails reports an `agent read` that exits non-zero as why the item stays sent.
+func TestReplyReadFails(t *testing.T) {
+	t.Parallel()
+	const src = "# Worklog — 2026-10-18\n\n## ⏳ o/r\n\n### ⏳ What remains\n\n#### ⏳ Sent to other repos\n\n" +
+		"- ⏳ rotate the key → infra, **sent** <!-- qm pane=w9:p2 ws=/ws --> ^key\n"
+	args := []string{"agent", "read", "w9:p2", "--source", "recent-unwrapped", "--lines", "400", "--format", "text"}
+	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
+		"agent list": {out: `{"result":{"agents":[{"workspace_id":"w9","pane_id":"w9:p2","agent_status":"idle"}]}}`},
+		strings.Join(args, " "): {err: &ExitError{Name: "herdr", Args: args,
+			Stderr: []byte(`{"id":"1","error":{"code":"pane_not_found","message":"pane w9:p2 not found"}}`)}},
+	}}
+	n, err := note.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: herdr.run}.Gather(t.Context(), n).Apply([]byte(src))
+	if err != nil || string(out) != src || len(applied) != 0 {
+		t.Fatalf("applied %+v, err %v", applied, err)
+	}
+	want := `herdr: herdr agent read: {"id":"1","error":{"code":"pane_not_found","message":"pane w9:p2 not found"}}`
+	if len(skipped) != 1 || !strings.HasPrefix(skipped[0].Reason, "herdr:") || skipped[0].Reason != want {
+		t.Errorf("skipped %+v, want %q", skipped, want)
 	}
 }

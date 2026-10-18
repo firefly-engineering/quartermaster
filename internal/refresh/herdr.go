@@ -9,8 +9,9 @@ import (
 	"strings"
 )
 
-// herdr's JSON, as herdr 0.9.5's API schema has it: every answer is `{"id", "result"}`, and an
-// error is `{"id", "error": {"code", "message"}}` on standard error, with exit status 1.
+// herdr's JSON, as herdr 0.9.5's API schema has it: every answer but `agent read`'s, which is
+// the pane's plain text, is `{"id", "result"}`, and an error is `{"id", "error": {"code",
+// "message"}}` on standard error, with exit status 1.
 
 type herdrError struct {
 	Error struct {
@@ -31,11 +32,17 @@ func errorCode(err error) string {
 	return e.Error.Code
 }
 
-func (g *gatherer) herdr(ctx context.Context, v any, args ...string) error {
+// herdrText runs herdr with args and returns its standard output as is.
+func (g *gatherer) herdrText(ctx context.Context, args ...string) ([]byte, error) {
 	if g.Herdr == nil {
-		return errors.New("herdr: not available")
+		return nil, errors.New("herdr: not available")
 	}
-	out, err := g.Herdr(ctx, args...)
+	return g.Herdr(ctx, args...)
+}
+
+// herdr runs herdr with args and decodes its JSON answer into v.
+func (g *gatherer) herdr(ctx context.Context, v any, args ...string) error {
+	out, err := g.herdrText(ctx, args...)
 	if err != nil {
 		return err
 	}
@@ -164,17 +171,12 @@ func (g *gatherer) reply(ctx context.Context, id, pane, label, title string) (li
 	if a.Status != "idle" && a.Status != "done" {
 		return nil, fmt.Sprintf("the agent in %s is %s", who, a.Status)
 	}
-	var r struct {
-		Result struct {
-			Read struct {
-				Text string `json:"text"`
-			} `json:"read"`
-		} `json:"result"`
-	}
-	if err := g.herdr(ctx, &r, "agent", "read", a.Pane, "--source", "recent-unwrapped", "--lines", readLines); err != nil {
+	// agent read prints the pane's text, not JSON: --format takes only text and ansi.
+	text, err := g.herdrText(ctx, "agent", "read", a.Pane, "--source", "recent-unwrapped", "--lines", readLines, "--format", "text")
+	if err != nil {
 		return nil, "herdr: " + err.Error()
 	}
-	all, ok := replyLinks(r.Result.Read.Text, id)
+	all, ok := replyLinks(string(text), id)
 	if !ok {
 		return nil, fmt.Sprintf("no prompt for ^%s in the recent output of %s", id, who)
 	}
