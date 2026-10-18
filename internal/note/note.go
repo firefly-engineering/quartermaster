@@ -54,10 +54,13 @@ var BucketNames = []string{
 	"Decisions for you",
 	"Your actions",
 	"Agent queue",
-	"Sent to other repos",
+	SentBucket,
 	"Outside input: chase",
 	"Waiting",
 }
+
+// SentBucket is the bucket of work sent to another repo's session.
+const SentBucket = "Sent to other repos"
 
 // ProcessSection is the name of the `## Process` section.
 const ProcessSection = "Process"
@@ -196,6 +199,7 @@ type Item struct {
 	Heading  bool
 	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
 	Prompt   *Prompt
+	Dispatch *Dispatch // its dispatch marker, nil when it has none
 }
 
 // Prompt is a work item's `> [!prompt]-` callout and the `herdr-prompt` block inside it.

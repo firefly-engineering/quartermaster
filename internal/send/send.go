@@ -67,13 +67,17 @@ func (s Sender) Send(ctx context.Context, vault, date, id string) (Sent, error) 
 	if !slices.Contains(sendable, status) {
 		return Sent{}, fmt.Errorf("%s agent is %s; answer it first", to, status)
 	}
-	text += fmt.Sprintf("\n\nWhen this is done, update the worklog with the worklog skill: work item "+
-		"^%s in %s. Record the outcome and refresh Next.", id, path)
+	text += "\n\nWhen this is done, update the worklog with the worklog skill: " + PromptTag(id) + path +
+		". Record the outcome and refresh Next."
 	if _, err := s.herdr(ctx, "agent", "prompt", pane, text); err != nil {
 		return Sent{}, err
 	}
 	return Sent{ID: id, To: to, Pane: pane}, nil
 }
+
+// PromptTag is how the closing line Send adds to every prompt names work item id, just before
+// the note's path. refresh finds an agent's reply to the prompt after it.
+func PromptTag(id string) string { return "work item ^" + id + " in " }
 
 // prompt returns the workspace label and text of item id's herdr-prompt block. The note need
 // not parse cleanly elsewhere; a parse error is reported only when the block is not found.

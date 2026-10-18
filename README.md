@@ -17,10 +17,10 @@ Built today:
 - `quartermaster version`.
 - `quartermaster serve`: a stdio MCP server with the `workflow_rules` and `phase` prompts
   ([spec §8](docs/spec.md#8-mcp-prompts)) and the tools `day_open`, `day_read`,
-  `objective_set`, `item_upsert`, `item_transition`, `next_set`, `status_set` and
-  `carryover_verdict` ([spec §6](docs/spec.md#6-mcp-tools)).
-- `quartermaster note open|read|objective|item|transition|next|status|verdict`: the same
-  tools from the command line.
+  `objective_set`, `item_upsert`, `item_transition`, `next_set`, `status_set`,
+  `carryover_verdict` and `refresh` ([spec §6](docs/spec.md#6-mcp-tools)).
+- `quartermaster note open|read|objective|item|transition|next|status|verdict|refresh`: the
+  same tools from the command line.
 - `quartermaster send <vault> <date> <item-id>`: the ▶ button handler
   ([spec §9.1](docs/spec.md#91-quartermaster-send--buttons)).
 - The configuration ([spec §3](docs/spec.md#3-configuration)): `serve` and `note` read
@@ -30,8 +30,7 @@ Built today:
 
 Not built yet:
 
-- The other MCP tools, and their `note` verbs:
-  [#10](https://github.com/firefly-engineering/quartermaster/issues/10) (`refresh`),
+- The other MCP tool, and its `note` verb:
   [#11](https://github.com/firefly-engineering/quartermaster/issues/11) (`task_dispatch`).
 
 ## Usage
@@ -64,6 +63,7 @@ quartermaster note transition '{"item": "login-stack", "to": "DONE", "summary": 
 | `next` | `next_set` | replaces *Next* with up to five actions, by item id |
 | `status` | `status_set` | rewrites the status line |
 | `verdict` | `carryover_verdict` | records keep, defer or drop on a carry-over row |
+| `refresh` | `refresh` | reconciles the note with GitHub and herdr |
 
 The write tools change the note through one lock, check, rename and commit sequence
 ([ADR 0006](docs/adr/0006-mutations-lock-check-rename-commit.md)), one jj change each, and
@@ -75,6 +75,19 @@ given. `quartermaster serve` lists every tool's input schema.
 note, the latest dated note before today, becomes a carry-over row with no verdict: unmet
 objectives, open *What remains* items, unticked manual actions, carry-over rows not kept,
 dropped or done, and *Process* to-dos. It refuses when today's note exists and is not empty.
+
+`refresh` reconciles the note on demand ([ADR 0003](docs/adr/0003-no-daemon-reconcile-on-read.md),
+[spec §11](docs/spec.md#11-failure-modes)), in one write, and moves an item only on evidence.
+It asks `gh` about the issue or PR each open work item's title leads with: a merged PR, or an
+issue closed as completed, is `DONE` with the PR or the commit that closed it; an issue closed
+as not planned or as a duplicate is `DROPPED`. It asks `herdr` about the pane in each
+`IN_PROGRESS` item's dispatch marker: a pane gone, or no agent in it, is `WAITING` ("worker
+exited"), never `DONE`. For an item in *Sent to other repos* marked **sent** or **acked**, it
+reads the agent the item was sent to (`herdr agent read`); GitHub links in the reply after the
+item's prompt mark it **acked** and are added to its line; once GitHub moves it to `DONE`, it
+reads **done**. Its write also ticks paired
+checkboxes and derives icons, as every write does. It returns what it changed, and every item
+it checked and left as it was, with why.
 
 ## Install
 

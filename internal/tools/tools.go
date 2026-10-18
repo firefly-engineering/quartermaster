@@ -10,7 +10,7 @@
 // Deps.engine; nothing else writes a note.
 //
 // Like every package but main, this one reads neither the environment nor the cwd: [Deps]
-// carries the configuration, the clock and jj.
+// carries the configuration, the clock, jj, and runners for gh and herdr.
 package tools
 
 import (
@@ -27,6 +27,7 @@ import (
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/engine"
+	"github.com/firefly-engineering/quartermaster/internal/refresh"
 )
 
 // Deps are what the tools need from outside, all resolved by main.
@@ -35,6 +36,8 @@ type Deps struct {
 	Now    func() time.Time // the clock; tools read it in UTC
 	JJ     string           // jj's path, "" when not found
 	Env    []string         // jj's environment
+	GH     refresh.Runner   // runs gh, for refresh
+	Herdr  refresh.Runner   // runs herdr, for refresh
 }
 
 // Tool is one operation, servable over MCP and runnable from the CLI.
@@ -148,6 +151,16 @@ func All(d Deps) []Tool {
 			Description: "Record keep, defer or drop on a carry-over row, by its 1-based row. Keep also writes " +
 				"the row's work item into its project's bucket; drop needs its reason.",
 			Run: d.carryOverVerdict,
+		},
+		Def[RefreshInput, RefreshOutput]{
+			Name: "refresh", Verb: "refresh",
+			Description: "Reconcile the note with GitHub and herdr, applying only what the evidence proves " +
+				"(spec §11): a merged PR or an issue closed as completed moves its item to DONE with the PR or " +
+				"commit; an issue closed as not planned or a duplicate, to DROPPED; a dispatched IN_PROGRESS " +
+				"item whose pane is gone or whose agent exited, to WAITING (\"worker exited\"), never DONE; a " +
+				"reply with links to an item sent to another repo marks it acked. Also ticks paired checkboxes " +
+				"and derives icons. Returns what it changed and every item it checked and left, with why.",
+			Run: d.refresh,
 		},
 	}
 }

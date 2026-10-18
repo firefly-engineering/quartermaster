@@ -550,6 +550,7 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	it.ID = id
 	it.End = p.nodeEnd(para)
 	it.Button = p.buttonLabel(para)
+	it.Dispatch = p.dispatch(para)
 	p.addItem(it)
 	p.bucket.Items = append(p.bucket.Items, it)
 	return it
@@ -833,7 +834,7 @@ func (p *parser) listItem(li, first ast.Node) {
 	icon := first.Lines().At(0).Start // a list item's text opens on its icon
 	it := &Item{
 		Span: p.blockSpan(li), Head: p.span(p.nodeStart(li), p.nodeEnd(first)), IconSpan: p.span(icon, icon+len(lead)),
-		ID: id, Icon: Icon(lead), Title: withoutID(rest, id),
+		ID: id, Icon: Icon(lead), Title: withoutID(rest, id), Dispatch: p.dispatch(first),
 	}
 	p.addItem(it)
 	if p.part != nil {

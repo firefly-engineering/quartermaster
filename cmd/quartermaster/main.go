@@ -20,6 +20,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
+	"github.com/firefly-engineering/quartermaster/internal/refresh"
 	qmsend "github.com/firefly-engineering/quartermaster/internal/send"
 	"github.com/firefly-engineering/quartermaster/internal/server"
 	"github.com/firefly-engineering/quartermaster/internal/tools"
@@ -148,7 +149,12 @@ func absolute(p, cwd string) string {
 // deps are the tools' dependencies, from the configuration and the host.
 func deps(cfg config.Config, h host) tools.Deps {
 	jj, _ := h.lookPath("jj") // "" is fine until the vault turns out to be a jj repo
-	return tools.Deps{Config: cfg, Now: h.now, JJ: jj, Env: h.environ}
+	gh, _ := h.lookPath("gh") // "" makes refresh report gh missing, per item
+	herdr, _ := h.lookPath("herdr")
+	return tools.Deps{
+		Config: cfg, Now: h.now, JJ: jj, Env: h.environ,
+		GH: refresh.Command("gh", gh, h.environ), Herdr: refresh.Command("herdr", herdr, h.environ),
+	}
 }
 
 // serve runs the MCP server on stdin and stdout until the client disconnects.
