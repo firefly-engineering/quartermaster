@@ -58,3 +58,11 @@ func TestSkillEmbedded(t *testing.T) {
 		}
 	}
 }
+
+func TestServeTakesNoArguments(t *testing.T) {
+	t.Parallel()
+	var out, errb bytes.Buffer
+	if code := run([]string{"serve", "extra"}, &out, &errb); code != 2 || errb.Len() == 0 {
+		t.Fatalf("code %d, stderr %q", code, errb.String())
+	}
+}
