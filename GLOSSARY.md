@@ -79,6 +79,18 @@ repo's name ([spec §9.2](docs/spec.md#92-task_dispatch)).
 Starting work on a ref, by prompting the project's session (`session`) or by creating an
 isolated workspace and a new agent (`fresh`).
 
+## Harness
+
+An agent program and how it is launched: its herdr agent kind, arguments and model, such as
+claude, or omp on a GLM model. A prompt reaches a harness through its **tier**, never by
+naming it.
+
+## Tier
+
+The class of work a prompt belongs to, such as design and decisions or well-specified
+implementation. Config maps each tier to one **harness**. A route gives a work item its
+tier, and the item may override it. _Avoid_: lane.
+
 ## Ref
 
 `owner/repo#N`: an issue or PR, unambiguous across projects.
