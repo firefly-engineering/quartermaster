@@ -21,7 +21,7 @@ type PromptSendOutput struct {
 	Pane string `json:"pane" jsonschema:"the herdr pane prompted"`
 }
 
-// promptSend sends item's prompt block to its herdr session, as `quartermaster send` does
+// promptSend sends item's prompt block to its herdr session, as `worklog send` does
 // (spec §9.1), through package send and its validation. It does not write the note: the item
 // stays as it was until the skill records the send.
 func (d Deps) promptSend(ctx context.Context, in PromptSendInput) (PromptSendOutput, error) {

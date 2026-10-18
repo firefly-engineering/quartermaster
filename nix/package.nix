@@ -4,7 +4,7 @@
   go,
 }:
 (buildGoModule.override { inherit go; }) (finalAttrs: {
-  pname = "quartermaster";
+  pname = "worklog";
   version = "0.0.0";
 
   src = lib.fileset.toSource {
@@ -19,7 +19,7 @@
   };
 
   vendorHash = "sha256-Hh4eKyRJmwrRkc0uCLqjAFECo36aicrnjpbCF2E1F7k=";
-  subPackages = [ "cmd/quartermaster" ];
+  subPackages = [ "cmd/worklog" ];
   env.CGO_ENABLED = "0";
   ldflags = [
     "-s"
@@ -31,6 +31,6 @@
     description = "The worklog note and its agent dispatch, as an MCP server";
     homepage = "https://github.com/firefly-engineering/quartermaster";
     license = lib.licenses.mit;
-    mainProgram = "quartermaster";
+    mainProgram = "worklog";
   };
 })

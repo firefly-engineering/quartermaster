@@ -4,7 +4,7 @@ default:
     @just --list
 
 build:
-    go build -o bin/quartermaster ./cmd/quartermaster
+    go build -o bin/worklog ./cmd/worklog
 
 test:
     gotestsum -- -race ./...

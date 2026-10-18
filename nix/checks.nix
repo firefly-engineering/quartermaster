@@ -1,5 +1,5 @@
 # The package builds with its tests, the skill bundle builds with the package's version, and
-# the home-manager module installs the binary and emits config.toml.
+# the home-manager module installs the binary and emits quartermaster/worklog.toml.
 {
   self,
   nixpkgs,
@@ -21,7 +21,7 @@ let
         };
         # nix-pins pairs its own nixpkgs and home-manager; the release check is theirs to keep.
         home.enableNixpkgsReleaseCheck = false;
-        programs.quartermaster = {
+        programs.quartermaster.worklog = {
           enable = true;
           settings.vault.repo = "/vault";
         };
@@ -30,16 +30,16 @@ let
   };
   inherit (home) config;
 in
-assert builtins.elem qm.quartermaster config.home.packages;
+assert builtins.elem qm.worklog config.home.packages;
 {
-  package = qm.quartermaster;
+  package = qm.worklog;
   skills = pkgs.runCommand "quartermaster-skills-check" { nativeBuildInputs = [ pkgs.jq ]; } ''
-    jq -e --arg v ${qm.quartermaster.version} '.version == $v' \
+    jq -e --arg v ${qm.worklog.version} '.version == $v' \
       ${qm.skills}/.claude-plugin/plugin.json
     touch "$out"
   '';
-  module = pkgs.runCommand "quartermaster-module-check" { } ''
-    grep -qFx 'repo = "/vault"' ${config.xdg.configFile."quartermaster/config.toml".source}
+  module = pkgs.runCommand "worklog-module-check" { } ''
+    grep -qFx 'repo = "/vault"' ${config.xdg.configFile."quartermaster/worklog.toml".source}
     touch "$out"
   '';
 }

@@ -1,5 +1,5 @@
 {
-  description = "quartermaster: the worklog note and its agent dispatch, as an MCP server";
+  description = "quartermaster: a suite of agent tools, starting with the worklog note and its agent dispatch as an MCP server";
 
   nixConfig = {
     extra-substituters = [ "https://firefly-toolbox.cachix.org" ];
@@ -53,14 +53,14 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         rec {
-          quartermaster = pkgs.callPackage ./nix/package.nix { go = goFor system; };
-          skills = pkgs.callPackage ./nix/skills.nix { inherit (quartermaster) version; };
-          default = quartermaster;
+          worklog = pkgs.callPackage ./nix/package.nix { go = goFor system; };
+          skills = pkgs.callPackage ./nix/skills.nix { inherit (worklog) version; };
+          default = worklog;
         }
       );
 
       overlays.default = final: _: {
-        quartermaster = self.packages.${final.stdenv.hostPlatform.system}.quartermaster;
+        worklog = self.packages.${final.stdenv.hostPlatform.system}.worklog;
       };
 
       homeManagerModules.default = import ./nix/module.nix { inherit (self) packages; };

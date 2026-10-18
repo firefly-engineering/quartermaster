@@ -1,7 +1,7 @@
 // Package dispatch starts work on a ref (spec §9.2): task_dispatch's logic.
 //
 // Mode session prompts the project's herdr session through package send, the path of
-// `quartermaster send`, and leaves the note alone. Mode fresh gives the ref a workspace of its
+// `worklog send`, and leaves the note alone. Mode fresh gives the ref a workspace of its
 // own (ADR 0004), starts an agent there under herdr, then records the agent's pane and
 // workspace on the ref's work item and moves it to IN_PROGRESS, through the engine.
 //

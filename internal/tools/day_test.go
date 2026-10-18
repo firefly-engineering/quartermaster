@@ -360,7 +360,7 @@ func remarshal(from, to any) error {
 	return json.Unmarshal(b, to)
 }
 
-// TestRunVerb runs the tools as `quartermaster note` verbs do.
+// TestRunVerb runs the tools as `worklog note` verbs do.
 func TestRunVerb(t *testing.T) {
 	t.Parallel()
 	d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t))}, false)

@@ -260,7 +260,7 @@ func TestIgnores(t *testing.T) {
 		"/other/.quartermaster/":    false,
 		"/.quartermaster/":          false,
 		"# .quartermaster/":         false,
-		".quartermaster/locks/":     false,
+		".quartermaster/worklog/":   false,
 		"":                          false,
 	} {
 		if got := ignores([]byte(gi), "worklog"); got != want {
@@ -620,7 +620,7 @@ func TestMutatorsSerialise(t *testing.T) {
 func TestLockReleasedWhenHolderKilled(t *testing.T) {
 	t.Parallel()
 	v := newVault(t, fixture, false)
-	path := filepath.Join(v.Repo, "worklog", ".quartermaster", "locks", date+".lock")
+	path := filepath.Join(v.Repo, "worklog", ".quartermaster", "worklog", "locks", date+".lock")
 	holder := exec.Command(os.Args[0], "-hold-lock", path)
 	stdout, err := holder.StdoutPipe()
 	if err != nil {

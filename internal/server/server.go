@@ -1,4 +1,4 @@
-// Package server is quartermaster's MCP server: the prompts of docs/spec.md §8, served from
+// Package server is the worklog's MCP server: the prompts of docs/spec.md §8, served from
 // the worklog skill embedded in the binary (ADR 0005), and the tools of §6 from internal/tools.
 package server
 
@@ -36,7 +36,7 @@ func New(version string, ts ...tools.Tool) (*mcp.Server, error) {
 	}
 	names := slices.Sorted(maps.Keys(phases))
 
-	s := mcp.NewServer(&mcp.Implementation{Name: "quartermaster", Version: version}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "worklog", Version: version}, nil)
 	s.AddPrompt(&mcp.Prompt{
 		Name:        "workflow_rules",
 		Description: "The worklog skill: SKILL.md, then template.md.",

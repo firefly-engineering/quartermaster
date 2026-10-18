@@ -25,7 +25,7 @@ func write(t *testing.T, body string) string {
 func wantDefaults() Config {
 	return Config{
 		Vault:    Vault{Dir: "worklog", Name: "worklog"},
-		Dispatch: Dispatch{WorkspaceRoot: "/home/u/.local/share/quartermaster/workspaces"},
+		Dispatch: Dispatch{WorkspaceRoot: "/home/u/.local/share/quartermaster/worklog/workspaces"},
 		Projects: map[string]Project{},
 	}
 }
