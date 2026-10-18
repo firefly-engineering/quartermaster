@@ -227,7 +227,7 @@ Every research window Run is refused until it is settled. ~20 min. Route:
 ````
 
 The callout starts collapsed (`[!prompt]-`), so the prompt stays out of the way until the
-user opens it. `worklog-send` reads through the `>` markers. Items without a prompt stay
+user opens it. `quartermaster send` reads through the `>` markers. Items without a prompt stay
 one-line list entries, and each bucket is a `####` heading.
 
 *Next* stays one line per action, and repeats the button with a link to the work item:
@@ -239,14 +239,14 @@ one-line list entries, and each bucket is a `####` heading.
 - The button's label names what it does and where: `▶ grill in trunk`, `▶ send to IaC`,
   `▶ run batch in trunk`.
 
-- `<id>` is the Shell commands plugin's id for the command that runs `worklog-send`.
+- `<id>` is the Shell commands plugin's id for the command that runs `quartermaster send`.
   Read it from `$VAULT/worklog/.obsidian/plugins/obsidian-shellcommands/data.json`: it is
-  the `id` of the `shell_commands` entry whose command contains `worklog-send`.
+  the `id` of the `shell_commands` entry whose command contains `quartermaster send`.
 - When that file or entry is missing, leave out the buttons but keep the prompt blocks in
   their work items, and point the user at [`buttons-setup.md`](buttons-setup.md) once.
 - Item ids are lowercase letters, digits and `-`, unique within the note. A prompt is
   self-contained, because the session receiving it may not have the note's context.
-- `worklog-send` adds a closing line to every prompt: when the work is done, update the
+- `quartermaster send` adds a closing line to every prompt: when the work is done, update the
   worklog's `^<item-id>` work item and refresh *Next*. Leave that line out of the block.
   A session that receives it runs the matching phase here, against that work item.
 - Once an action is done, its work item leaves its bucket and becomes a plain line in its
@@ -264,8 +264,8 @@ repos* bucket, because that project is waiting on it.
    what is needed and why, links the ticket it unblocks, says how the result is verified,
    and asks for a reply with links (issue, PR, run).
 2. Put its ▶ button in *Next*, and record the item as **to send**.
-3. When the user asks you to send it, send it yourself with the same script:
-   `~/.claude/skills/worklog/scripts/worklog-send $VAULT/worklog <date> <id>`. It fails
+3. When the user asks you to send it, send it yourself with the same command:
+   `quartermaster send $VAULT/worklog <date> <id>`. It fails
    if `HERDR_ENV` is unset, or if the workspace is missing or has no single agent; leave
    the item **to send** and say why.
 4. Track status (**to send**, **sent**, **acked**, **done**) and the links as they arrive.

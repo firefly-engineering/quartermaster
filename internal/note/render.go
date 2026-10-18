@@ -156,7 +156,7 @@ func (r Renderer) NextLine(n int, u NextUnit) ([]byte, error) {
 	if err := oneLine("next action", u.Action+u.Cost); err != nil {
 		return nil, err
 	}
-	if u.Ref != "" && !validID(u.Ref) {
+	if u.Ref != "" && !ValidID(u.Ref) {
 		return nil, fmt.Errorf("next: invalid item id ^%s: lowercase letters, digits and - only", u.Ref)
 	}
 	if u.Button != "" && u.Box != NoBox {
@@ -191,7 +191,7 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	what := "entry " + strconv.Quote(u.Title)
 	if u.ID != "" {
 		what = "work item ^" + u.ID
-		if !validID(u.ID) {
+		if !ValidID(u.ID) {
 			return nil, fmt.Errorf("invalid item id ^%s: lowercase letters, digits and - only", u.ID)
 		}
 	}
