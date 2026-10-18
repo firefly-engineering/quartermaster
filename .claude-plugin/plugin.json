@@ -1,6 +1,6 @@
 {
   "name": "quartermaster",
-  "description": "The worklog skill: keep the day's Obsidian worklog note and dispatch its work to herdr sessions.",
+  "description": "The quartermaster skills: worklog keeps the day's Obsidian worklog note and dispatches its work to herdr sessions; worktree-build-cache checks that fresh worktrees and jj workspaces reuse the shared build and test caches.",
   "author": { "name": "Firefly Engineering" },
-  "skills": ["./skills/worklog"]
+  "skills": ["./skills/worklog", "./skills/worktree-build-cache"]
 }

@@ -26,7 +26,8 @@ Built today:
   ([spec §9.1](docs/spec.md#91-worklog-send--buttons)).
 - The configuration ([spec §3](docs/spec.md#3-configuration)): `serve` and `note` read
   `worklog.toml` and take `--config` and `--vault`.
-- The `skills` flake package: the `worklog` skill as a Claude plugin directory.
+- The `skills` flake package: the `worklog` and `worktree-build-cache` skills as a Claude
+  plugin directory.
 - The home-manager module.
 
 ## Usage
@@ -161,9 +162,11 @@ under `projects."owner/repo"` overrides the `path`, the `workspace` label, or bo
 
 `package` defaults to this flake's build.
 
-### The skill
+### The skills
 
-The `skills` package holds `.claude-plugin/plugin.json` and `skills/worklog`. Home-manager's
+The `skills` package holds `.claude-plugin/plugin.json`, `skills/worklog` and
+`skills/worktree-build-cache`, a skill-only suite member
+([ADR 0010](docs/adr/0010-a-suite-member-may-be-skill-only.md)). Home-manager's
 `programs.claude-code.plugins` installs it, passing it to `claude` as `--plugin-dir`:
 
 ```nix
@@ -176,7 +179,7 @@ The `skills` package holds `.claude-plugin/plugin.json` and `skills/worklog`. Ho
 }
 ```
 
-Or with `programs.agentSkills.plugins`, which links the skill into every agent's skill
+Or with `programs.agentSkills.plugins`, which links the skills into every agent's skill
 directory. `programs.agentSkills` is not a home-manager option: it is the module in
 [sigma/systems](https://github.com/sigma/systems/blob/main/home-modules/agent-skills.nix),
 which you import yourself.
@@ -190,7 +193,7 @@ which you import yourself.
 }
 ```
 
-A harness without skills gets the same text from the `workflow_rules` prompt
+A harness without skills gets the worklog skill's text from the `workflow_rules` prompt
 ([ADR 0005](docs/adr/0005-the-skill-is-the-single-source-of-workflow-rules.md)).
 
 ## Register the MCP server
