@@ -32,9 +32,10 @@ func settle(was *note.Note, out []byte) ([]byte, *note.Note, error) {
 		if d.Icon == d.Was {
 			continue
 		}
-		if out, err = setIcon(out, d); err != nil {
-			return nil, nil, err
+		if string(out[d.IconSpan.Start:d.IconSpan.End]) != string(d.Was) {
+			return nil, nil, fmt.Errorf("line %d: heading has no %s icon", d.Heading.Line, d.Was)
 		}
+		out = note.Replace(out, d.IconSpan, []byte(d.Icon))
 		changed = true
 	}
 	if changed {
@@ -54,21 +55,6 @@ func parse(src []byte, what string) (*note.Note, error) {
 		return nil, fmt.Errorf("%s: %w: %w", what, ErrUnparseable, err)
 	}
 	return n, nil
-}
-
-// setIcon replaces the icon of d's heading, the one after its `#` run, with d.Icon.
-func setIcon(src []byte, d note.DerivedIcon) ([]byte, error) {
-	at := d.Heading.Start
-	for at < d.Heading.End && src[at] == '#' {
-		at++
-	}
-	for at < d.Heading.End && (src[at] == ' ' || src[at] == '\t') {
-		at++
-	}
-	if !bytes.HasPrefix(src[at:d.Heading.End], []byte(d.Was)) {
-		return nil, fmt.Errorf("line %d: heading has no %s icon", d.Heading.Line, d.Was)
-	}
-	return note.Replace(src, note.Span{Start: at, End: at + len(d.Was)}, []byte(d.Icon)), nil
 }
 
 // untickGuard refuses a note that unticks a box ticked in was (spec §4.4, ADR 0001). A box is

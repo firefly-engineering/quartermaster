@@ -187,6 +187,33 @@ func TestDeriveIcons(t *testing.T) {
 	}
 }
 
+// TestDeriveIconsSpan: each derived heading's IconSpan covers exactly its icon's bytes, past
+// however much space follows the `#` run, `—` included.
+func TestDeriveIconsSpan(t *testing.T) {
+	t.Parallel()
+	src := []byte("# Worklog — 2026-10-18\n\n" +
+		"## — o/r\n\n" +
+		"###   ⬜ What remains\n\n" +
+		"####\t— Waiting\n\n" +
+		"####  ✅ Agent queue\n\n- ⏳ On IaC ^iac\n\n" + // goldmark keeps the NBSP
+		"##  🔄 p/q\n")
+	n, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := []Icon{IconNone, IconTodo, IconNone, IconDone, IconInProgress}
+	got := n.DeriveIcons()
+	if len(got) != len(want) {
+		t.Fatalf("got %d headings: %+v", len(got), got)
+	}
+	for i, d := range got {
+		if s := at(src, d.IconSpan); s != string(want[i]) || s != string(d.Was) ||
+			!within(d.IconSpan, d.Heading) || d.IconSpan.Line != d.Heading.Line {
+			t.Errorf("%d: IconSpan %+v is %q in %q, want %s", i, d.IconSpan, s, at(src, d.Heading), want[i])
+		}
+	}
+}
+
 // TestDeriveIconsUnits: the hand-written icons of units.md already follow the rule.
 func TestDeriveIconsUnits(t *testing.T) {
 	t.Parallel()

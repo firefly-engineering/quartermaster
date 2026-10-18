@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -374,10 +375,19 @@ func (p *parser) heading(h *ast.Heading) {
 	head := p.blockSpan(h)
 	lead, rest, _ := strings.Cut(txt, " ")
 	icon := Icon(lead)
+	// goldmark's heading segment opens past the `#` run and its ASCII spaces; lead starts
+	// past what TrimSpace also drops there, as an NBSP. An empty heading has no segment.
+	var iconSpan Span
+	if h.Lines().Len() > 0 {
+		seg := h.Lines().At(0)
+		raw := seg.Value(p.src)
+		at := seg.Start + len(raw) - len(bytes.TrimLeftFunc(raw, unicode.IsSpace))
+		iconSpan = p.span(at, at+len(lead))
+	}
 	switch h.Level {
 	case 2:
 		p.project, p.part, p.remains, p.bucket = nil, nil, nil, nil
-		p.section2(txt, icon, rest, whole, head)
+		p.section2(txt, icon, iconSpan, rest, whole, head)
 	case 3:
 		p.part, p.remains, p.bucket = nil, nil, nil
 		if p.sec != secProject {
@@ -393,7 +403,7 @@ func (p *parser) heading(h *ast.Heading) {
 				p.errorf(line, "repeated `### What remains`")
 				return
 			}
-			p.remains = &Remains{Span: whole, Heading: head, Icon: icon}
+			p.remains = &Remains{Span: whole, Heading: head, Icon: icon, IconSpan: iconSpan}
 			p.project.Remains = p.remains
 			p.open(3, &p.remains.Span)
 			return
@@ -427,7 +437,7 @@ func (p *parser) heading(h *ast.Heading) {
 				return
 			}
 		}
-		p.bucket = &Bucket{Span: whole, Heading: head, Icon: icon, Name: rest}
+		p.bucket = &Bucket{Span: whole, Heading: head, Icon: icon, IconSpan: iconSpan, Name: rest}
 		p.remains.Buckets = append(p.remains.Buckets, p.bucket)
 		p.open(4, &p.bucket.Span)
 	case 5:
@@ -445,7 +455,7 @@ func (p *parser) heading(h *ast.Heading) {
 	}
 }
 
-func (p *parser) section2(txt string, icon Icon, rest string, whole, head Span) {
+func (p *parser) section2(txt string, icon Icon, iconSpan Span, rest string, whole, head Span) {
 	line := whole.Line
 	fixed := map[string]bool{
 		"Objectives": p.n.Objectives != nil, "Next": p.n.Next != nil,
@@ -483,7 +493,7 @@ func (p *parser) section2(txt string, icon Icon, rest string, whole, head Span) 
 			p.errorf(line, "unknown status icon %q", icon)
 			return
 		}
-		p.project = &Project{Span: whole, Heading: head, Icon: icon, Repo: rest}
+		p.project = &Project{Span: whole, Heading: head, Icon: icon, IconSpan: iconSpan, Repo: rest}
 		p.n.Projects = append(p.n.Projects, p.project)
 		p.open(2, &p.project.Span)
 		p.sec = secProject

@@ -298,6 +298,7 @@ func TestParseErrors(t *testing.T) {
 		{"repeated section", head + "## Next\n\n## Next\n", 7, "repeated"},
 		{"bad repo", head + "## ⬜ not a repo\n", 5, "section"},
 		{"bad icon", head + "## 🙂 o/r\n", 5, "icon"},
+		{"empty heading", head + "##\n", 5, "section"},
 		{"h3 outside project", head + "## Next\n\n### ⬜ What remains\n", 7, "project"},
 		{"bad part", head + "## ⬜ o/r\n\n### ⬜ Part one — Land: x\n", 7, "Part"},
 		{"bad part kind", head + "## ⬜ o/r\n\n### ⬜ Part 1 — Nap: x\n", 7, "kind"},

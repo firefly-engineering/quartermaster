@@ -124,11 +124,12 @@ type NextItem struct {
 // Project is a `## <icon> <owner/repo>` section.
 type Project struct {
 	Span
-	Heading Span
-	Icon    Icon
-	Repo    string
-	Parts   []*Part
-	Remains *Remains
+	Heading  Span
+	Icon     Icon
+	IconSpan Span // Icon's own bytes in Heading
+	Repo     string
+	Parts    []*Part
+	Remains  *Remains
 }
 
 // Part is a `### <icon> Part N — <kind>: <title>` section.
@@ -145,18 +146,20 @@ type Part struct {
 // Remains is a project's `### <icon> What remains` section.
 type Remains struct {
 	Span
-	Heading Span
-	Icon    Icon
-	Buckets []*Bucket
+	Heading  Span
+	Icon     Icon
+	IconSpan Span // Icon's own bytes in Heading
+	Buckets  []*Bucket
 }
 
 // Bucket is a `#### <icon> <name>` section under *What remains*.
 type Bucket struct {
 	Span
-	Heading Span
-	Icon    Icon
-	Name    string // one of BucketNames
-	Items   []*Item
+	Heading  Span
+	Icon     Icon
+	IconSpan Span   // Icon's own bytes in Heading
+	Name     string // one of BucketNames
+	Items    []*Item
 }
 
 // Item is a work item: a `#####` heading whose paragraph ends with `^<id>` (Heading), or a
