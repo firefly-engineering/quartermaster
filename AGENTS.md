@@ -37,6 +37,18 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
   shell and the package; the package's Go is read from its pin map, never written here.
 - With no Go dependencies `vendorHash` is `null`. The first dependency needs a real hash.
 
+## Worktree build expectations
+
+- Build: `go build ./...` from the repo root. Tests: `just test`.
+- Warm incremental: build 0.36s, tests 0.19s. Fresh jj workspace: build 0.76s,
+  tests 1.67s (measured 2026-10-18).
+- Verdict: shared cache healthy. `just test` passes `-trimpath -buildvcs=false`
+  so results hit across workspaces; only `internal/note` re-runs (reads
+  `testdata/` and its own sources from disk, ~1.4s).
+- Tripwire: if a fresh-workspace `just test` exceeds 4s or `go build ./...`
+  exceeds 3s, cache sharing broke: run the worktree-build-cache benchmark
+  before touching build config.
+
 ## Conventions
 
 - Parse markdown with goldmark and splice source ranges (ADR 0002). No regex parsers.

@@ -6,8 +6,9 @@ default:
 build:
     go build -o bin/worklog ./cmd/worklog
 
+# -trimpath and -buildvcs=false keep test results cached across jj workspaces.
 test:
-    gotestsum -- -race ./...
+    gotestsum -- -race -trimpath -buildvcs=false ./...
 
 fmt:
     gofmt -s -w .
