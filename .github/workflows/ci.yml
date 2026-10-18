@@ -14,7 +14,7 @@ jobs:
   # Builds the package with its tests, the skill bundle, and the home-manager module check.
   flake:
     name: nix flake check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v22
@@ -27,7 +27,7 @@ jobs:
   # The dev shell's own tools, so CI and `just check` cannot disagree on versions.
   check:
     name: just check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v22

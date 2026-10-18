@@ -20,6 +20,9 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
   `nix-toolchain`, `vcs-toolchain`). Add tools there, not ad hoc.
 - `just check` runs fmt-check, lint and tests; `just flake-check` runs `nix flake check`.
   CI runs both.
+- Every x86_64 Linux CI job uses `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, never a
+  hardcoded label. `CI_RUNNER` is a repo variable, flipped org-wide by `just ci-runner` in
+  firefly-engineering/.org. macOS and arm jobs stay pinned.
 - The package's Go is read from toolbox's `go-toolchain` pin map, never written here. Bump
   toolbox, and the shell and the package move together.
 - With no Go dependencies `vendorHash` is `null`. The first dependency needs a real hash.
