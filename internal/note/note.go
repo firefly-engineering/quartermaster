@@ -184,6 +184,7 @@ type Prompt struct {
 type ManualAction struct {
 	Span
 	Checked bool
+	Mark    int    // the byte offset of the mark inside its `[ ]`: ` `, `x` or `X`
 	ID      string // its `^<id>`, "" without one
 	Text    string // the source after the checkbox, without the `^<id>`
 }

@@ -225,14 +225,14 @@ func (p *parser) trailingID(n ast.Node) (id string, ok bool, bad string) {
 	if abs := last.Start + i; !isText || abs < t.Segment.Start || abs >= t.Segment.Stop {
 		return "", false, ""
 	}
-	if !validID(cand) {
+	if !ValidID(cand) {
 		return cand, true, fmt.Sprintf("invalid item id ^%s: lowercase letters, digits and - only", cand)
 	}
 	return cand, true, ""
 }
 
-// validID: lowercase letters, digits and `-` (spec §4.1).
-func validID(s string) bool { return only(s, "-", false) }
+// ValidID reports whether s is an item id: lowercase letters, digits and `-` (spec §4.1).
+func ValidID(s string) bool { return only(s, "-", false) }
 
 // only reports whether s is non-empty and holds only ASCII lowercase letters, digits, the
 // runes in extra, and uppercase letters when upper is set.
@@ -269,7 +269,8 @@ func (p *parser) actions(doc ast.Node) {
 		if lead, _, _ := strings.Cut(txt, " "); Icon(lead).isHeading() {
 			p.errorf(line, "a manual action carries a checkbox, never a status icon")
 		}
-		a := ManualAction{Span: p.blockSpan(li), Checked: box.IsChecked, Text: txt}
+		mark := first.Lines().At(0).Start + 1 // inside the `[ ]` the block opens with
+		a := ManualAction{Span: p.blockSpan(li), Checked: box.IsChecked, Mark: mark, Text: txt}
 		if id, ok, bad := p.trailingID(first); ok {
 			p.placed[first] = true
 			if bad != "" {
@@ -710,7 +711,7 @@ func (p *parser) nextItem(li ast.Node) NextItem {
 	}
 	if _, ref, ok := strings.Cut(plain.String(), "[[#^"); ok {
 		if end := strings.IndexAny(ref, "|]"); end >= 0 {
-			if id := ref[:end]; validID(id) {
+			if id := ref[:end]; ValidID(id) {
 				it.Ref = id
 			} else {
 				p.errorf(it.Line, "invalid item id ^%s in a details link", id)
