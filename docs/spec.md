@@ -281,7 +281,9 @@ callout `>` markers), resolves `to` to exactly one herdr workspace with exactly 
 refuses an agent whose status is not `idle`, `done` or `working` (a `blocked` agent shows
 an approval prompt that typed text could answer), and runs
 `herdr agent prompt <pane> <text>` with no shell in between. It appends the closing line
-the skill relies on: update work item `^<id>` and refresh *Next*.
+the skill relies on (`send.Closing`): update work item `^<id>`, or `owner/repo#N` for a
+prompt no block holds, in the note at its path, and refresh *Next*. `refresh` reads an
+item's reply from its own closing line, up to the next closing line in the pane ([§11]).
 
 Behaviour is a strict port of `worklog-send`; its self-check becomes the Go test suite.
 
@@ -360,6 +362,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 | Workspace for a ref already exists | `add` fails | Reuse it if it is the ref's; otherwise fail with its path. `git worktree prune` before a git add. |
 | Unparseable note (hand edit broke a structure) | — | Mutating tools refuse, naming the unit and line; `day_read` returns what it could parse plus the errors. Never rewrite what failed to parse. |
 | herdr not running or label ambiguous | Send fails | Fail with the reason; the item stays **to send**. |
+| Another prompt sent to the same pane | Its reply's links credited to the earlier item | A reply runs from the line after its item's full closing-line prefix, up to the next closing line for any work item or ref; a mention of `work item ^<id>` in reply prose matches neither. A later prompt's own body, before its closing line, still counts as the earlier reply: a prompt cannot open with a marker, since a slash command must come first ([#90](https://github.com/firefly-engineering/quartermaster/issues/90)). |
 
 ## 12. Open questions
 

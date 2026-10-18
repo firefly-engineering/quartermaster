@@ -103,9 +103,12 @@ func (s Sender) Deliver(ctx context.Context, to Workspace, text, what, path stri
 // Closing is the line that ends every prompt sent, asking the agent to record its outcome on
 // what, as Item(id) or `owner/repo#N`, in the note at path.
 func Closing(what, path string) string {
-	return "When this is done, update the worklog with the worklog skill: " + what + " in " + path +
-		". Record the outcome and refresh Next."
+	return ClosingLead + what + " in " + path + ". Record the outcome and refresh Next."
 }
+
+// ClosingLead starts every closing line (Closing), whatever it names: refresh ends a reply at
+// the next one.
+const ClosingLead = "When this is done, update the worklog with the worklog skill: "
 
 // deliver sends text and the closing line about what to the agent of workspace to.
 func (s Sender) deliver(ctx context.Context, to Workspace, text, what, path string) (Sent, error) {
@@ -126,10 +129,10 @@ func (s Sender) deliver(ctx context.Context, to Workspace, text, what, path stri
 // Item names work item id in the closing line, as Closing's what: `work item ^<id>`.
 func Item(id string) string { return "work item ^" + id }
 
-// PromptTag is how the closing line names work item id, just before the note's path: the part
+// PromptTag is the start of the closing line about work item id, up to the note's path: the part
 // of Closing(Item(id), path) before the path. refresh finds an agent's reply to the prompt
 // after it.
-func PromptTag(id string) string { return Item(id) + " in " }
+func PromptTag(id string) string { return ClosingLead + Item(id) + " in " }
 
 // prompt returns the workspace label and text of item id's herdr-prompt block. The note need
 // not parse cleanly elsewhere; a parse error is reported only when the block is not found.

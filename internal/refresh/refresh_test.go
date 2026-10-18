@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
 // fake stands in for gh or herdr: each call's key, from keyOf, names its reply. A call with no
@@ -350,7 +351,7 @@ func TestNoRunners(t *testing.T) {
 func TestReplyLinks(t *testing.T) {
 	t.Parallel()
 	text := "noise https://github.com/o/r/pull/1\n" +
-		"> ... work item ^port in /v/n.md. Record it.\n" +
+		"> " + send.Closing(send.Item("port"), "/v/n.md") + "\n" +
 		"Done: [PR](https://github.com/o/infra/pull/7), https://github.com/o/infra/pull/7.\n" +
 		"not GitHub: https://example.com/o/r/pull/8 and `https://github.com/o/infra/issues/9`\n"
 	got, ok := replyLinks(text, "port")
@@ -363,14 +364,18 @@ func TestReplyLinks(t *testing.T) {
 	}
 }
 
-// TestReplyLinksTwoPrompts gives each of two prompts sent to one pane only the links from its
-// own reply: a reply ends at the next prompt's tag, not at a bare mention of another item.
+// TestReplyLinksTwoPrompts gives each of the prompts sent to one pane only the links from its
+// own reply: a reply ends at the next prompt's closing line, for a work item or a ref, not at
+// a mention of an item in reply prose.
 func TestReplyLinksTwoPrompts(t *testing.T) {
 	t.Parallel()
-	text := "> ... work item ^port in /v/n.md. Record it.\n" +
+	text := "> " + send.Closing(send.Item("port"), "/v/n.md") + "\n" +
 		"Done, unlike work item ^dns: https://github.com/o/infra/pull/7\n" +
-		"> ... work item ^dns in /v/n.md. Record it.\n" +
-		"Done: https://github.com/o/infra/pull/8\n"
+		"Recorded work item ^port in the worklog.\n" +
+		"> " + send.Closing(send.Item("dns"), "/v/n.md") + "\n" +
+		"Done: https://github.com/o/infra/pull/8\n" +
+		"> " + send.Closing("o/infra#3", "/v/n.md") + "\n" +
+		"Done: https://github.com/o/infra/pull/9\n"
 	for id, want := range map[string][]string{
 		"port": {"https://github.com/o/infra/pull/7"},
 		"dns":  {"https://github.com/o/infra/pull/8"},
@@ -378,6 +383,20 @@ func TestReplyLinksTwoPrompts(t *testing.T) {
 		if got, ok := replyLinks(text, id); !ok || !slices.Equal(got, want) {
 			t.Errorf("^%s: links %v %v, want %v", id, got, ok, want)
 		}
+	}
+}
+
+// TestReplyLinksLaterPromptBody pins the limit spec §11 records: a later prompt's own body, before
+// its closing line, still counts as the earlier item's reply.
+func TestReplyLinksLaterPromptBody(t *testing.T) {
+	t.Parallel()
+	text := "> " + send.Closing(send.Item("port"), "/v/n.md") + "\n" +
+		"Done: https://github.com/o/infra/pull/7\n" +
+		"> Fix https://github.com/o/infra/issues/5\n" +
+		"> " + send.Closing(send.Item("dns"), "/v/n.md") + "\n"
+	want := []string{"https://github.com/o/infra/pull/7", "https://github.com/o/infra/issues/5"}
+	if got, ok := replyLinks(text, "port"); !ok || !slices.Equal(got, want) {
+		t.Errorf("links %v %v, want %v", got, ok, want)
 	}
 }
 

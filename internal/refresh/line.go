@@ -42,7 +42,7 @@ const githubPrefix = "https://github.com/"
 
 // replyLinks finds the reply to item id's prompt in an agent's terminal text: whatever follows
 // the line naming the item (send.PromptTag), which `worklog send` closes every prompt with, up
-// to the next prompt sent to the pane (the next prompt tag for any item). It returns
+// to the next prompt's closing line (send.ClosingLead), for a work item or a ref. It returns
 // the GitHub links in the reply; ok is false when the text holds no prompt for id.
 func replyLinks(text, id string) (links []string, ok bool) {
 	i := strings.LastIndex(text, send.PromptTag(id))
@@ -55,25 +55,10 @@ func replyLinks(text, id string) (links []string, ok bool) {
 		return nil, true
 	}
 	reply := rest[nl+1:]
-	return githubLinks(reply[:nextPromptTag(reply)]), true
-}
-
-// nextPromptTag is where the first prompt tag for any item (send.PromptTag) starts in text, or
-// len(text) for none. A bare mention of an item, not followed by " in ", is not a tag.
-func nextPromptTag(text string) int {
-	marker := send.Item("")
-	for at := 0; ; {
-		i := strings.Index(text[at:], marker)
-		if i < 0 {
-			return len(text)
-		}
-		at += i
-		tail := text[at+len(marker):]
-		if sp := strings.IndexByte(tail, ' '); sp > 0 && strings.HasPrefix(text[at:], send.PromptTag(tail[:sp])) {
-			return at
-		}
-		at += len(marker)
+	if end := strings.Index(reply, send.ClosingLead); end >= 0 {
+		reply = reply[:end]
 	}
+	return githubLinks(reply), true
 }
 
 // githubLinks are the GitHub URLs in text, in order and once each: each whitespace-separated
