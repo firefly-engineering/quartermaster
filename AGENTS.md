@@ -10,8 +10,13 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 |---|---|
 | `cmd/quartermaster/` | the binary's entry point |
 | `internal/config/` | config loading: defaults, then `config.toml`, then flags (spec §3) |
+| `internal/dispatch/` | `task_dispatch`: session mode, and fresh mode in a jj workspace (spec §9.2, ADR 0004) |
+| `internal/engine/` | the mutation engine: lock, hash check, rename, jj commit; the only writer of a note (ADR 0006) |
 | `internal/note/` | the note parser: every unit of spec §4.1 by source range (ADR 0002) |
+| `internal/refresh/` | `refresh`: reconcile the note from GitHub, herdr and ticked checkboxes (ADR 0003) |
+| `internal/send/` | `quartermaster send`: deliver a work item's prompt to its herdr session (spec §9.1) |
 | `internal/server/` | the MCP server (`quartermaster serve`): the prompts, cut from the embedded skill |
+| `internal/tools/` | every MCP tool and `note` verb, one `Def` each (spec §6) |
 | `skills/worklog/` | the worklog skill: one source for the installed skill and the `workflow_rules` prompt (ADR 0005) |
 | `skills/embed.go` | embeds the skill into the binary |
 | `.claude-plugin/plugin.json` | the skill bundle's manifest |
