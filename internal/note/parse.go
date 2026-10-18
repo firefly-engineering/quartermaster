@@ -23,7 +23,16 @@ var md = goldmark.New(goldmark.WithExtensions(extension.Table, extension.TaskLis
 
 // Parse locates every unit of the note in src. It always returns the units it could place;
 // the error, when non-nil, joins one *ParseError per unit it could not, in line order.
-func Parse(src []byte) (*Note, error) {
+func Parse(src []byte) (*Note, error) { return parse(src, true) }
+
+// ParseIntermediate is Parse without its check that each *Next* details link names a work item
+// or anchor; every other check holds. It is for an edit's intermediate source, such as a move's
+// between taking a work item out and putting it back, where a link may name nothing for a
+// while. The edit's result is still a note, which Parse checks whole.
+func ParseIntermediate(src []byte) (*Note, error) { return parse(src, false) }
+
+// parse is Parse, checking *Next*'s details links when checkNextRefs is set.
+func parse(src []byte, checkNextRefs bool) (*Note, error) {
 	p := &parser{
 		src:    src,
 		n:      &Note{items: map[string]*Item{}},
@@ -39,7 +48,9 @@ func Parse(src []byte) (*Note, error) {
 	p.structure(doc)
 	p.unplaced(doc)
 	p.duplicates()
-	p.nextRefs()
+	if checkNextRefs {
+		p.nextRefs()
+	}
 	return p.n, p.err()
 }
 

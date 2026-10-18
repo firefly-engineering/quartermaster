@@ -320,6 +320,26 @@ func TestItemUpsertUpdate(t *testing.T) {
 			t.Errorf("out %+v", out)
 		}
 	})
+	t.Run("moved while Next links it, keeping its Next line, in one commit", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), true)
+		out, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: ItemFields{
+			ID: "login-stack", Bucket: "Waiting", Title: "login stack, in review", Ref: "#12",
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The queue it leaves holds only a dropped item now, so its derived icon is ✅.
+		d.checkNote(t, edited(t, queue+"\n"+loginStack, "#### ✅ Agent queue\n\n", "#### — Waiting\n\n- —\n",
+			"#### 🔍 Waiting\n\n- 🔍 [#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n"))
+		if out.Bucket != "Waiting" || out.Repo != "acme/web" || out.Item.State != "IN_REVIEW" {
+			t.Errorf("out %+v", out)
+		}
+		if log := d.jj(t, "log", "--no-graph", "-r", `description(substring:"worklog(")`, "-T", `description.first_line() ++ "\n"`); log !=
+			"worklog(2026-10-16): item_upsert: move ^login-stack to acme/web, Waiting\n" {
+			t.Errorf("commits %q", log)
+		}
+	})
 	t.Run("moved to a new project, listed in the front matter", func(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), false)

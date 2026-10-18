@@ -392,6 +392,20 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+// TestParseIntermediate: a dangling *Next* details link parses halfway through an edit, and
+// every other error still stops it.
+func TestParseIntermediate(t *testing.T) {
+	t.Parallel()
+	const head = "# Worklog — 2026-10-18\n\n**09:00 UTC:** open.\n\n"
+	n, err := ParseIntermediate([]byte(head + "## Next\n\n1. go · [[#^gone|details]]\n"))
+	if err != nil || n.Next == nil || len(n.Next.Items) != 1 || n.Next.Items[0].Ref != "gone" {
+		t.Fatalf("got %+v, %v", n, err)
+	}
+	if _, err := ParseIntermediate([]byte(head + "## Next\n\n1. go · [[#^Bad|details]]\n")); err == nil {
+		t.Error("an invalid details link parsed")
+	}
+}
+
 // TestPartialResult: a note with an error still returns every unit that could be placed.
 func TestPartialResult(t *testing.T) {
 	t.Parallel()

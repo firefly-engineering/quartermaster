@@ -218,11 +218,13 @@ func updateItem(n *note.Note, src []byte, r note.Renderer, it *note.Item, f Item
 	if !slices.Contains(note.BucketNames, f.Bucket) {
 		return nil, "", fmt.Errorf("unknown bucket %q: want one of %s", f.Bucket, strings.Join(note.BucketNames, ", "))
 	}
+	// Its *Next* lines stay: halfway they link an id the note lacks, and once it is back they
+	// link it again.
 	out, err := removeItem(src, it, b)
 	if err != nil {
 		return nil, "", err
 	}
-	if n, err = reparse(out); err != nil {
+	if n, err = reparseIntermediate(out); err != nil {
 		return nil, "", err
 	}
 	out, err = insertItem(n, out, r, f.Repo, f.Bucket, u)
@@ -230,9 +232,10 @@ func updateItem(n *note.Note, src []byte, r note.Renderer, it *note.Item, f Item
 }
 
 // removeItem removes work item it from bucket b, putting back `- —` when it leaves b with nothing.
+// *Next* may still link it: the caller puts it back or drops those lines.
 func removeItem(src []byte, it *note.Item, b *note.Bucket) ([]byte, error) {
 	out := note.Remove(src, it.Span)
-	n, err := reparse(out)
+	n, err := reparseIntermediate(out)
 	if err != nil {
 		return nil, err
 	}
