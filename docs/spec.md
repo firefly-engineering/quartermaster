@@ -159,7 +159,9 @@ TODO ──start──► IN_PROGRESS ──review──► IN_REVIEW ──comp
 Any state may go to `DROPPED` (with a reason) or `WAITING` (with what it waits on);
 `WAITING` to `WAITING` re-states what the item waits on, and no other state moves to itself.
 `IN_PROGRESS` may complete without a review (a manual operation, a push to `main`), but its
-summary must name the evidence: the commit, run or result. `DONE` and `DROPPED` are
+summary must name the evidence: the commit, run or result. `WAITING` may complete on the
+same terms, when what it waited on is done: an issue closed or a PR merged, named in its
+summary. An item sent to another repo closes this way, with no unblock first. `DONE` and `DROPPED` are
 terminal; reopening is a new item. A transition carries a `summary`
 (PR URL, commit, reason), rendered into the item's line or paragraph.
 
@@ -195,8 +197,11 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `day_open` | Create today's note from the template, with every open item of the previous note as a carry-over row. Refuses if a non-empty note exists. | `session_init_plan` |
 | `day_read` | Return the note as structured data: status, objectives, Next, items by project and bucket, states. Read-only. | — |
 | `objective_set` | Add, refine (stamping `(refined HH:MM UTC: <reason>)`) or settle an objective. | `session_init_plan` |
-| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text). | — |
-| `item_transition` | Move a work item through [§4.3]: `{item, to, summary}`. | `task_update_state` |
+| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status and the parser reads it; nothing else parses the title. | — |
+| `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. | `task_update_state` |
+| `part_write` | Create or rewrite one Part whole: number, kind, title, icon (🔄, 🔍 or ✅, written, never derived) and body. The body may carry anchors. | — |
+| `action_upsert` | Create, reword or move a manual action, a checkbox with an id. Ticking it is `item_transition`; nothing unticks it ([§4.4]). | — |
+| `process_set` | Add, reword or settle a *Process* entry. | — |
 | `next_set` | Replace *Next* with an ordered list of item ids; the server renders each line, button and details link. | — |
 | `status_set` | Rewrite the status line. | — |
 | `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. | — |
@@ -337,6 +342,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [ADR 0008]: adr/0008-mutating-tools-do-not-refresh.md
 [§4]: #4-the-note
 [§4.3]: #43-transitions
+[§4.4]: #44-manual-actions
 [§6]: #6-mcp-tools
 [§7]: #7-concurrency-and-persistence
 [§8]: #8-mcp-prompts
