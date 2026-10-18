@@ -269,7 +269,8 @@ func (p *parser) actions(doc ast.Node) {
 		if lead, _, _ := strings.Cut(txt, " "); Icon(lead).isHeading() {
 			p.errorf(line, "a manual action carries a checkbox, never a status icon")
 		}
-		a := ManualAction{Span: p.blockSpan(li), Checked: box.IsChecked, Text: txt}
+		mark := first.Lines().At(0).Start + 1 // inside the `[ ]` the block opens with
+		a := ManualAction{Span: p.blockSpan(li), Checked: box.IsChecked, Mark: mark, Text: txt}
 		if id, ok, bad := p.trailingID(first); ok {
 			p.placed[first] = true
 			if bad != "" {
