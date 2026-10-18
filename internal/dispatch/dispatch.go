@@ -125,15 +125,15 @@ func (d Dispatcher) session(ctx context.Context, date string, ref note.Ref, it *
 	if it != nil && it.Prompt != nil {
 		sent, err = s.SendItem(ctx, filepath.Dir(res.Path), date, it.ID, instruction)
 	} else {
-		var p config.Project
-		if p, err = d.project(ref); err != nil {
+		var to send.Workspace
+		if to, err = d.herdrWorkspace(ctx, ref.Repo); err != nil {
 			return Result{}, err
 		}
 		what := ref.String()
 		if it != nil {
 			what = send.Item(it.ID)
 		}
-		sent, err = s.Deliver(ctx, p.Workspace, implement(ref, instruction), what, res.Path)
+		sent, err = s.Deliver(ctx, to, implement(ref, instruction), what, res.Path)
 	}
 	if err != nil {
 		return Result{}, err
@@ -153,13 +153,10 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 			return Result{}, fmt.Errorf("^%s: %w", it.ID, err)
 		}
 	}
-	p, err := d.project(ref)
-	if err != nil {
-		return Result{}, err
-	}
+	checkout := d.Config.Projects.Project(ref.Repo).Path
 	switch {
-	case p.Path == "":
-		return Result{}, fmt.Errorf("projects.%q.path is not set: a fresh dispatch needs the checkout", ref.Repo)
+	case checkout == "":
+		return Result{}, fmt.Errorf("neither projects.root nor projects.%q.path is set: a fresh dispatch needs the checkout", ref.Repo)
 	case d.Config.Harness.Worker.Kind == "":
 		return Result{}, errors.New("harness.worker.kind is not set: a fresh dispatch needs the herdr agent kind to start")
 	case d.Config.Dispatch.WorkspaceRoot == "":
@@ -174,13 +171,21 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 	if err := (note.Dispatch{Pane: "-", Workspace: ws}).Check(); err != nil {
 		return Result{}, fmt.Errorf("dispatch.workspace_root: %w", err)
 	}
-	if res.Reused, err = d.workspace(ctx, p.Path, ws, name); err != nil {
+	if fi, err := os.Stat(checkout); err != nil || !fi.IsDir() {
+		return Result{}, fmt.Errorf("no checkout of %s at %s: clone it there, or set projects.%q.path", ref.Repo, checkout, ref.Repo)
+	}
+	// Finding the herdr workspace only reads, so it goes before anything is made.
+	herdrWS, err := d.herdrWorkspace(ctx, ref.Repo)
+	if err != nil {
+		return Result{}, err
+	}
+	if res.Reused, err = d.workspace(ctx, checkout, ws, name); err != nil {
 		return Result{}, err
 	}
 	res.Workspace = ws
 
 	prompt := implement(ref, instruction) + "\n\n" + send.Closing(send.Item(it.ID), res.Path)
-	pane, err := d.agent(ctx, p.Workspace, ws, name, prompt)
+	pane, err := d.agent(ctx, herdrWS.ID, ws, name, prompt)
 	if err != nil {
 		left := "workspace " + ws + " is left in place"
 		if pane != "" {
@@ -188,7 +193,7 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 		}
 		return Result{}, fmt.Errorf("%w; %s, and ^%s is not moved", err, left, it.ID)
 	}
-	res.To, res.Pane = p.Workspace, pane
+	res.To, res.Pane = herdrWS.Label, pane
 
 	res.Note, err = d.Engine.Mutate(ctx, date, tool, func(n *note.Note, src []byte) ([]byte, string, error) {
 		if n == nil {
@@ -218,15 +223,6 @@ func record(n *note.Note, src []byte, id string, d note.Dispatch) ([]byte, strin
 		}
 	}
 	return out, "dispatch ^" + id + " to herdr pane " + d.Pane, nil
-}
-
-// project is ref's project in the configuration, with its herdr workspace label.
-func (d Dispatcher) project(ref note.Ref) (config.Project, error) {
-	p, ok := d.Config.Projects[ref.Repo]
-	if !ok || p.Workspace == "" {
-		return config.Project{}, fmt.Errorf("no project %s with a herdr workspace in the configuration: set projects.%q.workspace", ref.Repo, ref.Repo)
-	}
-	return p, nil
 }
 
 // implement is the prompt that starts work on ref, with instruction after it.

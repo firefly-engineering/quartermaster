@@ -26,7 +26,7 @@ func wantDefaults() Config {
 	return Config{
 		Vault:    Vault{Dir: "worklog", Name: "worklog"},
 		Dispatch: Dispatch{WorkspaceRoot: "/home/u/.local/share/quartermaster/worklog/workspaces"},
-		Projects: map[string]Project{},
+		Projects: Projects{Root: "/home/u/src/github.com", Repos: map[string]Project{}},
 	}
 }
 
@@ -44,6 +44,9 @@ workspace_root = "/ws"
 [harness.worker]
 kind = "omp"
 args = ["--model", "glm-5"]
+
+[projects]
+root = "~/code"
 
 [projects."arbora-partners/trunk"]
 path = "~/src/github.com/arbora-partners/trunk"
@@ -71,10 +74,17 @@ workspace = "IaC"
 				c.Vault = Vault{Repo: "/home/u/src/github.com/sigma/worklog", Dir: "notes", Name: "wl"}
 				c.Dispatch.WorkspaceRoot = "/ws"
 				c.Harness.Worker = Worker{Kind: "omp", Args: []string{"--model", "glm-5"}}
-				c.Projects = map[string]Project{
+				c.Projects = Projects{Root: "/home/u/code", Repos: map[string]Project{
 					"arbora-partners/trunk": {Path: "/home/u/src/github.com/arbora-partners/trunk", Workspace: "trunk"},
 					"arbora-partners/IaC":   {Path: "/abs/IaC", Workspace: "IaC"},
-				}
+				}}
+			},
+		},
+		{
+			name:        "projects.root as a dotted key, beside an override of the workspace alone",
+			defaultFile: "projects.root = \"/src\"\n[projects.\"o/r\"]\nworkspace = \"w\"\n",
+			want: func(c *Config) {
+				c.Projects = Projects{Root: "/src", Repos: map[string]Project{"o/r": {Workspace: "w"}}}
 			},
 		},
 		{
@@ -244,6 +254,32 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{`projects."o/r".path`, "absolute"},
 		},
 		{
+			name:   "default projects.root with no home directory",
+			file:   "[dispatch]\nworkspace_root = \"/ws\"\n",
+			noHome: true,
+			want:   []string{"projects.root", "home"},
+		},
+		{
+			name: "relative projects.root",
+			file: "[projects]\nroot = \"src\"\n",
+			want: []string{"projects.root", "absolute"},
+		},
+		{
+			name: "projects.root not a string",
+			file: "[projects.root]\npath = \"/p\"\n",
+			want: []string{"config.toml", "projects.root"},
+		},
+		{
+			name: "a project not a table",
+			file: "[projects]\n\"o/r\" = \"/p\"\n",
+			want: []string{"config.toml", `projects."o/r"`},
+		},
+		{
+			name: "unknown key in projects",
+			file: "[projects]\nroots = \"/p\"\n",
+			want: []string{`"roots"`, "root or owner/repo"},
+		},
+		{
 			name:   "--vault ~ with no home directory",
 			file:   "[dispatch]\nworkspace_root = \"/ws\"\n",
 			noHome: true,
@@ -271,5 +307,29 @@ func TestLoadErrors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProject(t *testing.T) {
+	t.Parallel()
+	p := Projects{Root: "/src", Repos: map[string]Project{
+		"o/moved": {Path: "/elsewhere/moved"},
+		"o/named": {Workspace: "nm"},
+	}}
+	for _, c := range []struct {
+		repo string
+		want Project
+	}{
+		{"o/r", Project{Path: "/src/o/r"}},
+		{"other/thing", Project{Path: "/src/other/thing"}},
+		{"o/moved", Project{Path: "/elsewhere/moved"}},
+		{"o/named", Project{Path: "/src/o/named", Workspace: "nm"}},
+	} {
+		if got := p.Project(c.repo); got != c.want {
+			t.Errorf("%s: %+v, want %+v", c.repo, got, c.want)
+		}
+	}
+	if got := (Projects{}).Project("o/r"); got != (Project{}) {
+		t.Errorf("no root: %+v, want no path", got)
 	}
 }

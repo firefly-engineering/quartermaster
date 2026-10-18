@@ -15,14 +15,9 @@ import (
 //
 // `tab create` answers JSON, the new tab's pane in .result.root_pane.pane_id.
 
-// agent starts the configured worker, named name, in a new tab of the herdr workspace labelled
-// label, at ws, and prompts it. pane is the tab's pane once created, even when a later step
-// fails.
-func (d Dispatcher) agent(ctx context.Context, label, ws, name, prompt string) (pane string, err error) {
-	id, err := d.workspaceID(ctx, label)
-	if err != nil {
-		return "", err
-	}
+// agent starts the configured worker, named name, in a new tab of herdr workspace id, at ws,
+// and prompts it. pane is the tab's pane once created, even when a later step fails.
+func (d Dispatcher) agent(ctx context.Context, id, ws, name, prompt string) (pane string, err error) {
 	var tab struct {
 		Result struct {
 			RootPane struct {
@@ -48,31 +43,6 @@ func (d Dispatcher) agent(ctx context.Context, label, ws, name, prompt string) (
 		return pane, err
 	}
 	return pane, nil
-}
-
-// workspaceID is the id of the one herdr workspace labelled label.
-func (d Dispatcher) workspaceID(ctx context.Context, label string) (string, error) {
-	var list struct {
-		Result struct {
-			Workspaces []struct {
-				ID    string `json:"workspace_id"`
-				Label string `json:"label"`
-			} `json:"workspaces"`
-		} `json:"result"`
-	}
-	if err := d.herdrJSON(ctx, &list, "workspace", "list"); err != nil {
-		return "", err
-	}
-	var ids []string
-	for _, w := range list.Result.Workspaces {
-		if w.Label == label {
-			ids = append(ids, w.ID)
-		}
-	}
-	if len(ids) != 1 {
-		return "", fmt.Errorf("%d herdr workspaces labelled %q", len(ids), label)
-	}
-	return ids[0], nil
 }
 
 func (d Dispatcher) herdrJSON(ctx context.Context, v any, args ...string) error {

@@ -142,14 +142,22 @@ MCP server ([spec §10.1](docs/spec.md#101-home-manager-module)); the sections b
     enable = true;
     settings = {
       vault.repo = "~/src/github.com/sigma/worklog";
-      projects."firefly-engineering/quartermaster" = {
-        path = "~/src/github.com/firefly-engineering/quartermaster";
-        workspace = "quartermaster";
+      # The default; every project's checkout is <root>/<owner>/<repo>.
+      projects.root = "~/src/github.com";
+      # Optional, only for a project that breaks the convention.
+      projects."arbora-partners/IaC" = {
+        path = "~/work/IaC";
+        workspace = "infra";
       };
     };
   };
 }
 ```
+
+Projects need no entry: any `owner/repo` has its checkout at `<projects.root>/<owner>/<repo>`,
+and dispatch finds its herdr workspace live, as the one with a pane in that checkout, else
+the one labelled with the repo's name ([spec §9.2](docs/spec.md#92-task_dispatch)). An entry
+under `projects."owner/repo"` overrides the `path`, the `workspace` label, or both.
 
 `package` defaults to this flake's build.
 

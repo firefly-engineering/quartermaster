@@ -64,8 +64,9 @@ prompt.
 
 ## Session
 
-The agent pane in the herdr workspace labelled with a project's name, which receives that
-project's prompts.
+The agent pane in a project's herdr workspace, which receives that project's prompts. The
+workspace is the one with a pane in the project's checkout, else the one labelled with the
+repo's name ([spec §9.2](docs/spec.md#92-task_dispatch)).
 
 ## Dispatch
 

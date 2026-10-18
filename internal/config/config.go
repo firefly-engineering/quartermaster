@@ -19,10 +19,10 @@ import (
 
 // Config is the resolved configuration. Every path in it has had `~` expanded.
 type Config struct {
-	Vault    Vault              `toml:"vault"`
-	Dispatch Dispatch           `toml:"dispatch"`
-	Harness  Harness            `toml:"harness"`
-	Projects map[string]Project `toml:"projects"` // keyed by owner/repo (ADR 0007)
+	Vault    Vault    `toml:"vault"`
+	Dispatch Dispatch `toml:"dispatch"`
+	Harness  Harness  `toml:"harness"`
+	Projects Projects `toml:"-"` // decodeFile reads the projects table key by key: see Projects
 }
 
 // Vault locates the worklog vault.
@@ -48,10 +48,30 @@ type Worker struct {
 	Args []string `toml:"args"`
 }
 
-// Project is one GitHub repo's checkout and herdr session.
+// Projects locates every GitHub repo's checkout by convention, at <Root>/<owner>/<repo>; an
+// entry in Repos overrides it. In TOML both live in the projects table: `root` is a string,
+// every other key an owner/repo table, and no owner/repo is named root.
+type Projects struct {
+	Root  string             // projects.root
+	Repos map[string]Project // projects."owner/repo", keyed by owner/repo (ADR 0007)
+}
+
+// Project is one GitHub repo's checkout and herdr session. In an override, an empty field
+// keeps the convention.
 type Project struct {
 	Path      string `toml:"path"`      // checkout
 	Workspace string `toml:"workspace"` // herdr workspace label of the project's session
+}
+
+// Project resolves repo, an owner/repo: its checkout is its entry's path, else
+// <Root>/<owner>/<repo> ("" when Root is unset); its herdr workspace label is its entry's, or
+// "" for the caller to find in herdr's live state (spec §9.2).
+func (p Projects) Project(repo string) Project {
+	pr := p.Repos[repo]
+	if owner, name, ok := strings.Cut(repo, "/"); ok && pr.Path == "" && p.Root != "" {
+		pr.Path = filepath.Join(p.Root, owner, name)
+	}
+	return pr
 }
 
 // Options are Load's inputs, all resolved by main. Every path, here and in the user file, must
@@ -68,7 +88,7 @@ func Defaults() Config {
 	return Config{
 		Vault:    Vault{Dir: "worklog", Name: "worklog"},
 		Dispatch: Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
-		Projects: map[string]Project{},
+		Projects: Projects{Root: "~/src/github.com", Repos: map[string]Project{}},
 	}
 }
 
@@ -111,9 +131,33 @@ func decodeFile(path string, required bool, cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	md, err := toml.Decode(string(b), cfg)
+	// The projects table holds the root string beside owner/repo tables, so it is decoded key
+	// by key. The other tables decode into cfg in place, keeping the defaults the file omits.
+	file := struct {
+		Vault    *Vault                    `toml:"vault"`
+		Dispatch *Dispatch                 `toml:"dispatch"`
+		Harness  *Harness                  `toml:"harness"`
+		Projects map[string]toml.Primitive `toml:"projects"`
+	}{Vault: &cfg.Vault, Dispatch: &cfg.Dispatch, Harness: &cfg.Harness}
+	md, err := toml.Decode(string(b), &file)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
+	}
+	for key, v := range file.Projects {
+		if key == "root" {
+			if err := md.PrimitiveDecode(v, &cfg.Projects.Root); err != nil {
+				return fmt.Errorf("%s: projects.root: %w", path, err)
+			}
+			continue
+		}
+		if !validRef(key) {
+			return fmt.Errorf("%s: projects.%s: want root or owner/repo", path, strconv.Quote(key))
+		}
+		var p Project
+		if err := md.PrimitiveDecode(v, &p); err != nil {
+			return fmt.Errorf("%s: projects.%s: %w", path, strconv.Quote(key), err)
+		}
+		cfg.Projects.Repos[key] = p
 	}
 	if keys := md.Undecoded(); len(keys) > 0 {
 		names := make([]string, len(keys))
@@ -121,11 +165,6 @@ func decodeFile(path string, required bool, cfg *Config) error {
 			names[i] = k.String()
 		}
 		return fmt.Errorf("%s: unknown key %s", path, strings.Join(names, ", "))
-	}
-	for key := range cfg.Projects {
-		if !validRef(key) {
-			return fmt.Errorf("%s: projects.%s: want owner/repo", path, strconv.Quote(key))
-		}
 	}
 	return nil
 }
@@ -137,6 +176,7 @@ func expandPaths(cfg *Config, home string) error {
 	}{
 		{"vault.repo", &cfg.Vault.Repo},
 		{"dispatch.workspace_root", &cfg.Dispatch.WorkspaceRoot},
+		{"projects.root", &cfg.Projects.Root},
 	}
 	for _, f := range fields {
 		v, err := expand(*f.p, home)
@@ -145,13 +185,13 @@ func expandPaths(cfg *Config, home string) error {
 		}
 		*f.p = v
 	}
-	for key, p := range cfg.Projects {
+	for key, p := range cfg.Projects.Repos {
 		v, err := expand(p.Path, home)
 		if err != nil {
 			return fmt.Errorf("projects.%s.path: %w", strconv.Quote(key), err)
 		}
 		p.Path = v
-		cfg.Projects[key] = p
+		cfg.Projects.Repos[key] = p
 	}
 	return nil
 }

@@ -165,7 +165,7 @@ func TestSendItemWithInstruction(t *testing.T) {
 func TestDeliver(t *testing.T) {
 	t.Parallel()
 	_, s := setup(t, "idle")
-	got, err := s.Deliver(context.Background(), "IaC", "/implement https://github.com/o/r/issues/3", "o/r#3", "/v/2026-10-16.md")
+	got, err := s.Deliver(context.Background(), Workspace{ID: "wX", Label: "IaC"}, "/implement https://github.com/o/r/issues/3", "o/r#3", "/v/2026-10-16.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,11 +178,11 @@ func TestDeliver(t *testing.T) {
 		t.Fatalf("sent %q", out)
 	}
 	_, s = setup(t, "blocked")
-	if _, err := s.Deliver(context.Background(), "trunk", "go", "o/r#3", "/v/n.md"); err == nil || !strings.Contains(err.Error(), "blocked") {
+	if _, err := s.Deliver(context.Background(), Workspace{ID: "wZ", Label: "trunk"}, "go", "o/r#3", "/v/n.md"); err == nil || !strings.Contains(err.Error(), "blocked") {
 		t.Fatalf("a blocked agent: %v", err)
 	}
-	for _, bad := range [][2]string{{"", "go"}, {"trunk", " "}} {
-		if _, err := s.Deliver(context.Background(), bad[0], bad[1], "o/r#3", "/v/n.md"); err == nil {
+	for _, bad := range [][2]string{{"", "go"}, {"wZ", " "}} {
+		if _, err := s.Deliver(context.Background(), Workspace{ID: bad[0], Label: "trunk"}, bad[1], "o/r#3", "/v/n.md"); err == nil {
 			t.Errorf("%q: no error", bad)
 		}
 	}
