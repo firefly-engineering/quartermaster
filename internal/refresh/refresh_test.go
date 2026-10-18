@@ -363,6 +363,24 @@ func TestReplyLinks(t *testing.T) {
 	}
 }
 
+// TestReplyLinksTwoPrompts gives each of two prompts sent to one pane only the links from its
+// own reply: a reply ends at the next prompt's tag, not at a bare mention of another item.
+func TestReplyLinksTwoPrompts(t *testing.T) {
+	t.Parallel()
+	text := "> ... work item ^port in /v/n.md. Record it.\n" +
+		"Done, unlike work item ^dns: https://github.com/o/infra/pull/7\n" +
+		"> ... work item ^dns in /v/n.md. Record it.\n" +
+		"Done: https://github.com/o/infra/pull/8\n"
+	for id, want := range map[string][]string{
+		"port": {"https://github.com/o/infra/pull/7"},
+		"dns":  {"https://github.com/o/infra/pull/8"},
+	} {
+		if got, ok := replyLinks(text, id); !ok || !slices.Equal(got, want) {
+			t.Errorf("^%s: links %v %v, want %v", id, got, ok, want)
+		}
+	}
+}
+
 func TestCommand(t *testing.T) {
 	t.Parallel()
 	sh := "/bin/sh"
