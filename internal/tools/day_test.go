@@ -118,6 +118,9 @@ func TestDayOpenAfterWeekend(t *testing.T) {
 	if !strings.Contains(src, "previous: \"[[2026-10-16]]\"") || !strings.Contains(src, "From [[2026-10-16]].") {
 		t.Fatalf("the note does not name its previous one:\n%s", src)
 	}
+	if !strings.Contains(src, "\nprojects:\n  - acme/web\n  - acme/infra\ntags:\n") {
+		t.Fatalf("the front matter does not list the projects carried over:\n%s", src)
+	}
 	log := d.jj(t, "log", "--no-graph", "-r", "@-", "-T", "description")
 	if !strings.HasPrefix(log, "worklog(2026-10-19): day_open: open from 2026-10-16, 13 carry-over rows") {
 		t.Fatalf("commit %q", log)
@@ -134,8 +137,8 @@ func TestDayOpenNoPrevious(t *testing.T) {
 	if out.Previous != "" || len(out.CarryOver) != 0 || out.CarryOver == nil || out.Committed || out.Skipped == "" {
 		t.Fatalf("got %+v", out)
 	}
-	if src := d.note(t, "2026-10-19"); strings.Contains(src, "previous:") {
-		t.Fatalf("note names a previous one:\n%s", src)
+	if src := d.note(t, "2026-10-19"); strings.Contains(src, "previous:") || !strings.Contains(src, "\nprojects: []\n") {
+		t.Fatalf("note names a previous one, or projects:\n%s", src)
 	}
 }
 
@@ -280,8 +283,9 @@ func TestMCP(t *testing.T) {
 		}
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"carryover_verdict", "day_open", "day_read", "item_transition", "item_upsert",
-		"next_set", "objective_set", "refresh", "status_set", "task_dispatch"}) {
+	if !slices.Equal(names, []string{"action_upsert", "carryover_verdict", "day_open", "day_read", "item_transition",
+		"item_upsert", "next_set", "objective_set", "part_write", "process_set", "prompt_send", "refresh", "status_set",
+		"task_dispatch"}) {
 		t.Fatalf("tools %v", names)
 	}
 
@@ -361,7 +365,8 @@ func TestRunVerb(t *testing.T) {
 	t.Parallel()
 	d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t))}, false)
 	ts := All(d)
-	if got := Verbs(ts); !slices.Equal(got, []string{"open", "read", "objective", "item", "transition", "next", "status", "verdict", "refresh", "dispatch"}) {
+	if got := Verbs(ts); !slices.Equal(got, []string{"open", "read", "objective", "item", "transition", "part", "action", "process", "next", "status", "verdict",
+		"refresh", "send", "dispatch"}) {
 		t.Fatalf("verbs %v", got)
 	}
 	ctx := context.Background()

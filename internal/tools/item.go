@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -22,6 +23,8 @@ type ItemFields struct {
 	Body   string       `json:"body,omitempty" jsonschema:"prose under its heading, with no blank line; makes it a ##### item"`
 	Prompt *PromptInput `json:"prompt,omitempty" jsonschema:"the prompt its ▶ button sends; makes it a ##### item"`
 	Button string       `json:"button,omitempty" jsonschema:"the ▶ label, as: grill in trunk; with a prompt, send to <to> when absent"`
+	Sent   string       `json:"sent,omitempty" jsonschema:"in Sent to other repos, how far its ask has gone: to send, sent, acked or done; written after its title as → <sent_to>, **<sent>**; unchanged when absent"`
+	SentTo string       `json:"sent_to,omitempty" jsonschema:"the herdr workspace label its ask goes to, written after the →; unchanged when absent, else the prompt's to"`
 }
 
 // PromptInput is a work item's herdr-prompt block.
@@ -116,6 +119,21 @@ func unit(f ItemFields, repo string, icon note.Icon, summary string) (note.ItemU
 	} else if f.Button != "" {
 		return note.ItemUnit{}, fmt.Errorf("^%s: a button needs a prompt to send", f.ID)
 	}
+	switch {
+	case f.Sent == "" && f.SentTo != "":
+		return note.ItemUnit{}, fmt.Errorf("^%s: sent_to goes with a sent status", f.ID)
+	case f.Sent == "":
+	case f.Bucket != note.SentBucket:
+		return note.ItemUnit{}, fmt.Errorf("^%s: a sent status is for an item in %s, not %s", f.ID, note.SentBucket, f.Bucket)
+	default:
+		u.Sent = &note.SentUnit{To: f.SentTo, Status: f.Sent}
+		if u.Sent.To == "" && f.Prompt != nil {
+			u.Sent.To = f.Prompt.To
+		}
+		if u.Sent.To == "" {
+			return note.ItemUnit{}, fmt.Errorf("^%s: a sent status needs the workspace label it goes to: give sent_to or a prompt", f.ID)
+		}
+	}
 	return u, nil
 }
 
@@ -165,10 +183,18 @@ func updateItem(n *note.Note, src []byte, r note.Renderer, it *note.Item, f Item
 	if strings.TrimSpace(f.Title) == "" {
 		return nil, "", fmt.Errorf("^%s: an update rewrites the item, so it needs its title", f.ID)
 	}
+	// Its sent status stays while it stays in Sent to other repos, as its state does.
+	if s := it.Sent; s != nil && f.Bucket == note.SentBucket {
+		f.Sent = cmp.Or(f.Sent, s.Status)
+		f.SentTo = cmp.Or(f.SentTo, s.To)
+	}
 	_, summary := note.SplitSummary(it.Title)
 	u, err := unit(f, f.Repo, it.Icon, summary)
 	if err != nil {
 		return nil, "", err
+	}
+	if u.Sent != nil && it.Sent != nil {
+		u.Sent.Note = it.Sent.Note // refresh's record of the reply, which item_upsert does not take
 	}
 	u.Dispatch = it.Dispatch // task_dispatch's record, which item_upsert does not take
 	// An update rewrites the item whole, and the note is all there is of its prose and prompt.
@@ -224,7 +250,8 @@ func removeItem(src []byte, it *note.Item, b *note.Bucket) ([]byte, error) {
 }
 
 // insertItem writes u at the end of bucket of project repo, in place of its `- —` when it has
-// nothing else. A note without the project gets its section, after the last project; a project
+// nothing else. A note without the project gets its section, after the last project, and lists
+// it in its front matter; a project
 // without What remains or the bucket gets it, the buckets in template order.
 func insertItem(n *note.Note, src []byte, r note.Renderer, repo, bucket string, u note.ItemUnit) ([]byte, error) {
 	var buckets []note.BucketUnit // every bucket, u in its own, for a new section
@@ -241,7 +268,8 @@ func insertItem(n *note.Note, src []byte, r note.Renderer, repo, bucket string, 
 		if err != nil {
 			return nil, err
 		}
-		return note.InsertBlock(src, newProjectAt(n, src), section), nil
+		// The section goes after the front matter, so n's span of it still holds.
+		return note.ListProject(note.InsertBlock(src, newProjectAt(n, src), section), n.FrontMatter, repo)
 	}
 	p := n.Projects[i]
 	if p.Remains == nil {
@@ -257,31 +285,13 @@ func insertItem(n *note.Note, src []byte, r note.Renderer, repo, bucket string, 
 		if err != nil {
 			return nil, err
 		}
-		at := p.Remains.End
-		order := slices.Index(note.BucketNames, bucket)
-		for _, nb := range p.Remains.Buckets {
-			if slices.Index(note.BucketNames, nb.Name) > order {
-				at = nb.Start
-				break
-			}
-		}
-		return note.InsertBlock(src, at, b), nil
+		return note.InsertBlock(src, newBucketAt(p.Remains, bucket), b), nil
 	}
-	b := p.Remains.Buckets[k]
 	line, err := r.Item(u)
 	if err != nil {
 		return nil, err
 	}
-	// b holds nothing but `- —`: u takes its place.
-	if len(b.Lists) == 1 && len(b.Dashes) == 1 && b.Lists[0] == b.Dashes[0] && b.Lists[0].End == b.End &&
-		len(b.Items) == 0 && len(b.Entries) == 0 {
-		return note.Replace(src, b.Dashes[0], line), nil
-	}
-	// A list item joins the list b ends with; anything else is a block of its own.
-	if !u.Heading && len(b.Lists) > 0 && b.Lists[len(b.Lists)-1].End == b.End {
-		return note.Insert(src, b.End, line), nil
-	}
-	return note.InsertBlock(src, b.End, line), nil
+	return appendToBucket(src, p.Remains.Buckets[k], line, u.Heading), nil
 }
 
 // newProjectAt is where a new project section goes: after the last one, else before
@@ -304,6 +314,7 @@ type ItemTransitionInput struct {
 	Item    string `json:"item" jsonschema:"the work item's id"`
 	To      string `json:"to" jsonschema:"the state to move it to: TODO, IN_PROGRESS, IN_REVIEW, WAITING, DONE or DROPPED"`
 	Summary string `json:"summary,omitempty" jsonschema:"one line: the PR URL, commit, evidence or reason; needed to wait, to drop, and to complete from IN_PROGRESS; the item's last one stays when absent"`
+	Part    int    `json:"part,omitempty" jsonschema:"with DONE or DROPPED, the Part N of its project it is filed into: it leaves its bucket and Next, and becomes a plain line there with its summary, without its id, button or prompt; it stays in its bucket when absent"`
 }
 
 // ItemTransitionOutput is item_transition's result.
@@ -311,7 +322,8 @@ type ItemTransitionOutput struct {
 	Written
 	From   string        `json:"from" jsonschema:"the state it left"`
 	To     string        `json:"to" jsonschema:"the state it is in"`
-	Item   *ItemOutput   `json:"item,omitempty" jsonschema:"the work item, absent for a manual action"`
+	Item   *ItemOutput   `json:"item,omitempty" jsonschema:"the work item, absent for a manual action or one filed into a Part"`
+	Part   *PartOutput   `json:"part,omitempty" jsonschema:"the Part the work item was filed into, absent without part"`
 	Action *ManualAction `json:"action,omitempty" jsonschema:"the manual action ticked, absent for a work item"`
 }
 
@@ -322,24 +334,35 @@ func (d Deps) itemTransition(ctx context.Context, in ItemTransitionInput) (ItemT
 		return ItemTransitionOutput{}, err
 	}
 	var from note.State
-	res, w, err := d.write(ctx, in.Date, "item_transition", func(n *note.Note, src []byte, _ note.Renderer) ([]byte, string, error) {
+	filedTo := "" // the project of the item filed into a Part
+	res, w, err := d.write(ctx, in.Date, "item_transition", func(n *note.Note, src []byte, r note.Renderer) ([]byte, string, error) {
 		if it := n.Item(in.Item); it != nil {
 			from, _ = note.StateOf(it.Icon)
+			if p := projectAt(n, it.Start); p != nil {
+				filedTo = p.Repo
+			}
 		} else if a := n.Action(in.Item); a != nil {
 			from = a.State()
 		}
-		out, err := note.TransitionItem(n, src, in.Item, to, in.Summary)
 		headline := "^" + in.Item + " " + from.String() + " to " + to.String()
 		if s := strings.TrimSpace(in.Summary); s != "" {
 			headline += ": " + s
 		}
+		if in.Part != 0 {
+			out, err := fileItem(n, src, r, in.Item, to, in.Summary, in.Part)
+			return out, headline + partHeadline(in.Part), err
+		}
+		out, err := note.TransitionItem(n, src, in.Item, to, in.Summary)
 		return out, headline, err
 	})
 	if err != nil {
 		return ItemTransitionOutput{}, err
 	}
 	o := ItemTransitionOutput{Written: w, From: from.String(), To: to.String()}
-	if res.Note.Item(in.Item) != nil {
+	if in.Part != 0 {
+		p := projectOf(res.Note, filedTo)
+		o.Part = &PartOutput{Repo: filedTo, Part: partView(res.Src, partOf(p, in.Part))}
+	} else if res.Note.Item(in.Item) != nil {
 		io := itemOutput(res.Note, in.Item)
 		o.Item = &io
 	} else if a := res.Note.Action(in.Item); a != nil {

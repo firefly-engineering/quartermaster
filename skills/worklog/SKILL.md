@@ -31,25 +31,21 @@ Without it, stop and say so: never edit the note by hand instead.
 | `day_open` | create today's note, with the previous note's open items as carry-over rows |
 | `day_read` | read a note: status, objectives, *Next*, items by project and bucket, states, parse errors |
 | `objective_set` | add, refine, progress or settle an objective |
-| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label |
-| `item_transition` | move a work item to a new state with a summary, or tick a manual action |
+| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status |
+| `item_transition` | move a work item to a new state with a summary, or tick a manual action; with `part`, file a done or dropped item into that Part |
+| `part_write` | create or rewrite one Part whole: number, kind, title, icon and body |
+| `action_upsert` | create, reword or move a manual action: a checkbox with an id |
+| `process_set` | add, reword or settle a *Process* entry |
 | `next_set` | replace *Next*, by work item, manual action or anchor id |
 | `status_set` | rewrite the status line |
 | `carryover_verdict` | record keep, defer or drop on a carry-over row |
 | `refresh` | reconcile the note with GitHub and herdr |
+| `prompt_send` | send a work item's prompt to its herdr session; leaves the note alone |
 | `task_dispatch` | start work on a ref, in its project's session or in a fresh agent |
 
-`quartermaster send` is a command, not a tool: see [Buttons](#buttons). The server lists
-each tool's input schema. Every tool but `day_open` takes an optional `date`, today (UTC)
-by default.
-
-No tool writes a Part, a manual action, an anchor or a *Process* entry yet
-([#40](https://github.com/firefly-engineering/quartermaster/issues/40)). Until one does,
-write that one unit by hand, in [`template.md`](template.md)'s shape, and touch nothing
-else. Give a Part its icon as you write it: 🔄 running, 🔍 in review, ✅ done. Then call
-`day_read`: it must return no errors. The edit takes no lock, as an Obsidian edit takes
-none ([ADR 0006](https://github.com/firefly-engineering/quartermaster/blob/main/docs/adr/0006-mutations-lock-check-rename-commit.md)),
-and the next tool's commit carries it. This is the only hand edit the skill makes.
+`prompt_send` is the tool form of the ▶ button's `quartermaster send`: see
+[Buttons](#buttons). The server lists each tool's input schema. Every tool but `day_open`
+takes an optional `date`, today (UTC) by default.
 
 ## Every tool commits
 
@@ -93,6 +89,10 @@ A work item's state is its icon. Pick the state; the server writes the icon:
 
 The server derives every project, *What remains* and bucket icon on each write
 ([spec §4.2](https://github.com/firefly-engineering/quartermaster/blob/main/docs/spec.md#42-states)).
+A Part's icon is yours to write with `part_write`: 🔄 while it runs, 🔍 while its work is
+in review, ✅ when it is done. A finished Part holds plain lines, not work items:
+`item_transition` with `part` files a done or dropped item there as one line. A Part's
+body may carry anchors, paragraphs ending `^<id>`, for *Next* to link.
 `item_transition` refuses a move the state model forbids
 ([spec §4.3](https://github.com/firefly-engineering/quartermaster/blob/main/docs/spec.md#43-transitions)).
 
@@ -158,16 +158,19 @@ A human session that turns open questions into agent-ready work.
    `needs-triage`, `needs-info`, open questions in tickets). Order it by what each
    decision unblocks. Write each with `item_upsert` in *Decisions for you*: a one-line
    question, a rough cost, and its [route](#routes). One that goes through a button gets
-   a prompt.
+   a prompt. Open the session's *Part N — Human session* with `part_write`, 🔄, at the
+   project's next free N.
 2. Work through the list with the user, one decision at a time. A quick one is settled
    inline; a larger one goes to its route's skill, through a button. Record each decision
    where it belongs: a ticket comment, an ADR or spec PR, or a relabel to
    `ready-for-agent`. The user's live answer approves recording that decision on that
    ticket. Propose new tickets, epics and other repos' items before creating them. Then
-   move the item on. A settled question goes to `DONE` with the link as its summary; a
-   `WAITING` one goes through `IN_PROGRESS` first. When the item is the ticket itself and
-   it is now `ready-for-agent`, move it into *Agent queue* with `item_upsert` instead.
-3. Write a *Part N — Human session*: one line and a link per decision. Rebuild the
+   move the item on. A settled question goes to `DONE` with the link as its summary and
+   `part: N`, which files it into the session's Part as one line; from `WAITING` too when
+   the link shows what it waited on is done. When the item is the ticket itself and it is
+   now `ready-for-agent`, move it into *Agent queue* with `item_upsert` instead.
+3. Close the Part with `part_write`, ✅: one line and a link per decision, the filed
+   lines included (`day_read` returns its `body`). Rebuild the
    **Agent queue** with `item_upsert`: the `ready-for-agent` tickets, their dependency
    order, and the batch as one work item whose prompt carries the batch's global context.
 
@@ -190,26 +193,29 @@ A batch takes every ticket it can reach, not only the ones unblocked today: each
 it instead of waiting for the next one. Leave a ticket out only when it also waits on a
 human decision, another repo or a date.
 
-Move each ticket in the batch to `IN_PROGRESS`, and record a *Part N — Agent batch*
-marked **running**. When it reports back, rewrite the Part as a table with one row per
-ticket: PR, then outcome (`built`, **part only**, or back to HITL with the reason). Then:
+Move each ticket in the batch to `IN_PROGRESS`, and record a *Part N — Agent batch* with
+`part_write`, 🔄, its title marked **running**. When it reports back, rewrite the Part with
+`part_write` as a table with one row per ticket: PR, then outcome (`built`, **part only**,
+or back to HITL with the reason), and its icon 🔍 while the PRs wait on review. Then:
 
 - Move each built ticket to `IN_REVIEW`, its PR as the summary.
 - Move each ticket that went back to HITL into *Decisions for you* with `item_upsert`,
   and to `WAITING` with the question it blocks on.
 - Write each new ticket into its bucket.
-- List each review finding left as a judgement call under the Part.
+- List each review finding left as a judgement call in the Part's body.
 
 ### Land
 
 The user reviews and merges. `refresh` moves each merged PR and each issue closed as
-completed to `DONE`. Move a ticket closed by hand yourself, with its commit. Record a
-*Part N — Land*:
+completed to `DONE`. Move a ticket closed by hand yourself, with its commit and `part: N`
+to file it into the Land Part. Record a *Part N — Land* with `part_write`, ✅ once it is
+done:
 
 - the merge (stack and merge commit);
 - the tickets closed, by commit or by hand;
 - the post-merge operations: releases, deploys, live checks, temporary grants and their
-  removal.
+  removal. One only the user can run is a manual action: `action_upsert` puts it in the
+  Part (`part: N`) or in *Your actions*.
 
 Then settle each objective whose done-condition now holds: `objective_set` with state
 `DONE`.
@@ -222,8 +228,12 @@ Any time:
 - A **new HITL need** goes to *Decisions for you*, with the question it blocks on.
 - A **refined objective** is rewritten in place: `objective_set` with its row and the
   reason, which it stamps `(refined HH:MM UTC: <reason>)`.
+- A **manual operation** only the user can run is a manual action: `action_upsert` writes
+  it, in *Your actions* by default. When the user says it is done, tick it with
+  `item_transition` to `DONE`; never untick one.
 - **Another repo's work** follows [Other repos](#other-repos).
-- A **process change** goes to *Process*.
+- A **process change** goes to *Process* with `process_set`. Settle the entry there once
+  it is adopted or dropped, so the next open does not carry it.
 
 ### Close
 
@@ -231,7 +241,7 @@ Make tomorrow's open trivial.
 
 1. Call `refresh`, then chase what it left and why: replies with no links, and items it
    could not prove.
-2. Compact each finished Part.
+2. Compact each finished Part with `part_write`, ✅.
 3. Rewrite the status line as the day's outcome with `status_set`, label `close`:
    objectives met and missed, and the next step with what gates it. Leave a missed
    objective open, its progress saying why, so tomorrow's `day_open` carries it.
@@ -287,11 +297,10 @@ The judgement stays here:
 When the note shows prompts but no buttons, the vault lacks the Shell commands setup.
 Point the user at [`buttons-setup.md`](buttons-setup.md) once.
 
-To send a prompt yourself, run `quartermaster send <vault> <date> <item-id>`, where
-`<vault>` is the directory of the note's path. A tool will do this too, once `prompt_send`
-lands ([#39](https://github.com/firefly-engineering/quartermaster/issues/39)). It fails if
-herdr is not found, if the workspace is missing or has no single agent, or if that agent
-is `blocked` on an approval; leave the item as it was and say why.
+To send a prompt yourself, call `prompt_send` with the item's id. It does not touch the
+note: record the send yourself. It fails if herdr is not found, if the workspace is missing
+or has no single agent, or if that agent is `blocked` on an approval; leave the item as it
+was and say why.
 
 ## Other repos
 
@@ -300,16 +309,17 @@ For trunk, `arbora-partners/IaC` owns what Arbora operates. That work goes to th
 own session over herdr. It is tracked in the **originating** project's *Sent to other
 repos* bucket, because that project is waiting on it.
 
-1. Write the work item with `item_upsert` under *Sent to other repos*, its title ending
-   `→ <workspace label>, **to send**`, with a prompt to that label. The prompt says what
+1. Write the work item with `item_upsert` under *Sent to other repos*, with `sent: to send`
+   and a prompt to the other repo's workspace label. The server writes
+   `→ <workspace label>, **to send**` after its title. The prompt says what
    is needed and why, links the ticket it unblocks, says how the result is verified, and
    asks for a reply with links (issue, PR, run). Give it no `ref` yet: `refresh` closes
    an item when its ref closes, and the ticket it unblocks is not that event. Once the
    reply names the other repo's issue, make that its `ref`.
 2. Put it in *Next*.
 3. When the user asks you to send it, send it yourself (see [Buttons](#buttons)). Once
-   sent, rewrite its title to **sent**. Leave its state: `refresh` cannot close a
-   `WAITING` item.
+   sent, set its status with `item_upsert`, `sent: sent`. Leave its state: `refresh`
+   closes it, `WAITING` or not, once its ref closes.
 4. `refresh` tracks the rest. It reads the reply, marks the item **acked** and adds its
    links; once GitHub closes it, it reads **done**.
 

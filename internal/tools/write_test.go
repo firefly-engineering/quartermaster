@@ -235,9 +235,9 @@ func TestItemUpsertCreate(t *testing.T) {
 			ItemFields: ItemFields{ID: "cache", Repo: "acme/infra", Bucket: "Waiting", Title: "cache budget", Cost: "5 min"},
 			State:      "WAITING",
 		}, []string{infraChase, infraChase + "\n#### ⏳ Waiting\n\n- ⏳ cache budget · 5 min ^cache\n"}},
-		{"a missing project, after the last one", ItemUpsertInput{
+		{"a missing project, after the last one and in the front matter", ItemUpsertInput{
 			ItemFields: ItemFields{ID: "bump", Repo: "acme/api", Bucket: "Agent queue", Title: "bump Go", Ref: "acme/api#3"},
-		}, []string{infraChase, infraChase + "\n## ⬜ acme/api\n\n### ⬜ What remains\n\n#### — Decisions for you\n\n- —\n\n" +
+		}, []string{"  - acme/infra\n", "  - acme/infra\n  - acme/api\n", infraChase, infraChase + "\n## ⬜ acme/api\n\n### ⬜ What remains\n\n#### — Decisions for you\n\n- —\n\n" +
 			"#### — Your actions\n\n- —\n\n#### ⬜ Agent queue\n\n- ⬜ [#3](https://github.com/acme/api/issues/3): bump Go ^bump\n\n" +
 			"#### — Sent to other repos\n\n- —\n\n#### — Outside input: chase\n\n- —\n\n#### — Waiting\n\n- —\n"}},
 	}
@@ -318,6 +318,21 @@ func TestItemUpsertUpdate(t *testing.T) {
 			"#### — Outside input: chase\n\n- —\n\n#### ⏳ Waiting\n\n- ⏳ Vendor credential for the v3 runner, asked Tuesday ^vendor-cred\n"))
 		if out.Bucket != "Waiting" || out.Repo != "acme/infra" || out.Item.State != "WAITING" {
 			t.Errorf("out %+v", out)
+		}
+	})
+	t.Run("moved to a new project, listed in the front matter", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		out, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: ItemFields{
+			ID: "vendor-cred", Repo: "acme/api", Title: "Vendor credential for the v3 runner, asked Tuesday",
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The project it leaves stays listed: its section is still in the note.
+		if got := d.note(t, fixtureDate); !strings.HasPrefix(got, "---\ndate: 2026-10-16\nprevious: \"[[2026-10-15]]\"\n"+
+			"projects:\n  - acme/web\n  - acme/infra\n  - acme/api\ntags:\n") || out.Repo != "acme/api" {
+			t.Errorf("out %+v, note:\n%s", out, got)
 		}
 	})
 }

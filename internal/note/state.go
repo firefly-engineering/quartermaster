@@ -91,15 +91,15 @@ var moves = map[State][]State{
 	Todo:       {InProgress, Done}, // start, direct close
 	InProgress: {InReview, Done},   // review, complete without review
 	InReview:   {Done, InProgress}, // complete, rework
-	Waiting:    {InProgress},       // unblock
+	Waiting:    {InProgress, Done}, // unblock, complete on what it waited on
 }
 
 // Transition reports whether a work item may move from one state to another (spec §4.3),
 // as nil or an error wrapping ErrIllegalTransition or ErrReasonRequired. A move to WAITING or
-// DROPPED needs a summary naming what it waits on or why it was dropped, and IN_PROGRESS to
-// DONE one naming the evidence, since no review stands in for it.
+// DROPPED needs a summary naming what it waits on or why it was dropped, and IN_PROGRESS or
+// WAITING to DONE one naming the evidence, since no review stands in for it.
 func Transition(from, to State, summary string) error {
-	needsReason := to == Waiting || to == Dropped || from == InProgress && to == Done
+	needsReason := to == Waiting || to == Dropped || (from == InProgress || from == Waiting) && to == Done
 	terminal := from == Done || from == Dropped
 	if !from.valid() || !to.valid() || terminal || !needsReason && !slices.Contains(moves[from], to) {
 		return fmt.Errorf("%w: %s to %s", ErrIllegalTransition, from, to)

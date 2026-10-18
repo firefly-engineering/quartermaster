@@ -271,7 +271,7 @@ func (p *parser) actions(doc ast.Node) {
 			p.errorf(line, "a manual action carries a checkbox, never a status icon")
 		}
 		mark := first.Lines().At(0).Start + 1 // inside the `[ ]` the block opens with
-		a := ManualAction{Span: p.blockSpan(li), Checked: box.IsChecked, Mark: mark, Text: txt}
+		a := ManualAction{Span: p.blockSpan(li), Head: p.span(p.nodeStart(li), p.nodeEnd(first)), Checked: box.IsChecked, Mark: mark, Text: txt}
 		if id, ok, bad := p.trailingID(first); ok {
 			p.placed[first] = true
 			if bad != "" {
@@ -500,6 +500,9 @@ func (p *parser) section2(txt string, icon Icon, iconSpan Span, rest string, who
 	}
 }
 
+// ValidRepo reports whether s is a project's owner/repo.
+func ValidRepo(s string) bool { return isRepo(s) }
+
 func isRepo(s string) bool {
 	owner, repo, ok := strings.Cut(s, "/")
 	return ok && only(owner, "-_.", true) && only(repo, "-_.", true)
@@ -551,6 +554,7 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	it.End = p.nodeEnd(para)
 	it.Button = p.buttonLabel(para)
 	p.dispatch(it, para)
+	p.sent(it)
 	p.addItem(it)
 	p.bucket.Items = append(p.bucket.Items, it)
 	return it
@@ -746,6 +750,8 @@ func (p *parser) list(l *ast.List) {
 	case secProject:
 		if p.bucket != nil {
 			p.bucket.Lists = append(p.bucket.Lists, p.blockSpan(l))
+		} else if p.part != nil {
+			p.part.Lists = append(p.part.Lists, p.blockSpan(l))
 		}
 		p.projectList(l)
 	}
@@ -859,6 +865,7 @@ func (p *parser) listItem(li, first ast.Node) {
 	if raw := p.dispatch(it, first); raw != "" {
 		it.Title = strings.Join(strings.Fields(strings.Replace(it.Title, raw, "", 1)), " ")
 	}
+	p.sent(it)
 	p.addItem(it)
 	if p.part != nil {
 		p.part.Items = append(p.part.Items, it)

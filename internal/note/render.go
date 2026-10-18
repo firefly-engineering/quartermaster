@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
 )
 
 // This file is the one place the note's line formats live: the formats of the worklog skill's
@@ -53,7 +56,8 @@ type NextUnit struct {
 //
 // Its title line reads `<icon> <ref link>: <title> — <summary>`. The list form adds
 // ` · <cost> · Route: <route>` before the summary, the route in a code span, and ` ^<id>` after
-// it; the `#####` form ends its body with `<cost>. Route: <route>.` instead.
+// it; the `#####` form ends its body with `<cost>. Route: <route>.` instead. A sent status
+// comes before the summary: ` → <to>, **<status>**`.
 type ItemUnit struct {
 	ID      string
 	Icon    Icon
@@ -67,6 +71,7 @@ type ItemUnit struct {
 	Body    string      // the `#####` form's prose before its button; no blank line
 	Button  string      // the ▶ label, as `grill in trunk`; needs a Prompt
 	Prompt  *PromptUnit // the collapsed `> [!prompt]-` callout
+	Sent    *SentUnit   // in *Sent to other repos*, its sent status, after the title, cost and route; nil for none
 
 	// Dispatch is the dispatch marker written just before its ` ^<id>`: on its title line in
 	// the list form, ending its paragraph in the ##### one.
@@ -146,6 +151,7 @@ type Day struct {
 	Objectives []ObjectiveUnit
 	Next       []NextUnit
 	Projects   []ProjectUnit
+	Repos      []string // more owner/repo for the front matter's projects list, after Projects': the carried-over ones
 	CarryOver  []CarryOverUnit
 	Process    []string // one line each; none renders `- —`
 }
@@ -453,13 +459,22 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 	if u.Title == "" {
 		return "", "", fmt.Errorf("%s: empty title", what)
 	}
-	if err := oneLine(what+" title", u.Title+u.Cost+u.Route+u.Summary); err != nil {
+	var sent string
+	if u.Sent != nil {
+		if sent, err = sentTail(*u.Sent); err != nil {
+			return "", "", fmt.Errorf("%s: %w", what, err)
+		}
+		if parseSent(u.Title) != nil {
+			return "", "", fmt.Errorf("%s: the title already ends with a sent status; give it as the sent status alone", what)
+		}
+	}
+	if err := oneLine(what+" title", u.Title+u.Cost+u.Route+u.Summary+sent); err != nil {
 		return "", "", err
 	}
 	if w := strings.Fields(u.Title); strings.HasPrefix(w[len(w)-1], "^") {
 		return "", "", fmt.Errorf("%s: the title ends in a block id; set ID instead", what)
 	}
-	if strings.Contains(u.Title+u.Cost+u.Route, SummarySep) {
+	if strings.Contains(u.Title+u.Cost+u.Route+sent, SummarySep) {
 		return "", "", fmt.Errorf("%s: %q starts the summary, so the title, cost and route may not hold it", what, SummarySep)
 	}
 	if u.Dispatch != nil {
@@ -490,6 +505,7 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 			title += fieldSep + "Route: `" + u.Route + "`"
 		}
 	}
+	title += sent
 	if u.Summary != "" {
 		title += SummarySep + u.Summary
 	}
@@ -533,16 +549,26 @@ func (r Renderer) Note(d Day) ([]byte, error) {
 	if d.Previous != "" {
 		fm += "previous: \"[[" + d.Previous + "]]\"\n"
 	}
-	if len(d.Projects) == 0 {
-		fm += "projects: []\n"
-	} else {
-		fm += "projects:\n"
-	}
+	var repos []string
 	for _, p := range d.Projects {
-		if !isRepo(p.Repo) {
-			return nil, fmt.Errorf("project repo %q: want owner/repo", p.Repo)
+		repos = append(repos, p.Repo)
+	}
+	var listed []string
+	for _, repo := range append(repos, d.Repos...) {
+		if !isRepo(repo) {
+			return nil, fmt.Errorf("project repo %q: want owner/repo", repo)
 		}
-		fm += "  - " + p.Repo + "\n"
+		if !slices.Contains(listed, repo) {
+			listed = append(listed, repo)
+		}
+	}
+	if len(listed) == 0 {
+		fm += projectsKey + ": []\n"
+	} else {
+		fm += projectsKey + ":\n"
+	}
+	for _, repo := range listed {
+		fm += projectEntry(repo, "\n")
 	}
 	add(fm+"tags:\n  - worklog\n---\n", "# Worklog — "+d.Date+"\n")
 
@@ -605,21 +631,11 @@ func (r Renderer) project(p ProjectUnit) ([]string, error) {
 	}
 	blocks := []string{"## " + string(p.Icon) + " " + p.Repo + "\n"}
 	for _, pt := range p.Parts {
-		if !pt.Icon.isHeading() || pt.N < 1 || !slices.Contains(PartKinds, pt.Kind) {
-			return nil, fmt.Errorf("project %s: Part %d: want a heading icon, N ≥ 1 and a kind in %s, got %q %q",
-				p.Repo, pt.N, strings.Join(PartKinds, ", "), pt.Icon, pt.Kind)
+		b, err := part(pt)
+		if err != nil {
+			return nil, fmt.Errorf("project %s: %w", p.Repo, err)
 		}
-		if err := oneLine("Part title", pt.Title); err != nil {
-			return nil, err
-		}
-		head := "### " + string(pt.Icon) + " Part " + strconv.Itoa(pt.N) + " — " + pt.Kind
-		if pt.Title != "" {
-			head += ": " + pt.Title
-		}
-		blocks = append(blocks, head+"\n")
-		if body := strings.TrimSuffix(pt.Body, "\n"); body != "" {
-			blocks = append(blocks, body+"\n")
-		}
+		blocks = append(blocks, b...)
 	}
 	if len(p.Buckets) == 0 {
 		return blocks, nil
@@ -629,6 +645,112 @@ func (r Renderer) project(p ProjectUnit) ([]string, error) {
 		return nil, fmt.Errorf("project %s: %w", p.Repo, err)
 	}
 	return append(blocks, remains...), nil
+}
+
+// part renders a Part as blocks: its heading, then its body when it has one.
+func part(pt PartUnit) ([]string, error) {
+	if !pt.Icon.isHeading() || pt.N < 1 || !slices.Contains(PartKinds, pt.Kind) {
+		return nil, fmt.Errorf("Part %d: want a heading icon, N ≥ 1 and a kind in %s, got %q %q",
+			pt.N, strings.Join(PartKinds, ", "), pt.Icon, pt.Kind)
+	}
+	if err := oneLine("Part title", pt.Title); err != nil {
+		return nil, err
+	}
+	head := "### " + string(pt.Icon) + " Part " + strconv.Itoa(pt.N) + " — " + pt.Kind
+	if pt.Title != "" {
+		head += ": " + pt.Title
+	}
+	blocks := []string{head + "\n"}
+	body := strings.Trim(pt.Body, "\n")
+	if body == "" {
+		return blocks, nil
+	}
+	doc := md.Parser().Parse(text.NewReader([]byte(body)))
+	for c := doc.FirstChild(); c != nil; c = c.NextSibling() {
+		if _, ok := c.(*ast.Heading); ok {
+			return nil, fmt.Errorf("Part %d: its body may hold no heading, which would end the Part", pt.N)
+		}
+	}
+	return append(blocks, body+"\n"), nil
+}
+
+// Part renders a Part whole, heading and body, to splice over one or into its project.
+func (r Renderer) Part(pt PartUnit) ([]byte, error) {
+	blocks, err := part(pt)
+	return []byte(strings.Join(blocks, "\n")), err
+}
+
+// ActionUnit is a manual action outside *Next*: `- [ ] <text> ^<id>`.
+type ActionUnit struct {
+	ID      string
+	Text    string // one line, after the box
+	Checked bool
+}
+
+// ActionLine renders a manual action's list line.
+func (r Renderer) ActionLine(u ActionUnit) ([]byte, error) {
+	box := "[ ]"
+	if u.Checked {
+		box = "[x]"
+	}
+	rest, err := actionText(u)
+	return []byte("- " + box + rest), err
+}
+
+// actionText renders what follows a manual action's box: ` <text> ^<id>` and its line end.
+func actionText(u ActionUnit) (string, error) {
+	if !ValidID(u.ID) {
+		return "", fmt.Errorf("invalid manual action id ^%s: lowercase letters, digits and - only", u.ID)
+	}
+	what := "manual action ^" + u.ID
+	text := strings.TrimSpace(u.Text)
+	if text == "" {
+		return "", fmt.Errorf("%s: empty text", what)
+	}
+	if err := oneLine(what, text); err != nil {
+		return "", err
+	}
+	if lead, _, _ := strings.Cut(text, " "); Icon(lead).isHeading() {
+		return "", fmt.Errorf("%s: a manual action carries a checkbox, never a status icon", what)
+	}
+	if w := strings.Fields(text); strings.HasPrefix(w[len(w)-1], "^") {
+		return "", fmt.Errorf("%s: the text ends in a block id; set ID instead", what)
+	}
+	return " " + text + " ^" + u.ID + "\n", nil
+}
+
+// RewordAction rewrites manual action a's text after its box, keeping its marker, indent, box
+// and nested lines: a reword never ticks or unticks it.
+func RewordAction(src []byte, a ManualAction, text string) ([]byte, error) {
+	rest, err := actionText(ActionUnit{ID: a.ID, Text: text})
+	if err != nil {
+		return nil, err
+	}
+	return Replace(src, Span{Start: a.Mark + 2, End: a.Head.End}, []byte(rest)), nil // past the box's `]`
+}
+
+// ProcessSection renders a `## Process` section holding list, its lines, to add to a note that
+// lacks one.
+func (r Renderer) ProcessSection(list []byte) []byte {
+	return []byte("## " + ProcessSection + "\n\n" + string(list))
+}
+
+// ProcessLine renders one *Process* entry's list line: `- <text>`.
+func (r Renderer) ProcessLine(text string) ([]byte, error) {
+	text = strings.TrimSpace(text)
+	if text == "" || text == string(IconNone) {
+		return nil, fmt.Errorf("process entry %q: want some text", text)
+	}
+	if err := oneLine("process entry", text); err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(text, "[ ]") || strings.HasPrefix(text, "[x]") || strings.HasPrefix(text, "[X]") {
+		return nil, fmt.Errorf("process entry %q: a checkbox is a manual action: action_upsert writes one", text)
+	}
+	if w := strings.Fields(text); strings.HasPrefix(w[len(w)-1], "^") {
+		return nil, fmt.Errorf("process entry %q: an entry has no block id", text)
+	}
+	return []byte("- " + text + "\n"), nil
 }
 
 // Project renders a project section, to splice into a note that lacks it.

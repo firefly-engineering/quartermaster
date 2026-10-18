@@ -13,7 +13,8 @@
 //   - GitHub, for an item whose title leads with a link to an issue or PR: a merged PR is
 //     DONE; an issue closed as completed is DONE, with the commit or PR that closed it; one
 //     closed as not planned or as a duplicate is DROPPED. An open one, a PR closed unmerged or
-//     an issue closed with no reason proves nothing.
+//     an issue closed with no reason proves nothing. A WAITING item completes too, since what
+//     it waited on is done: the merged PR, or what closed the issue, is its summary (§4.3).
 //   - herdr, for an IN_PROGRESS item with a dispatch marker, which no transition has moved
 //     since its dispatch: its pane gone, or no agent in it, is a worker that exited, and the
 //     item goes to WAITING, never DONE.
@@ -118,7 +119,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 		return
 	}
 	head, _ := note.SplitSummary(it.Title)
-	l := parseLine(head)
+	l := parseLine(it)
 	m := move{Applied: Applied{Item: it.ID, From: from.String()}, from: from}
 	if l.ref != (note.Ref{}) {
 		m.Ref = l.ref.String()
@@ -128,13 +129,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 	if l.ref != (note.Ref{}) {
 		checked = true
 		e := g.github(ctx, l.ref)
-		switch {
-		case e.to == 0:
-			reasons = append(reasons, e.reason)
-		case note.Transition(from, e.to, e.summary) != nil:
-			reasons = append(reasons, fmt.Sprintf("%s %s, but %s may not move to %s (spec §4.3): unblock it first",
-				l.ref, e.summary, from, e.to))
-		default:
+		if e.to != 0 { // DONE or DROPPED, both legal from any open state with a summary
 			m = m.transition(e.to, e.summary)
 			if sent && e.to == note.Done && l.status != "" && l.status != statusDone {
 				m.wasStatus, m.Status = l.status, statusDone // GitHub proves the ask done
@@ -142,6 +137,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 			p.moves = append(p.moves, m)
 			return
 		}
+		reasons = append(reasons, e.reason)
 	}
 	if it.Dispatch != nil && from == note.InProgress {
 		checked = true
@@ -221,8 +217,7 @@ func (m move) apply(src []byte) ([]byte, error) {
 	if now, _ := note.StateOf(it.Icon); now != m.from {
 		return nil, fmt.Errorf("it moved from %s to %s since refresh read it", m.from, now)
 	}
-	head, _ := note.SplitSummary(it.Title)
-	l := parseLine(head)
+	l := parseLine(it)
 	if m.Ref != "" && l.ref.String() != m.Ref {
 		return nil, fmt.Errorf("its ref changed from %s since refresh read it", m.Ref)
 	}
@@ -244,18 +239,20 @@ func (m move) apply(src []byte) ([]byte, error) {
 	return setStatus(src, it, m.Status, m.Links)
 }
 
-// setStatus writes status over the sent status in item it's title, and adds links at the end
-// of the title, before its summary. The title line is rendered as a transition renders it, so
-// its marker, indent and nested lines stay.
+// setStatus writes status as item it's sent status, and adds links at the end of its note,
+// before its summary. The title line is rendered as a transition renders it, so its marker,
+// indent and nested lines stay.
 func setStatus(src []byte, it *note.Item, status string, links []string) ([]byte, error) {
-	head, summary := note.SplitSummary(it.Title)
-	l := parseLine(head)
-	head = head[:l.at[0]] + status + head[l.at[1]:]
+	if it.Sent == nil {
+		return nil, errors.New("it has no sent status to set")
+	}
+	_, summary := note.SplitSummary(it.Title)
+	sent := note.SentUnit{To: it.Sent.To, Status: status, Note: it.Sent.Note}
 	if len(links) > 0 {
-		head += ", " + strings.Join(links, ", ")
+		sent.Note = strings.TrimPrefix(sent.Note+", "+strings.Join(links, ", "), ", ")
 	}
 	line, err := note.Renderer{}.ItemTitle(note.ItemUnit{
-		ID: it.ID, Icon: it.Icon, Title: head, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch,
+		ID: it.ID, Icon: it.Icon, Title: it.Sent.Title, Sent: &sent, Summary: summary, Heading: it.Heading, Dispatch: it.Dispatch,
 	})
 	if err != nil {
 		return nil, err

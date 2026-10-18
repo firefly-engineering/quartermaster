@@ -18,7 +18,7 @@
     ];
   };
 
-  vendorHash = "sha256-8z+hvTuG5m2bzns4K0Nvs7VVsA85v6uyytQupPj2d6I=";
+  vendorHash = "sha256-Hh4eKyRJmwrRkc0uCLqjAFECo36aicrnjpbCF2E1F7k=";
   subPackages = [ "cmd/quartermaster" ];
   env.CGO_ENABLED = "0";
   ldflags = [

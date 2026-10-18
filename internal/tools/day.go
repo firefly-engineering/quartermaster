@@ -58,7 +58,7 @@ func (d Deps) dayOpen(ctx context.Context, _ DayOpenInput) (DayOpenOutput, error
 			return DayOpenOutput{}, fmt.Errorf("the previous note %s.md does not parse, so its open items "+
 				"cannot all be collected; fix it first: %w", prevDate, err)
 		}
-		if day.CarryOver, err = carryOver(prev, prevDate, r); err != nil {
+		if day.CarryOver, day.Repos, err = carryOver(prev, prevDate, r); err != nil {
 			return DayOpenOutput{}, fmt.Errorf("the previous note %s.md: %w", prevDate, err)
 		}
 	}
