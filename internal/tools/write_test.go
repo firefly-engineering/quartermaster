@@ -608,6 +608,44 @@ func TestNextSetAnchor(t *testing.T) {
 	}
 }
 
+// TestNextSetCost: a work item's line takes the entry's cost, else the item's, else none,
+// whatever the line showed before; a manual action's or an anchor's takes the entry's only (#82).
+func TestNextSetCost(t *testing.T) {
+	t.Parallel()
+	const costed = "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review · 5 min ^login-stack\n"
+	src := edited(t, loginStack, costed, "- Wave 2 after the stack lands.\n", "- Wave 2 after the stack lands.\n\nThe queue. ^queue\n")
+	for _, c := range []struct {
+		name string
+		src  string
+		in   []NextInput
+		want string
+	}{
+		{"the item's cost", src, []NextInput{{ID: "login-stack", Action: "Review"}, {ID: "session-store", Action: "Pick"}},
+			"1. Review · 5 min · [[#^login-stack|details]]\n2. Pick · 10 min · [[#^session-store|details]]"},
+		{"the entry's cost wins", src, []NextInput{{ID: "login-stack", Action: "Review", Cost: "1 agent run"}},
+			"1. Review · 1 agent run · [[#^login-stack|details]]\n"},
+		{"no cost, though the line had one", settled(t), []NextInput{{ID: "login-stack", Action: "Review"}},
+			"1. Review · [[#^login-stack|details]]\n"},
+		{"a manual action's from the entry only", src, []NextInput{{ID: "rotate-token"}, {ID: "design-doc", Cost: "2 min"}},
+			"1. [ ] Rotate the staging token · [[#^rotate-token|details]]\n2. [x] Approve the design doc · 2 min · [[#^design-doc|details]]\n"},
+		{"an anchor's from the entry only", src, []NextInput{{ID: "queue", Action: "Read the queue"}},
+			"1. Read the queue · [[#^queue|details]]\n"},
+		{"an anchor's from the entry", src, []NextInput{{ID: "queue", Action: "Read the queue", Cost: "1 min"}},
+			"1. Read the queue · 1 min · [[#^queue|details]]\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			d := fixtureDeps(t, c.src, false)
+			if _, err := d.nextSet(t.Context(), NextSetInput{Items: c.in}); err != nil {
+				t.Fatal(err)
+			}
+			if got := d.note(t, fixtureDate); !strings.Contains(got, "## Next\n\n"+c.want) {
+				t.Errorf("note:\n%s", got)
+			}
+		})
+	}
+}
+
 const (
 	row1 = "| Bring the build cache online (acme/infra) | offline | defer: hardware |\n"
 	row2 = "| [#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"

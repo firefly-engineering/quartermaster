@@ -227,7 +227,7 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `part_write` | Create or rewrite one Part whole: number, kind, title, icon (🔄, 🔍 or ✅, written, never derived) and body. The body may carry anchors. | — |
 | `action_upsert` | Create, reword or move a manual action, a checkbox with an id. Ticking it is `item_transition`; nothing unticks it ([§4.4]). | — |
 | `process_set` | Add, reword or settle a *Process* entry. | — |
-| `next_set` | Replace *Next* with an ordered list of item ids; the server renders each line, button and details link. The result's `warnings` holds one line for each listed work item that is `TODO`, with a route starting with `/` and no prompt, so no ▶ button; manual actions and anchors never warn. The write goes through all the same. | — |
+| `next_set` | Replace *Next* with an ordered list of item ids; the server renders each line, button and details link. A work item's line takes the entry's `cost`, else the item's cost, else none; nothing is read back from the line *Next* held. A manual action's or an anchor's line takes its cost from the entry only. The result's `warnings` holds one line for each listed work item that is `TODO`, with a route starting with `/` and no prompt, so no ▶ button; manual actions and anchors never warn. The write goes through all the same. | — |
 | `status_set` | Rewrite the status line. | — |
 | `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. | — |
 | `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). | — |

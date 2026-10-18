@@ -103,7 +103,7 @@ another state to change a summary; that writes a false step into the history.
 the routes. Each action is a step the user takes now: a decision to settle, a batch to
 start, a stack to review, an IaC request to send, a manual operation that is due. Each one
 names its work item, where its context and prompt live. The server renders the line, its
-details link and its button.
+details link and its button, and takes a work item's cost from the item unless you give one.
 
 Write tight. One line per item. A decision recorded on a ticket gets a line and a link,
 not a paragraph. A finished Part shrinks to a line or a short table; the jj history keeps
