@@ -1,20 +1,22 @@
 package tools
 
 import (
-	"os"
+	_ "embed"
 	"slices"
 	"testing"
 
 	"github.com/firefly-engineering/quartermaster/internal/note"
 )
 
+// Embedded, not read from disk: an opened file keys Go's test cache by path and mtime,
+// so every fresh jj workspace would re-run this package.
+//
+//go:embed testdata/2026-10-16.md
+var fixture []byte
+
 func readFixture(t *testing.T) []byte {
 	t.Helper()
-	b, err := os.ReadFile("testdata/2026-10-16.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
+	return slices.Clone(fixture)
 }
 
 // TestCarryOverFullDay collects every open item of a full day's note, from every section.
