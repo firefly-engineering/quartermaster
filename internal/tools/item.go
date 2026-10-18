@@ -360,8 +360,8 @@ func newProjectAt(n *note.Note, src []byte) int {
 type ItemTransitionInput struct {
 	Date    string `json:"date,omitempty" jsonschema:"the note's date, YYYY-MM-DD; today (UTC) when absent"`
 	Item    string `json:"item" jsonschema:"the work item's id"`
-	To      string `json:"to" jsonschema:"the state to move it to: TODO, IN_PROGRESS, IN_REVIEW, WAITING, DONE or DROPPED"`
-	Summary string `json:"summary,omitempty" jsonschema:"one line: the PR URL, commit, evidence or reason; needed to wait, to drop, and to complete from IN_PROGRESS; the item's last one stays when absent"`
+	To      string `json:"to" jsonschema:"the state to move it to: TODO, IN_PROGRESS, IN_REVIEW, WAITING, DONE or DROPPED; its own state, in any state, rewrites only its summary"`
+	Summary string `json:"summary,omitempty" jsonschema:"one line: the PR URL, commit, evidence or reason; needed to wait, to drop, to complete from IN_PROGRESS or WAITING, and to move to its own state; the item's last one stays when absent"`
 	Part    int    `json:"part,omitempty" jsonschema:"with DONE or DROPPED, the Part N of its project it is filed into: it leaves its bucket and Next, and becomes a plain line there with its summary, without its id, button or prompt; it stays in its bucket when absent"`
 }
 

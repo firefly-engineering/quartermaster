@@ -12,20 +12,22 @@ import (
 var allStates = []State{Todo, InProgress, InReview, Waiting, Done, Dropped}
 
 // TestTransitionTable walks every (from, to) pair of spec §4.3, with and without a reason.
+// Every state may move to itself with a summary, terminal ones included: that rewrites only the
+// summary.
 func TestTransitionTable(t *testing.T) {
 	t.Parallel()
 	legal := map[State][]State{
-		Todo:       {InProgress, Done, Dropped, Waiting},
-		InProgress: {InReview, Done, Waiting, Dropped},
-		InReview:   {Done, InProgress, Waiting, Dropped},
+		Todo:       {Todo, InProgress, Done, Dropped, Waiting},
+		InProgress: {InProgress, InReview, Done, Waiting, Dropped},
+		InReview:   {InReview, Done, InProgress, Waiting, Dropped},
 		Waiting:    {InProgress, Done, Waiting, Dropped},
-		Done:       nil,
-		Dropped:    nil,
+		Done:       {Done},
+		Dropped:    {Dropped},
 	}
 	for _, from := range allStates {
 		for _, to := range allStates {
 			ok := slices.Contains(legal[from], to)
-			needsReason := to == Waiting || to == Dropped || (from == InProgress || from == Waiting) && to == Done
+			needsReason := from == to || to == Waiting || to == Dropped || (from == InProgress || from == Waiting) && to == Done
 			t.Run(fmt.Sprintf("%s->%s", from, to), func(t *testing.T) {
 				t.Parallel()
 				err := Transition(from, to, "https://example.com/pr/1")

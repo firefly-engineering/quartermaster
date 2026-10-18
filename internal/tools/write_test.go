@@ -434,12 +434,78 @@ func TestItemTransitionRefuses(t *testing.T) {
 		{ItemTransitionInput{Item: "old-form", To: "TODO"}, note.ErrIllegalTransition},
 		{ItemTransitionInput{Item: "nope", To: "DONE"}, note.ErrNoItem},
 		{ItemTransitionInput{Item: "login-stack", To: "done"}, nil},
+		// A same-state move needs a summary to rewrite.
+		{ItemTransitionInput{Item: "login-stack", To: "IN_REVIEW"}, note.ErrReasonRequired},
+		{ItemTransitionInput{Item: "login-stack", To: "IN_REVIEW", Summary: " "}, note.ErrReasonRequired},
+		{ItemTransitionInput{Item: "old-form", To: "DROPPED"}, note.ErrReasonRequired},
+		{ItemTransitionInput{Item: "design-doc", To: "DONE"}, note.ErrIllegalTransition},
 	} {
 		if _, err := d.itemTransition(t.Context(), c.in); err == nil || c.err != nil && !errors.Is(err, c.err) {
 			t.Errorf("%+v: %v, want %v", c.in, err, c.err)
 		}
 	}
 	d.checkNote(t, settled(t))
+}
+
+// commits are the first lines of the vault's commits, newest first.
+func (d Deps) commits(t *testing.T) []string {
+	t.Helper()
+	return strings.Split(strings.TrimSuffix(d.jj(t, "log", "--no-graph", "-r", "::@- ~ root()", "-T", `description.first_line() ++ "\n"`), "\n"), "\n")
+}
+
+// TestItemTransitionSameState rewrites an item's summary without moving it (spec §4.3): one
+// commit, the state kept.
+func TestItemTransitionSameState(t *testing.T) {
+	t.Parallel()
+	d := fixtureDeps(t, settled(t), true)
+	out, err := d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: "IN_REVIEW", Summary: "CI green"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.checkNote(t, edited(t, loginStack, "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review — CI green ^login-stack\n"))
+	if out.From != "IN_REVIEW" || out.To != "IN_REVIEW" || out.Item == nil || out.Item.Item.State != "IN_REVIEW" {
+		t.Errorf("out %+v", out)
+	}
+	// One item_transition commit; the vault's first write also commits its .gitignore.
+	c := d.commits(t)
+	n := 0
+	for _, l := range c {
+		if strings.Contains(l, "item_transition") {
+			n++
+		}
+	}
+	if n != 1 || c[0] != "worklog(2026-10-16): item_transition: ^login-stack IN_REVIEW to IN_REVIEW: CI green" {
+		t.Errorf("commits %q", c)
+	}
+}
+
+// TestItemTransitionDoneSummary corrects a DONE item's evidence: DONE is terminal, but a move
+// to itself rewrites the summary and leaves it DONE. It files nothing into a Part.
+func TestItemTransitionDoneSummary(t *testing.T) {
+	t.Parallel()
+	d := fixtureDeps(t, settled(t), true)
+	if _, err := d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: "DONE", Summary: "merged in abc123"}); err != nil {
+		t.Fatal(err)
+	}
+	before := len(d.commits(t))
+	out, err := d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: "DONE", Summary: "merged in abc124"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := edited(t, queue, "#### ✅ Agent queue\n",
+		loginStack, "- ✅ [#12](https://github.com/acme/web/pull/12) login stack, in review — merged in abc124 ^login-stack\n")
+	d.checkNote(t, want)
+	if out.From != "DONE" || out.To != "DONE" || out.Item == nil || out.Item.Item.State != "DONE" {
+		t.Errorf("out %+v", out)
+	}
+	if c := d.commits(t); len(c)-before != 1 {
+		t.Errorf("commits %q, %d before", c, before)
+	}
+	_, err = d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: "DONE", Summary: "x", Part: 1})
+	if !errors.Is(err, note.ErrIllegalTransition) || !strings.Contains(err.Error(), "give no part") {
+		t.Errorf("same-state move with part: %v", err)
+	}
+	d.checkNote(t, want)
 }
 
 const next = "1. [ ] Rotate the staging token · 5 min · [[#^rotate-token|details]]\n" +

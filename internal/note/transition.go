@@ -57,6 +57,9 @@ func tick(n *Note, src []byte, id string, to State, summary string) ([]byte, err
 	if summary != "" {
 		return nil, fmt.Errorf("^%s is a manual action: a checkbox has no summary to write", id)
 	}
+	if a.Checked {
+		return nil, fmt.Errorf("^%s: %w: DONE to DONE, a ticked box has no summary to rewrite", id, ErrIllegalTransition)
+	}
 	if err := Transition(a.State(), to, ""); err != nil {
 		return nil, fmt.Errorf("^%s: %w", id, err)
 	}
