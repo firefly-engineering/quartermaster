@@ -18,14 +18,14 @@ func TestTransitionTable(t *testing.T) {
 		Todo:       {InProgress, Done, Dropped, Waiting},
 		InProgress: {InReview, Done, Waiting, Dropped},
 		InReview:   {Done, InProgress, Waiting, Dropped},
-		Waiting:    {InProgress, Waiting, Dropped},
+		Waiting:    {InProgress, Done, Waiting, Dropped},
 		Done:       nil,
 		Dropped:    nil,
 	}
 	for _, from := range allStates {
 		for _, to := range allStates {
 			ok := slices.Contains(legal[from], to)
-			needsReason := to == Waiting || to == Dropped || from == InProgress && to == Done
+			needsReason := to == Waiting || to == Dropped || (from == InProgress || from == Waiting) && to == Done
 			t.Run(fmt.Sprintf("%s->%s", from, to), func(t *testing.T) {
 				t.Parallel()
 				err := Transition(from, to, "https://example.com/pr/1")

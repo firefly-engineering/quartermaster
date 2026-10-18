@@ -13,7 +13,8 @@
 //   - GitHub, for an item whose title leads with a link to an issue or PR: a merged PR is
 //     DONE; an issue closed as completed is DONE, with the commit or PR that closed it; one
 //     closed as not planned or as a duplicate is DROPPED. An open one, a PR closed unmerged or
-//     an issue closed with no reason proves nothing.
+//     an issue closed with no reason proves nothing. A WAITING item completes too, since what
+//     it waited on is done: the merged PR, or what closed the issue, is its summary (§4.3).
 //   - herdr, for an IN_PROGRESS item with a dispatch marker, which no transition has moved
 //     since its dispatch: its pane gone, or no agent in it, is a worker that exited, and the
 //     item goes to WAITING, never DONE.
@@ -128,13 +129,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 	if l.ref != (note.Ref{}) {
 		checked = true
 		e := g.github(ctx, l.ref)
-		switch {
-		case e.to == 0:
-			reasons = append(reasons, e.reason)
-		case note.Transition(from, e.to, e.summary) != nil:
-			reasons = append(reasons, fmt.Sprintf("%s %s, but %s may not move to %s (spec §4.3): unblock it first",
-				l.ref, e.summary, from, e.to))
-		default:
+		if e.to != 0 { // DONE or DROPPED, both legal from any open state with a summary
 			m = m.transition(e.to, e.summary)
 			if sent && e.to == note.Done && l.status != "" && l.status != statusDone {
 				m.wasStatus, m.Status = l.status, statusDone // GitHub proves the ask done
@@ -142,6 +137,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 			p.moves = append(p.moves, m)
 			return
 		}
+		reasons = append(reasons, e.reason)
 	}
 	if it.Dispatch != nil && from == note.InProgress {
 		checked = true

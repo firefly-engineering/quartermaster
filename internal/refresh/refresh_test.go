@@ -129,6 +129,7 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 - ⏳ [infra#40](https://github.com/o/infra/issues/40): open the port → infra, **sent**, asked 10:00 ^port
 - ⏳ [infra#41](https://github.com/o/infra/issues/41): a second ask → infra, **to send** ^unsent
 - 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third
+- ⏳ [infra#43](https://github.com/o/infra/issues/43): a fourth ask → infra, **sent** ^fourth
 `
 
 func TestGatherAndApply(t *testing.T) {
@@ -151,6 +152,7 @@ func TestGatherAndApply(t *testing.T) {
 		"o/infra#40": {out: issue("OPEN", "", "")},
 		"o/infra#41": {out: issue("OPEN", "", "")},
 		"o/infra#42": {out: issue("CLOSED", "COMPLETED", byPR)},
+		"o/infra#43": {out: issue("CLOSED", "COMPLETED", byCommit)},
 	}}
 	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
 		"pane get w1:p7": {err: &ExitError{Name: "herdr", Args: []string{"pane", "get", "w1:p7"},
@@ -182,23 +184,24 @@ func TestGatherAndApply(t *testing.T) {
 		{Item: "merged", Ref: "o/r#5", From: "IN_REVIEW", To: "DONE", Summary: "merged https://github.com/o/r/pull/5"},
 		{Item: "gone", Ref: "o/r#7", From: "IN_PROGRESS", To: "WAITING", Summary: "worker exited: pane w1:p7 is gone"},
 		{Item: "exited", Ref: "o/r#8", From: "IN_PROGRESS", To: "WAITING", Summary: "worker exited: no agent in pane w1:p8"},
+		{Item: "waits-closed", Ref: "o/r#11", From: "WAITING", To: "DONE", Summary: "closed by https://github.com/o/r/pull/31"},
 		{Item: "closed-gone", Ref: "o/r#14", From: "IN_PROGRESS", To: "DONE", Summary: "closed as completed: https://github.com/o/r/issues/0"},
 		{Item: "port", Ref: "o/infra#40", From: "WAITING", To: "WAITING", Status: "acked",
 			Links: []string{"https://github.com/o/infra/pull/77", "https://github.com/o/infra/actions/runs/9"}},
 		{Item: "third", Ref: "o/infra#42", From: "IN_PROGRESS", To: "DONE", Summary: "closed by https://github.com/o/r/pull/31", Status: "done"},
+		{Item: "fourth", Ref: "o/infra#43", From: "WAITING", To: "DONE", Summary: "closed by https://github.com/o/r/commit/abc1234", Status: "done"},
 	}
 	if !slices.EqualFunc(applied, wantApplied, equalApplied) {
 		t.Errorf("applied:\n%+v\nwant:\n%+v", applied, wantApplied)
 	}
 	wantSkipped := map[string]string{
-		"open":         "o/r#4 is open",
-		"unmerged":     "o/r#6 was closed without being merged",
-		"working":      "o/r#9 is open; its worker claude in pane w1:p9 is working",
-		"waits":        "o/r#10 is open",
-		"waits-closed": "o/r#11 closed by https://github.com/o/r/pull/31, but WAITING may not move to DONE (spec §4.3): unblock it first",
-		"no-reason":    "o/r#12 is closed with no reason recorded",
-		"gh-fails":     "gh: gh api graphql: HTTP 502",
-		"unsent":       "o/infra#41 is open; not sent yet",
+		"open":      "o/r#4 is open",
+		"unmerged":  "o/r#6 was closed without being merged",
+		"working":   "o/r#9 is open; its worker claude in pane w1:p9 is working",
+		"waits":     "o/r#10 is open",
+		"no-reason": "o/r#12 is closed with no reason recorded",
+		"gh-fails":  "gh: gh api graphql: HTTP 502",
+		"unsent":    "o/infra#41 is open; not sent yet",
 	}
 	got := map[string]string{}
 	for _, s := range skipped {
@@ -235,12 +238,16 @@ func TestGatherAndApply(t *testing.T) {
 			"- ⏳ [#7](https://github.com/o/r/issues/7): its pane is gone — worker exited: pane w1:p7 is gone <!-- qm pane=w1:p7 ws=/ws/7 --> ^gone"},
 		{"- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited",
 			"- ⏳ [#8](https://github.com/o/r/issues/8): its agent exited — worker exited: no agent in pane w1:p8 <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited"},
+		{"- ⏳ [#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed",
+			"- ✅ [#11](https://github.com/o/r/issues/11): waits, issue closed — closed by https://github.com/o/r/pull/31 ^waits-closed"},
 		{"- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone",
 			"- ✅ [#14](https://github.com/o/r/issues/14): closed, its pane gone too — closed as completed: https://github.com/o/r/issues/0 <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone"},
 		{"→ infra, **sent**, asked 10:00 ^port",
 			"→ infra, **acked**, asked 10:00, https://github.com/o/infra/pull/77, https://github.com/o/infra/actions/runs/9 ^port"},
 		{"- 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third",
 			"- ✅ [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **done** — closed by https://github.com/o/r/pull/31 ^third"},
+		{"- ⏳ [infra#43](https://github.com/o/infra/issues/43): a fourth ask → infra, **sent** ^fourth",
+			"- ✅ [infra#43](https://github.com/o/infra/issues/43): a fourth ask → infra, **done** — closed by https://github.com/o/r/commit/abc1234 ^fourth"},
 	} {
 		if strings.Count(want, r[0]) != 1 {
 			t.Fatalf("no one %q in the note", r[0])

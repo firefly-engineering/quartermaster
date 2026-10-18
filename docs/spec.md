@@ -153,6 +153,7 @@ TODO ──start──► IN_PROGRESS ──review──► IN_REVIEW ──comp
   │              │  │  └──────rework──────┘                     │
   │              │  └──complete, no review (evidence required)──┘
   │              └──block──► WAITING ──unblock──► IN_PROGRESS
+  │                          └──complete (evidence required)──► DONE
   └──────────complete / drop (direct close)──────────────────► DONE / DROPPED
 ```
 

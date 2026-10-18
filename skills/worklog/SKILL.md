@@ -165,9 +165,10 @@ A human session that turns open questions into agent-ready work.
    where it belongs: a ticket comment, an ADR or spec PR, or a relabel to
    `ready-for-agent`. The user's live answer approves recording that decision on that
    ticket. Propose new tickets, epics and other repos' items before creating them. Then
-   move the item on. A settled question goes to `DONE` with the link as its summary; a
-   `WAITING` one goes through `IN_PROGRESS` first. When the item is the ticket itself and
-   it is now `ready-for-agent`, move it into *Agent queue* with `item_upsert` instead.
+   move the item on. A settled question goes to `DONE` with the link as its summary, from
+   `WAITING` too when the link shows what it waited on is done. When the item is the ticket
+   itself and it is now `ready-for-agent`, move it into *Agent queue* with `item_upsert`
+   instead.
 3. Write a *Part N — Human session*: one line and a link per decision. Rebuild the
    **Agent queue** with `item_upsert`: the `ready-for-agent` tickets, their dependency
    order, and the batch as one work item whose prompt carries the batch's global context.
@@ -308,8 +309,8 @@ repos* bucket, because that project is waiting on it.
    reply names the other repo's issue, make that its `ref`.
 2. Put it in *Next*.
 3. When the user asks you to send it, send it yourself (see [Buttons](#buttons)). Once
-   sent, rewrite its title to **sent**. Leave its state: `refresh` cannot close a
-   `WAITING` item.
+   sent, rewrite its title to **sent**. Leave its state: `refresh` closes it, `WAITING`
+   or not, once its ref closes.
 4. `refresh` tracks the rest. It reads the reply, marks the item **acked** and adds its
    links; once GitHub closes it, it reads **done**.
 
