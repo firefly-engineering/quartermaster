@@ -125,9 +125,14 @@ result, then `status_set` and `next_set`.
 
 1. Call `day_open`. It creates the note and collects **every open item of the previous
    note** as a carry-over row: unmet objectives, open *What remains* items, unticked
-   manual actions, carry-over rows not kept, dropped or done, and *Process* entries. When today's note already exists,
-   call `day_read` instead. Review findings left as judgement calls in prose are not
-   collected: read the previous note and capture them.
+   manual actions, carry-over rows not kept, dropped or done, and *Process* entries. When
+   today's note was prepared ahead, `day_open` keeps it: it adds only the rows the note
+   does not carry yet (`added` counts them) and rewrites the status line as `open`, leaving
+   its objectives, *Next* and buckets as written. A prepared note that does not parse is
+   refused with its errors: fix them through the tools, then call `day_open` again. Open
+   once a day: a later call rewrites the status line as `open` again.
+   Review findings left as judgement calls in prose are not collected: read the previous
+   note and capture them.
 2. Check each row against its source of truth (`gh issue view`, `gh pr view`, herdr
    replies). An item closed overnight is reported, not triaged: drop it with the link.
 3. Ask for the day's **objectives**, and add each with `objective_set`. Each names its

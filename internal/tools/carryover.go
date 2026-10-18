@@ -22,6 +22,56 @@ import (
 // renderer formats each row. repos is the project of each row that has one, once each, in row
 // order: the new note's front matter lists them.
 func carryOver(prev *note.Note, date string, r note.Renderer) ([]note.CarryOverUnit, []string, error) {
+	rows, err := collect(prev, date, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	units, repos := split(rows)
+	return units, repos, nil
+}
+
+// carriedRow is an open item of the previous note and its carry-over row.
+type carriedRow struct {
+	note.Carried
+	Row note.CarryOverUnit
+}
+
+// split is the units of rows, and the project of each row that has one, once each, in row
+// order.
+func split(rows []carriedRow) ([]note.CarryOverUnit, []string) {
+	units := make([]note.CarryOverUnit, len(rows))
+	var repos []string
+	for i, c := range rows {
+		units[i] = c.Row
+		if c.Repo != "" && !slices.Contains(repos, c.Repo) {
+			repos = append(repos, c.Repo)
+		}
+	}
+	return units, repos
+}
+
+// carriedIn reports whether n, a note prepared ahead, already carries c (spec §6): an item
+// with an id when n holds that id, as a work item or manual action, or as a carry-over row
+// linking `^<id>`; one with none when a carry-over row's item is c's row's, as written.
+func carriedIn(n *note.Note, c carriedRow) bool {
+	if c.ID != "" && (n.Item(c.ID) != nil ||
+		slices.ContainsFunc(n.Actions, func(a note.ManualAction) bool { return a.ID == c.ID })) {
+		return true
+	}
+	if n.CarryOver == nil {
+		return false
+	}
+	item := note.Cell(c.Row.Item)
+	return slices.ContainsFunc(n.CarryOver.Rows, func(row note.CarryOverRow) bool {
+		if c.ID != "" {
+			return row.Ref == c.ID
+		}
+		return note.Cell(row.Item) == item
+	})
+}
+
+// collect is carryOver's rows, each with the item it carries.
+func collect(prev *note.Note, date string, r note.Renderer) ([]carriedRow, error) {
 	type carried struct {
 		line int
 		c    note.Carried
@@ -100,19 +150,15 @@ func carryOver(prev *note.Note, date string, r note.Renderer) ([]note.CarryOverU
 	}
 
 	slices.SortStableFunc(all, func(a, b carried) int { return cmp.Compare(a.line, b.line) })
-	out := make([]note.CarryOverUnit, len(all))
-	var repos []string
+	out := make([]carriedRow, len(all))
 	for i, x := range all {
 		u, err := r.CarriedRow(date, x.c)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		out[i] = u
-		if x.c.Repo != "" && !slices.Contains(repos, x.c.Repo) {
-			repos = append(repos, x.c.Repo)
-		}
+		out[i] = carriedRow{Carried: x.c, Row: u}
 	}
-	return out, repos, nil
+	return out, nil
 }
 
 // open reports whether an icon is a state other than DONE or DROPPED.

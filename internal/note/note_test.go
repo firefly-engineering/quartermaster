@@ -203,6 +203,32 @@ func TestTemplate(t *testing.T) {
 	}
 }
 
+// TestCarryOverRowRef reads the block id a carry-over row's item links, from its own text only.
+func TestCarryOverRowRef(t *testing.T) {
+	t.Parallel()
+	for item, want := range map[string]string{
+		`Vendor credential [[2026-10-16#^vendor-cred\|^vendor-cred]]`: "vendor-cred",
+		"Vendor credential [[2026-10-16#^vendor-cred]]":               "vendor-cred",
+		"[[2026-10-16]] then [[2026-10-16#^b]]":                       "b",
+		"Vendor credential `[[2026-10-16#^vendor-cred]]`":             "",
+		"[[2026-10-16#^Bad id]]":                                      "",
+		"[#9](https://github.com/acme/web/issues/9) flaky test":       "",
+	} {
+		src := "# Worklog — 2026-10-19\n\n**08:00 UTC:** ok.\n\n## Carry-over\n\n" +
+			"| Item | State now | Verdict |\n|---|---|---|\n| " + item + " | open | |\n"
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("%s: %v", item, err)
+		}
+		if got := n.CarryOver.Rows[0].Ref; got != want {
+			t.Errorf("%s: ref %q, want %q", item, got, want)
+		}
+		if n.CarryOver.Table == nil || n.CarryOver.Table.End != len(src) {
+			t.Errorf("%s: table %+v", item, n.CarryOver.Table)
+		}
+	}
+}
+
 // TestUnits covers the units the two notes above do not hold.
 func TestUnits(t *testing.T) {
 	t.Parallel()

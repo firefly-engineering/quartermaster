@@ -156,9 +156,9 @@ func TestNoteOpenRead(t *testing.T) {
 		t.Fatalf("read: %s", out.String())
 	}
 	errb.Reset()
-	if code := run([]string{"note", "--vault", "repo", "open"}, &out, &errb, h); code != 1 ||
-		!strings.Contains(errb.String(), "worklog note open: ") {
-		t.Fatalf("second open: code %d, stderr %q", code, errb.String())
+	if code := run([]string{"note", "--vault", "repo", "read", `{"date":"2026-10-18"}`}, &out, &errb, h); code != 1 ||
+		!strings.Contains(errb.String(), "worklog note read: ") {
+		t.Fatalf("read of a missing note: code %d, stderr %q", code, errb.String())
 	}
 }
 

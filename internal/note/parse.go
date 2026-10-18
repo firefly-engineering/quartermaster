@@ -898,17 +898,49 @@ func (p *parser) table(t *extast.Table) {
 		if !ok {
 			return
 		}
+		table := p.blockSpan(t)
+		p.n.CarryOver.Table = &table
 		for _, r := range rows {
 			p.n.CarryOver.Rows = append(p.n.CarryOver.Rows, CarryOverRow{
-				Span: r.span, Item: r.cells[0], State: r.cells[1], Verdict: r.cells[2],
+				Span: r.span, Item: r.cells[0], State: r.cells[1], Verdict: r.cells[2], Ref: p.blockRef(r.first),
 			})
 		}
+	}
+}
+
+// blockRef is the block id an item cell's wikilink `[[<note>#^<id>|…]]` targets, as a
+// carried row links its item; "" without a valid one. The wikilink is plain text to goldmark:
+// only the cell's own text counts, never a code span or a link's label.
+func (p *parser) blockRef(cell ast.Node) string {
+	var plain strings.Builder
+	for c := cell.FirstChild(); c != nil; c = c.NextSibling() {
+		if t, ok := c.(*ast.Text); ok {
+			plain.Write(t.Segment.Value(p.src))
+		}
+	}
+	for rest := plain.String(); ; {
+		_, link, ok := strings.Cut(rest, "[[")
+		if !ok {
+			return ""
+		}
+		target, after, ok := strings.Cut(link, "]]")
+		if !ok {
+			return ""
+		}
+		if end := strings.IndexAny(target, `|\`); end >= 0 {
+			target = target[:end]
+		}
+		if _, id, ok := strings.Cut(target, "#^"); ok && ValidID(id) {
+			return id
+		}
+		rest = after
 	}
 }
 
 type row struct {
 	span  Span
 	cells []string
+	first ast.Node // its first cell
 }
 
 // rows checks a section's one table against its header and returns its body rows.
@@ -933,7 +965,7 @@ func (p *parser) rows(t *extast.Table, seen *bool, section string, header ...str
 			continue
 		}
 		start := p.lineStart(r.Pos())
-		rows = append(rows, row{span: p.span(start, p.lineEnd(start)), cells: cells})
+		rows = append(rows, row{span: p.span(start, p.lineEnd(start)), cells: cells, first: r.FirstChild()})
 	}
 	return rows, true
 }

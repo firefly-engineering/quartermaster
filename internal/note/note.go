@@ -238,13 +238,15 @@ type Anchor struct {
 // CarryOver is the `## Carry-over` section; Rows are its table's rows.
 type CarryOver struct {
 	Span
-	Rows []CarryOverRow
+	Table *Span // its table, header included; nil without one
+	Rows  []CarryOverRow
 }
 
 // CarryOverRow is one row of the carry-over table. Cells hold their trimmed source.
 type CarryOverRow struct {
 	Span
 	Item, State, Verdict string
+	Ref                  string // the block id its item's `[[<note>#^<id>|…]]` link targets, "" without one
 }
 
 // Process is the `## Process` section and its list.

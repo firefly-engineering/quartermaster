@@ -163,13 +163,153 @@ func TestDayOpenEmptyNote(t *testing.T) {
 	}
 }
 
-func TestDayOpenRefusesNonEmptyNote(t *testing.T) {
+// prepared is 2026-10-19's note, prepared ahead on the Friday. It carries four of the open items
+// of the fixture, 2026-10-16: ^login-stack as a work item, ^rotate-token as a manual action,
+// ^vendor-cred as a carry-over row linking it, and the build cache row, with no id, by its text.
+const prepared = "---\ndate: 2026-10-19\nprevious: \"[[2026-10-16]]\"\nprojects:\n  - acme/web\ntags:\n  - worklog\n---\n\n" +
+	"# Worklog — 2026-10-19\n\n**16:00 UTC:** Prepared on Friday.\n\n" +
+	"## Objectives\n\n| Objective | Done when | Progress |\n|---|---|---|\n| Land the login stack (acme/web) | stack merged | ⬜ not started |\n\n" +
+	"## Next\n\n1. [ ] Rotate the staging token · 5 min · [[#^rotate-token|details]]\n\n" +
+	"## 🔍 acme/web\n\n### 🔍 What remains\n\n#### ⬜ Your actions\n\n- [ ] Rotate the staging token ^rotate-token\n\n" +
+	"#### 🔍 Agent queue\n\n- 🔍 [#12](https://github.com/acme/web/pull/12) login stack ^login-stack\n\n" +
+	"## Carry-over\n\nFrom [[2026-10-16]].\n\n| Item | State now | Verdict |\n|---|---|---|\n" +
+	"| Vendor credential (acme/infra) [[2026-10-16#^vendor-cred\\|^vendor-cred]] | ⏳ WAITING | defer: vendor |\n" +
+	"| Bring the build cache online (acme/infra) | offline | |\n\n" +
+	"## Process\n\n- —\n"
+
+// TestDayOpenPrepared opens a note prepared ahead: it gains a row for each open item of the
+// previous note it does not carry yet, and its status line reads open. Nothing else changes
+// but the front matter's projects list, which gains the carried repos.
+func TestDayOpenPrepared(t *testing.T) {
+	t.Parallel()
+	d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t)), "2026-10-19.md": prepared}, true)
+	out, err := d.dayOpen(t.Context(), DayOpenInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Prepared || out.Added != 9 || out.Previous != "2026-10-16" || !out.Committed {
+		t.Fatalf("got %+v", out)
+	}
+	var items []string
+	for _, row := range out.CarryOver {
+		items = append(items, row.Item)
+	}
+	want := []string{
+		`Vendor credential (acme/infra) [[2026-10-16#^vendor-cred\|^vendor-cred]]`,
+		"Bring the build cache online (acme/infra)",
+		// The rows added: not ^login-stack, ^rotate-token (nor the Next line paired with
+		// it), ^vendor-cred or the build cache.
+		"Ship the login page (acme/web)",
+		"Upgrade the runner (acme/infra)",
+		"Call the vendor · 10 min",
+		"Check the preview deploy by hand (acme/web)",
+		`[#14](https://github.com/acme/web/issues/14): which session store? (acme/web) [[2026-10-16#^session-store\|^session-store]]`,
+		"[#16](https://github.com/acme/web/issues/16): drop IE11? (acme/web)",
+		`Write the onboarding doc \| draft`,
+		"File a ticket for the slow CI cache",
+		"Ask about the cache budget",
+	}
+	if !slices.Equal(items, want) {
+		t.Fatalf("carry-over rows:\n%s\nwant:\n%s", strings.Join(items, "\n"), strings.Join(want, "\n"))
+	}
+	const status = "**08:30 UTC, open:** Opened the note prepared ahead, from 2026-10-16: 9 carry-over rows added to triage."
+	if out.Status.Text != status || out.Status.Label != "open" {
+		t.Fatalf("status %+v", out.Status)
+	}
+
+	// Everything but the status line, the new rows and the projects list is as prepared.
+	const last = "| Bring the build cache online (acme/infra) | offline | |\n"
+	src := d.note(t, "2026-10-19")
+	i, j := strings.Index(src, last), strings.Index(src, "\n## Process")
+	if i < 0 || j < i {
+		t.Fatalf("note:\n%s", src)
+	}
+	rows := src[i+len(last) : j]
+	if strings.Count(rows, "\n") != 9 {
+		t.Fatalf("rows added:\n%s", rows)
+	}
+	wantSrc := strings.NewReplacer(
+		"**16:00 UTC:** Prepared on Friday.", status,
+		"projects:\n  - acme/web\n", "projects:\n  - acme/web\n  - acme/infra\n",
+		last, last+rows,
+	).Replace(prepared)
+	if src != wantSrc {
+		t.Fatalf("note:\n%s\nwant:\n%s", src, wantSrc)
+	}
+	log := d.jj(t, "log", "--no-graph", "-r", "@-", "-T", "description")
+	if !strings.HasPrefix(log, "worklog(2026-10-19): day_open: open the prepared note from 2026-10-16, 9 carry-over rows added") {
+		t.Fatalf("commit %q", log)
+	}
+
+	// A second open finds every row carried, and adds none.
+	again, err := d.dayOpen(t.Context(), DayOpenInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Prepared || again.Added != 0 || len(again.CarryOver) != 11 {
+		t.Fatalf("second open %+v", again)
+	}
+}
+
+// TestDayOpenPreparedCarryOverPlace adds the rows to a prepared note whose Carry-over has no
+// rows yet or no table, or which has no Carry-over at all.
+func TestDayOpenPreparedCarryOverPlace(t *testing.T) {
+	t.Parallel()
+	const (
+		head    = "# Worklog — 2026-10-19\n\n**08:00 UTC:** by hand.\n\n"
+		table   = "| Item | State now | Verdict |\n|---|---|---|\n"
+		first   = "| Ship the login page (acme/web) | 🔍 stack in review |  |\n"
+		lastRow = "| Ask about the cache budget | TODO, manual action in Process |  |\n"
+		process = "\n## Process\n\n- —\n"
+	)
+	for name, c := range map[string]struct{ src, before, after string }{
+		"no rows":    {head + "## Carry-over\n\n" + table + process, head + "## Carry-over\n\n" + table, process},
+		"no table":   {head + "## Carry-over\n\nNone yet.\n" + process, head + "## Carry-over\n\nNone yet.\n\n" + table, process},
+		"no section": {head + "## Process\n\n- —\n", head + "## Carry-over\n\nFrom [[2026-10-16]].\n\n" + table, process},
+		"at the end": {head + "## Next\n\n1. [ ] Call the vendor\n", head + "## Next\n\n1. [ ] Call the vendor\n\n## Carry-over\n\nFrom [[2026-10-16]].\n\n" + table, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t)), "2026-10-19.md": c.src}, false)
+			out, err := d.dayOpen(t.Context(), DayOpenInput{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.Added != 13 || len(out.CarryOver) != 13 {
+				t.Fatalf("got %+v", out)
+			}
+			src := strings.Replace(d.note(t, "2026-10-19"), out.Status.Text, "**08:00 UTC:** by hand.", 1)
+			if !strings.HasPrefix(src, c.before+first) || !strings.HasSuffix(src, lastRow+c.after) {
+				t.Fatalf("note:\n%s", src)
+			}
+		})
+	}
+}
+
+// TestDayOpenPreparedNoPrevious rewrites only the status line of a prepared note when there is
+// no previous note.
+func TestDayOpenPreparedNoPrevious(t *testing.T) {
 	t.Parallel()
 	const today = "# Worklog — 2026-10-19\n\n**08:00 UTC:** opened by hand.\n"
 	d := newDeps(t, monday, map[string]string{"2026-10-19.md": today}, false)
+	out, err := d.dayOpen(t.Context(), DayOpenInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "# Worklog — 2026-10-19\n\n**08:30 UTC, open:** Opened the note prepared ahead. No previous note.\n"
+	if got := d.note(t, "2026-10-19"); got != want || !out.Prepared || out.Added != 0 || out.CarryOver == nil {
+		t.Fatalf("got %+v, note:\n%s", out, got)
+	}
+}
+
+// TestDayOpenRefusesUnparseablePrepared names a prepared note's parse errors and leaves it be.
+func TestDayOpenRefusesUnparseablePrepared(t *testing.T) {
+	t.Parallel()
+	const today = "# Worklog — 2026-10-19\n\n**08:00 UTC:** opened by hand.\n\n## Process\n\n- —\n\n## Process\n\n- —\n"
+	d := newDeps(t, monday, map[string]string{"2026-10-16.md": string(readFixture(t)), "2026-10-19.md": today}, false)
 	_, err := d.dayOpen(t.Context(), DayOpenInput{})
-	if err == nil || !strings.Contains(err.Error(), "is not empty") {
-		t.Fatalf("err %v, want a refusal", err)
+	if err == nil || !strings.Contains(err.Error(), "2026-10-19.md") || !strings.Contains(err.Error(), `line 9: repeated section "Process"`) {
+		t.Fatalf("err %v, want a refusal naming the parse error", err)
 	}
 	if got := d.note(t, "2026-10-19"); got != today {
 		t.Fatalf("note changed:\n%s", got)
@@ -324,10 +464,10 @@ func TestMCP(t *testing.T) {
 		t.Fatalf("item_transition without to: %+v", res)
 	}
 
-	// A second open is a tool error, not a protocol one.
-	res, err = cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "day_open", Arguments: map[string]any{}})
+	// A refusal is a tool error, not a protocol one.
+	res, err = cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "carryover_verdict", Arguments: map[string]any{"row": 99, "verdict": "defer"}})
 	if err != nil || !res.IsError {
-		t.Fatalf("second day_open: %v %+v", err, res)
+		t.Fatalf("carryover_verdict on no such row: %v %+v", err, res)
 	}
 	// Unknown input fields are refused.
 	res, err = cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "day_read", Arguments: map[string]any{"day": "x"}})
