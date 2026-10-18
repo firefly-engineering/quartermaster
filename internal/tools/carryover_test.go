@@ -25,9 +25,12 @@ func TestCarryOverFullDay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fixture does not parse: %v", err)
 	}
-	got, err := carryOver(prev, "2026-10-16", note.Renderer{})
+	got, repos, err := carryOver(prev, "2026-10-16", note.Renderer{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if want := []string{"acme/web", "acme/infra"}; !slices.Equal(repos, want) {
+		t.Errorf("repos %v, want %v", repos, want)
 	}
 	want := []note.CarryOverUnit{
 		// Objectives: not the done or the missed one.
@@ -88,7 +91,7 @@ func TestCarryOverNothingOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := carryOver(prev, "2026-10-16", note.Renderer{}); err != nil || len(got) != 0 {
-		t.Fatalf("got %+v, %v; want no rows", got, err)
+	if got, repos, err := carryOver(prev, "2026-10-16", note.Renderer{}); err != nil || len(got) != 0 || len(repos) != 0 {
+		t.Fatalf("got %+v, %v, %v; want no rows", got, repos, err)
 	}
 }

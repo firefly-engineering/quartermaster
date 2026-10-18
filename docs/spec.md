@@ -194,10 +194,10 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 
 | Tool | Does | Draft equivalent |
 |---|---|---|
-| `day_open` | Create today's note from the template, with every open item of the previous note as a carry-over row. Refuses if a non-empty note exists. | `session_init_plan` |
+| `day_open` | Create today's note from the template, with every open item of the previous note as a carry-over row. Its front matter lists the projects of the rows it carries. Refuses if a non-empty note exists. | `session_init_plan` |
 | `day_read` | Return the note as structured data: status, objectives, Next, items by project and bucket, states. Read-only. | — |
 | `objective_set` | Add, refine (stamping `(refined HH:MM UTC: <reason>)`) or settle an objective. | `session_init_plan` |
-| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status and the parser reads it; nothing else parses the title. | — |
+| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status and the parser reads it; nothing else parses the title. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. | — |
 | `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. | `task_update_state` |
 | `part_write` | Create or rewrite one Part whole: number, kind, title, icon (🔄, 🔍 or ✅, written, never derived) and body. The body may carry anchors. | — |
 | `action_upsert` | Create, reword or move a manual action, a checkbox with an id. Ticking it is `item_transition`; nothing unticks it ([§4.4]). | — |

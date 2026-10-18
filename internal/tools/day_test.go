@@ -118,6 +118,9 @@ func TestDayOpenAfterWeekend(t *testing.T) {
 	if !strings.Contains(src, "previous: \"[[2026-10-16]]\"") || !strings.Contains(src, "From [[2026-10-16]].") {
 		t.Fatalf("the note does not name its previous one:\n%s", src)
 	}
+	if !strings.Contains(src, "\nprojects:\n  - acme/web\n  - acme/infra\ntags:\n") {
+		t.Fatalf("the front matter does not list the projects carried over:\n%s", src)
+	}
 	log := d.jj(t, "log", "--no-graph", "-r", "@-", "-T", "description")
 	if !strings.HasPrefix(log, "worklog(2026-10-19): day_open: open from 2026-10-16, 13 carry-over rows") {
 		t.Fatalf("commit %q", log)
@@ -134,8 +137,8 @@ func TestDayOpenNoPrevious(t *testing.T) {
 	if out.Previous != "" || len(out.CarryOver) != 0 || out.CarryOver == nil || out.Committed || out.Skipped == "" {
 		t.Fatalf("got %+v", out)
 	}
-	if src := d.note(t, "2026-10-19"); strings.Contains(src, "previous:") {
-		t.Fatalf("note names a previous one:\n%s", src)
+	if src := d.note(t, "2026-10-19"); strings.Contains(src, "previous:") || !strings.Contains(src, "\nprojects: []\n") {
+		t.Fatalf("note names a previous one, or projects:\n%s", src)
 	}
 }
 

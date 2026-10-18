@@ -19,8 +19,9 @@ import (
 //   - each Process entry: the parser leaves out its checkboxes (manual actions) and `—`.
 //
 // A Part holds what was done, so its items are not collected; its manual actions are. The
-// renderer formats each row.
-func carryOver(prev *note.Note, date string, r note.Renderer) ([]note.CarryOverUnit, error) {
+// renderer formats each row. repos is the project of each row that has one, once each, in row
+// order: the new note's front matter lists them.
+func carryOver(prev *note.Note, date string, r note.Renderer) ([]note.CarryOverUnit, []string, error) {
 	type carried struct {
 		line int
 		c    note.Carried
@@ -100,14 +101,18 @@ func carryOver(prev *note.Note, date string, r note.Renderer) ([]note.CarryOverU
 
 	slices.SortStableFunc(all, func(a, b carried) int { return cmp.Compare(a.line, b.line) })
 	out := make([]note.CarryOverUnit, len(all))
+	var repos []string
 	for i, x := range all {
 		u, err := r.CarriedRow(date, x.c)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		out[i] = u
+		if x.c.Repo != "" && !slices.Contains(repos, x.c.Repo) {
+			repos = append(repos, x.c.Repo)
+		}
 	}
-	return out, nil
+	return out, repos, nil
 }
 
 // open reports whether an icon is a state other than DONE or DROPPED.

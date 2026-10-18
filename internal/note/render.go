@@ -146,6 +146,7 @@ type Day struct {
 	Objectives []ObjectiveUnit
 	Next       []NextUnit
 	Projects   []ProjectUnit
+	Repos      []string // more owner/repo for the front matter's projects list, after Projects': the carried-over ones
 	CarryOver  []CarryOverUnit
 	Process    []string // one line each; none renders `- —`
 }
@@ -533,16 +534,26 @@ func (r Renderer) Note(d Day) ([]byte, error) {
 	if d.Previous != "" {
 		fm += "previous: \"[[" + d.Previous + "]]\"\n"
 	}
-	if len(d.Projects) == 0 {
-		fm += "projects: []\n"
-	} else {
-		fm += "projects:\n"
-	}
+	var repos []string
 	for _, p := range d.Projects {
-		if !isRepo(p.Repo) {
-			return nil, fmt.Errorf("project repo %q: want owner/repo", p.Repo)
+		repos = append(repos, p.Repo)
+	}
+	var listed []string
+	for _, repo := range append(repos, d.Repos...) {
+		if !isRepo(repo) {
+			return nil, fmt.Errorf("project repo %q: want owner/repo", repo)
 		}
-		fm += "  - " + p.Repo + "\n"
+		if !slices.Contains(listed, repo) {
+			listed = append(listed, repo)
+		}
+	}
+	if len(listed) == 0 {
+		fm += projectsKey + ": []\n"
+	} else {
+		fm += projectsKey + ":\n"
+	}
+	for _, repo := range listed {
+		fm += projectEntry(repo, "\n")
 	}
 	add(fm+"tags:\n  - worklog\n---\n", "# Worklog — "+d.Date+"\n")
 

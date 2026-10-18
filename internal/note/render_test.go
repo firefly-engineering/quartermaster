@@ -266,6 +266,7 @@ func TestRenderErrors(t *testing.T) {
 		{"cell newline", func() error { _, err := r.CarryOver(CarryOverUnit{Item: "a\nb"}); return err }, "one line"},
 		{"bad date", func() error { d := templateDay(); d.Date = "18/10"; _, err := r.Note(d); return err }, "date"},
 		{"bad repo", func() error { d := templateDay(); d.Projects[0].Repo = "x"; _, err := r.Note(d); return err }, "repo"},
+		{"bad listed repo", func() error { d := templateDay(); d.Repos = []string{"x"}; _, err := r.Note(d); return err }, "repo"},
 		{"bad part kind", func() error { d := templateDay(); d.Projects[0].Parts[0].Kind = "Nap"; _, err := r.Note(d); return err }, "kind"},
 		{"bad bucket", func() error {
 			d := templateDay()
@@ -311,6 +312,21 @@ func TestMinimalDay(t *testing.T) {
 	}
 	if strings.Contains(string(got), "previous:") || strings.Contains(string(got), "From [[") {
 		t.Errorf("no previous note, yet:\n%s", got)
+	}
+}
+
+// TestDayRepos: the front matter lists the sections' projects, then Repos, each once.
+func TestDayRepos(t *testing.T) {
+	t.Parallel()
+	got, err := testRenderer.Note(Day{
+		Date: "2026-10-18", Status: StatusUnit{Time: "08:00", Text: "opened."}, Repos: []string{"a/b", "o/r", "a/b"},
+		Projects: []ProjectUnit{{Icon: IconNone, Repo: "o/r", Remains: IconNone, Buckets: []BucketUnit{{Icon: IconNone, Name: "Waiting"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "---\ndate: 2026-10-18\nprojects:\n  - o/r\n  - a/b\ntags:\n"; !strings.HasPrefix(string(got), want) {
+		t.Errorf("got:\n%s\nwant it to open with:\n%s", got, want)
 	}
 }
 

@@ -224,7 +224,8 @@ func removeItem(src []byte, it *note.Item, b *note.Bucket) ([]byte, error) {
 }
 
 // insertItem writes u at the end of bucket of project repo, in place of its `- —` when it has
-// nothing else. A note without the project gets its section, after the last project; a project
+// nothing else. A note without the project gets its section, after the last project, and lists
+// it in its front matter; a project
 // without What remains or the bucket gets it, the buckets in template order.
 func insertItem(n *note.Note, src []byte, r note.Renderer, repo, bucket string, u note.ItemUnit) ([]byte, error) {
 	var buckets []note.BucketUnit // every bucket, u in its own, for a new section
@@ -241,7 +242,8 @@ func insertItem(n *note.Note, src []byte, r note.Renderer, repo, bucket string, 
 		if err != nil {
 			return nil, err
 		}
-		return note.InsertBlock(src, newProjectAt(n, src), section), nil
+		// The section goes after the front matter, so n's span of it still holds.
+		return note.ListProject(note.InsertBlock(src, newProjectAt(n, src), section), n.FrontMatter, repo)
 	}
 	p := n.Projects[i]
 	if p.Remains == nil {
