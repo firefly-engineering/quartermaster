@@ -23,8 +23,8 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 - Every x86_64 Linux CI job uses `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, never a
   hardcoded label. `CI_RUNNER` is a repo variable, flipped org-wide by `just ci-runner` in
   firefly-engineering/.org. macOS and arm jobs stay pinned.
-- The package's Go is read from toolbox's `go-toolchain` pin map, never written here. Bump
-  toolbox, and the shell and the package move together.
+- `goToolchainVersion` in `flake.nix` picks one toolbox `go-toolchain` version for both the
+  shell and the package; the package's Go is read from its pin map, never written here.
 - With no Go dependencies `vendorHash` is `null`. The first dependency needs a real hash.
 
 ## Conventions

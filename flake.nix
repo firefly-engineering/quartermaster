@@ -33,15 +33,18 @@
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems f;
 
-      # The package builds with the Go of the dev shell's go-toolchain, read from toolbox's own
-      # pin map, so the two cannot disagree.
+      # One go-toolchain version for the shell and the package: the package's Go is read from
+      # that version's pin map, so the two cannot disagree. Pinned to "5", not toolbox's default
+      # "6", because 6's golangci-lint is built with Go 1.26 and cannot type-check 1.27's
+      # standard library: https://github.com/firefly-engineering/toolbox/issues/7
+      goToolchainVersion = "5";
+      goToolchainFor = system: toolbox.registry.${system}.go-toolchain.versions.${goToolchainVersion};
       goFor =
         system:
         let
           reg = toolbox.registry.${system};
-          tc = reg.go-toolchain;
         in
-        reg.go.versions.${tc.toolbox.components.${tc.default}.go};
+        reg.go.versions.${reg.go-toolchain.toolbox.components.${goToolchainVersion}.go};
     in
     {
       packages = forAllSystems (
@@ -81,7 +84,7 @@
         {
           default = pkgs.mkShellNoCC {
             packages = [
-              tb.go-toolchain
+              (goToolchainFor system)
               tb.just
               tb.nix-toolchain
               tb.vcs-toolchain

@@ -1,6 +1,5 @@
 module github.com/firefly-engineering/quartermaster
 
-// 1.26, not the toolchain's 1.27: toolbox's golangci-lint is built with Go 1.26 and refuses a
-// newer language version. Raise once toolbox rebuilds it:
+// Go 1.26: flake.nix pins go-toolchain "5" until toolbox's 1.27 lint is fixed:
 // https://github.com/firefly-engineering/toolbox/issues/7
 go 1.26
