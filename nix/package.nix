@@ -12,13 +12,13 @@
     fileset = lib.fileset.unions [
       ../go.mod
       ../go.sum
-      ../internal
       ../cmd
+      ../internal
       ../skills
     ];
   };
 
-  vendorHash = "sha256-pbA/AlBz3cQYRTMnQ/qBPcinYOKokrBLNhkbRTq54gE=";
+  vendorHash = "sha256-pRmtJsS55ntxO0Hs3Ig2EPTB/pnYN5dVkUZ7MW7Zhps=";
   subPackages = [ "cmd/quartermaster" ];
   env.CGO_ENABLED = "0";
   ldflags = [
