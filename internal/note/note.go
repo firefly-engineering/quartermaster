@@ -131,8 +131,9 @@ type Next struct {
 // NextItem is one action in *Next*.
 type NextItem struct {
 	Span
-	Box Box
-	Ref string // the item id of its `[[#^<id>|details]]` link, "" without one
+	Box    Box
+	Ref    string // the item id of its `[[#^<id>|details]]` link, "" without one
+	Button Span   // its ▶ button and the field separator before it; zero without a button
 }
 
 // Project is a `## <icon> <owner/repo>` section.

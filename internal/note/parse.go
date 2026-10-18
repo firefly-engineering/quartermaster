@@ -574,16 +574,48 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 // buttonLabel is the label after the ▶ of a paragraph's button: a link to the Shell commands
 // plugin reading `▶ <label>`. It is "" when the paragraph has none.
 func (p *parser) buttonLabel(para *ast.Paragraph) string {
-	for c := para.FirstChild(); c != nil; c = c.NextSibling() {
-		l, ok := c.(*ast.Link)
-		if !ok || !bytes.HasPrefix(l.Destination, []byte(buttonURI)) {
-			continue
-		}
-		if label, ok := strings.CutPrefix(p.inlineText(l), buttonMark); ok {
-			return label
+	l := p.buttonLink(para)
+	if l == nil {
+		return ""
+	}
+	return strings.TrimPrefix(p.inlineText(l), buttonMark)
+}
+
+// buttonLink is the first of a block's inlines that is a button: a link to the Shell commands
+// plugin whose text starts with the ▶ mark. It is nil when the block has none.
+func (p *parser) buttonLink(block ast.Node) *ast.Link {
+	for c := block.FirstChild(); c != nil; c = c.NextSibling() {
+		if l, ok := c.(*ast.Link); ok && bytes.HasPrefix(l.Destination, []byte(buttonURI)) &&
+			strings.HasPrefix(p.inlineText(l), buttonMark) {
+			return l
 		}
 	}
-	return ""
+	return nil
+}
+
+// nextButton is the span of button l in a *Next* line's block: from the field separator before
+// it, when there is one, to where the inline after it starts, else to the end of its line's text.
+// A button with no separator before it takes the one after it, so the line keeps one between
+// its other fields.
+func (p *parser) nextButton(block ast.Node, l *ast.Link) Span {
+	start, end := l.Pos(), 0
+	sepBefore := bytes.HasSuffix(p.src[:start], []byte(fieldSep))
+	if sepBefore {
+		start -= len(fieldSep)
+	}
+	switch next := l.NextSibling().(type) {
+	case nil:
+		last := block.Lines().At(block.Lines().Len() - 1)
+		end = last.Start + len(bytes.TrimRight(last.Value(p.src), " \t\r\n"))
+	case *ast.Text:
+		end = next.Segment.Start
+	default:
+		end = next.Pos()
+	}
+	if !sepBefore && bytes.HasPrefix(p.src[end:], []byte(fieldSep)) {
+		end += len(fieldSep)
+	}
+	return p.span(start, end)
 }
 
 // dispatch sets it's Dispatch from the first dispatch marker among block's inlines, and
@@ -779,6 +811,9 @@ func (p *parser) nextItem(li ast.Node) NextItem {
 		if box.IsChecked {
 			it.Box = Checked
 		}
+	}
+	if l := p.buttonLink(first); l != nil {
+		it.Button = p.nextButton(first, l)
 	}
 	// The details link is an Obsidian wikilink, plain text to goldmark: `[[#^<id>|details]]`.
 	// Only the block's own text counts, never a code span or a link's label.

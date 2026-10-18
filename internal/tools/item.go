@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -21,10 +23,12 @@ type ItemFields struct {
 	Cost   string       `json:"cost,omitempty" jsonschema:"what it costs the user, as: 20 min"`
 	Route  string       `json:"route,omitempty" jsonschema:"the next skill that moves it, as: /implement"`
 	Body   string       `json:"body,omitempty" jsonschema:"prose under its heading, with no blank line; makes it a ##### item"`
-	Prompt *PromptInput `json:"prompt,omitempty" jsonschema:"the prompt its ▶ button sends; makes it a ##### item"`
+	Prompt *PromptInput `json:"prompt,omitempty" jsonschema:"the prompt its ▶ button sends; makes it a ##### item. An item_upsert update of an item with a prompt refuses an absent one; null drops its prompt and its ▶ buttons, in its bucket and on Next, and it stays a ##### item only with a body"`
 	Button string       `json:"button,omitempty" jsonschema:"the ▶ label, as: grill in trunk; with a prompt, send to <to> when absent"`
 	Sent   string       `json:"sent,omitempty" jsonschema:"in Sent to other repos, how far its ask has gone: to send, sent, acked or done; written after its title as → <sent_to>, **<sent>**; unchanged when absent"`
 	SentTo string       `json:"sent_to,omitempty" jsonschema:"the herdr workspace label its ask goes to, written after the →; unchanged when absent, else the prompt's to"`
+
+	dropPrompt bool // prompt was an explicit null: an update drops the item's prompt and buttons
 }
 
 // PromptInput is a work item's herdr-prompt block.
@@ -35,11 +39,30 @@ type PromptInput struct {
 
 // ItemUpsertInput is item_upsert's input. An update rewrites the item from these fields; its
 // state, summary and place, unless repo or bucket move it, stay as they are. It refuses to drop
-// a ##### item's body and prompt by leaving them out.
+// a ##### item's body and prompt by leaving them out; an explicit null prompt drops the prompt.
 type ItemUpsertInput struct {
 	Date string `json:"date,omitempty" jsonschema:"the note's date, YYYY-MM-DD; today (UTC) when absent"`
 	ItemFields
 	State string `json:"state,omitempty" jsonschema:"a new item's state, TODO when absent; item_transition moves an existing one"`
+}
+
+// UnmarshalJSON decodes in, refusing unknown fields, and tells an explicit null prompt from an
+// absent one, which decode alike into a nil Prompt.
+func (in *ItemUpsertInput) UnmarshalJSON(b []byte) error {
+	type plain ItemUpsertInput // in's fields, without this method
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode((*plain)(in)); err != nil {
+		return err
+	}
+	var raw struct {
+		Prompt json.RawMessage `json:"prompt"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	in.dropPrompt = string(raw.Prompt) == "null"
+	return nil
 }
 
 // ItemOutput is a work item where it now is.
@@ -76,12 +99,32 @@ func (d Deps) itemUpsert(ctx context.Context, in ItemUpsertInput) (ItemUpsertOut
 		if in.State != "" {
 			return nil, "", fmt.Errorf("^%s exists: item_transition moves it, item_upsert keeps its state", in.ID)
 		}
-		return updateItem(n, src, r, it, in.ItemFields)
+		out, headline, err := updateItem(n, src, r, it, in.ItemFields)
+		if err != nil || !in.dropPrompt {
+			return out, headline, err
+		}
+		out, err = dropNextButtons(out, in.ID)
+		return out, headline, err
 	})
 	if err != nil {
 		return ItemUpsertOutput{}, err
 	}
 	return ItemUpsertOutput{Written: w, Created: created, ItemOutput: itemOutput(res.Note, in.ID)}, nil
+}
+
+// dropNextButtons removes the ▶ button from each *Next* line linking work item id, whose prompt
+// is gone: a button sends the item's prompt, so it would send nothing.
+func dropNextButtons(src []byte, id string) ([]byte, error) {
+	n, err := reparse(src)
+	if err != nil || n.Next == nil {
+		return src, err
+	}
+	for _, x := range slices.Backward(n.Next.Items) {
+		if x.Ref == id && x.Button.End > x.Button.Start {
+			src = note.Replace(src, x.Button, nil)
+		}
+	}
+	return src, nil
 }
 
 // itemOutput is work item id of n, where it is.
@@ -198,10 +241,12 @@ func updateItem(n *note.Note, src []byte, r note.Renderer, it *note.Item, f Item
 	}
 	u.Dispatch = it.Dispatch // task_dispatch's record, which item_upsert does not take
 	// An update rewrites the item whole, and the note is all there is of its prose and prompt.
-	if it.Heading && !u.Heading {
+	// A null prompt drops its prompt on purpose, and with no body it becomes a list item.
+	dropsItsPrompt := f.dropPrompt && it.Prompt != nil
+	if it.Heading && !u.Heading && !dropsItsPrompt {
 		return nil, "", fmt.Errorf("^%s is a ##### item, which an update rewrites: give its body or prompt, or it would lose them", f.ID)
 	}
-	if it.Prompt != nil && u.Prompt == nil {
+	if it.Prompt != nil && u.Prompt == nil && !dropsItsPrompt {
 		return nil, "", fmt.Errorf("^%s has a prompt, which an update rewrites: give it again, or it would be lost", f.ID)
 	}
 	if f.Repo == p.Repo && f.Bucket == b.Name && u.Heading == it.Heading {

@@ -289,6 +289,11 @@ button and its prompt block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
 `next_set` repeats the button on the item's line in *Next*.
 
+Once a prompt has been sent and done its job, drop it: `item_upsert` with
+`"prompt": null` removes the prompt, its button and the button on its *Next* line, so
+no stale button re-sends it. Give the body again to keep a `#####` item; without one
+it becomes a one-line item. Leaving `prompt` out is refused, not a drop.
+
 The judgement stays here:
 
 - The label names what the button does and where: `grill in trunk`, `send to IaC`,
