@@ -704,6 +704,55 @@ func TestCarryOverVerdict(t *testing.T) {
 			wave2, wave2+"- ⬜ [#9](https://github.com/acme/web/issues/9) flaky test ^flaky\n",
 			row2, "| [#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"))
 	})
+	t.Run("keep with no title takes the old item's title, ref, cost and route", func(t *testing.T) {
+		t.Parallel()
+		const (
+			old = "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI ^flaky\n"
+			row = "| [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI " +
+				"(acme/web) [[2026-10-15#^flaky\\|^flaky]] | ⬜ TODO in Agent queue | |\n"
+			kept = "| [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI " +
+				"(acme/web) [[2026-10-15#^flaky\\|^flaky]] | ⬜ TODO in Agent queue | keep |\n"
+		)
+		prev := "# Worklog — 2026-10-15\n\n**18:00 UTC:** done.\n\n## ⬜ acme/web\n\n### ⬜ What remains\n\n" +
+			"#### ⬜ Agent queue\n\n" + old + "\n## Process\n\n- —\n"
+		for _, c := range []struct {
+			name string
+			cost *string
+			want string
+		}{
+			{"all from the old item", nil, "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` ^flaky\n"},
+			{"a given cost wins", new("5 min"), "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · 5 min · Route: `/implement` ^flaky\n"},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				t.Parallel()
+				d := newDeps(t, friday, map[string]string{
+					fixtureDate + ".md": edited(t, row2, row), "2026-10-15.md": prev, shellCommandsData: shellCommands,
+				}, false)
+				if _, err := d.carryOverVerdict(t.Context(), CarryOverVerdictInput{Row: 2, Verdict: "keep",
+					Item: &ItemFields{ID: "flaky", Repo: "acme/web", Bucket: "Agent queue", Cost: c.cost}}); err != nil {
+					t.Fatal(err)
+				}
+				d.checkNote(t, edited(t, wave2, wave2+c.want, row2, kept))
+			})
+		}
+	})
+	t.Run("keep with no title of a row with no work item behind it takes the row text", func(t *testing.T) {
+		t.Parallel()
+		const row = "| Rotate the key (acme/web) [[2026-10-15#^rotate\\|^rotate]] | TODO, manual action in Your actions | |\n"
+		prev := "# Worklog — 2026-10-15\n\n**18:00 UTC:** done.\n\n## ⬜ acme/web\n\n### ⬜ What remains\n\n" +
+			"#### ⬜ Your actions\n\n- [ ] Rotate the key ^rotate\n\n## Process\n\n- —\n"
+		d := newDeps(t, friday, map[string]string{
+			fixtureDate + ".md": edited(t, row2, row), "2026-10-15.md": prev, shellCommandsData: shellCommands,
+		}, false)
+		if _, err := d.carryOverVerdict(t.Context(), CarryOverVerdictInput{Row: 2, Verdict: "keep",
+			Item: &ItemFields{ID: "rotate-key", Repo: "acme/web", Bucket: "Agent queue"}}); err != nil {
+			t.Fatal(err)
+		}
+		if got := d.note(t, fixtureDate); !strings.Contains(got, wave2+
+			"- ⬜ Rotate the key (acme/web) [[2026-10-15#^rotate\\|^rotate]] ^rotate-key\n") {
+			t.Errorf("note:\n%s", got)
+		}
+	})
 	t.Run("keep of an item already in the note records the verdict", func(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), false)

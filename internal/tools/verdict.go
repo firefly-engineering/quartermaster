@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/firefly-engineering/quartermaster/internal/note"
@@ -15,7 +18,7 @@ type CarryOverVerdictInput struct {
 	Row     int         `json:"row" jsonschema:"the carry-over row, 1-based in table order"`
 	Verdict string      `json:"verdict" jsonschema:"keep (in scope today: it moves into its project's bucket), defer (tomorrow's open finds it again) or drop (closed or not relevant)"`
 	Reason  string      `json:"reason,omitempty" jsonschema:"one line; needed to drop"`
-	Item    *ItemFields `json:"item,omitempty" jsonschema:"keep's work item: id, repo and bucket, the rest as item_upsert takes it, its title the row's item when absent; an id already in the note only records the verdict"`
+	Item    *ItemFields `json:"item,omitempty" jsonschema:"keep's work item: id, repo and bucket, the rest as item_upsert takes it, its title, ref, cost and route the linked old work item's when absent (its title else the row's item); an id already in the note only records the verdict"`
 	State   string      `json:"state,omitempty" jsonschema:"keep's new item's state, TODO when absent"`
 }
 
@@ -62,7 +65,9 @@ func (d Deps) carryOverVerdict(ctx context.Context, in CarryOverVerdictInput) (C
 		}
 		f := *in.Item
 		if f.Title == "" {
-			f.Title = row.Item
+			if f, err = d.oldItem(row, f); err != nil {
+				return nil, "", err
+			}
 		}
 		s := note.Todo
 		if in.State != "" {
@@ -70,7 +75,9 @@ func (d Deps) carryOverVerdict(ctx context.Context, in CarryOverVerdictInput) (C
 				return nil, "", err
 			}
 		}
-		out, err = createItem(n, out, r, f, s.Icon(), "")
+		if out, err = createItem(n, out, r, f, s.Icon(), ""); err != nil && in.Item.Title == "" && f.Title == row.Item {
+			err = fmt.Errorf("keep took the row's text as the title, as no work item it links was found; give title: %w", err)
+		}
 		return out, headline + ", as ^" + f.ID, err
 	})
 	if err != nil {
@@ -83,4 +90,37 @@ func (d Deps) carryOverVerdict(ctx context.Context, in CarryOverVerdictInput) (C
 		o.Kept = &k
 	}
 	return o, nil
+}
+
+// oldItem fills f, keep's fields with no title, from the work item row links in the note it
+// came from, `[[<prev>#^<id>|^<id>]]`: its title without its ref link, cost, route, sent status
+// and summary, and its ref, cost and route unless f gives them. A row with no work item behind
+// it, as an objective, a manual action or a Process entry, gives its own text as the title.
+func (d Deps) oldItem(row note.CarryOverRow, f ItemFields) (ItemFields, error) {
+	f.Title = row.Item
+	if row.Ref == "" || !note.IsDate(row.RefNote) {
+		return f, nil
+	}
+	vault, err := d.vault()
+	if err != nil {
+		return f, err
+	}
+	src, err := os.ReadFile(filepath.Join(vault, row.RefNote+".md"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return f, nil
+	}
+	if err != nil {
+		return f, err
+	}
+	prev, err := note.Parse(src)
+	if err != nil {
+		return f, fmt.Errorf("the note %s.md the row's item comes from does not parse, so its title cannot be read; give title: %w", row.RefNote, err)
+	}
+	it := prev.Item(row.Ref)
+	if it == nil {
+		return f, nil
+	}
+	f.Title = it.Bare
+	f.Ref, f.Cost, f.Route = kept(f.Ref, it.Ref, false), kept(f.Cost, it.Cost, false), kept(f.Route, it.Route, false)
+	return f, nil
 }

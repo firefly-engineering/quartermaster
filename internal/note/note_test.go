@@ -231,6 +231,13 @@ func TestCarryOverRowRef(t *testing.T) {
 		if got := n.CarryOver.Rows[0].Ref; got != want {
 			t.Errorf("%s: ref %q, want %q", item, got, want)
 		}
+		wantNote := ""
+		if want != "" {
+			wantNote = "2026-10-16"
+		}
+		if got := n.CarryOver.Rows[0].RefNote; got != wantNote {
+			t.Errorf("%s: ref note %q, want %q", item, got, wantNote)
+		}
 		if n.CarryOver.Table == nil || n.CarryOver.Table.End != len(src) {
 			t.Errorf("%s: table %+v", item, n.CarryOver.Table)
 		}

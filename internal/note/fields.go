@@ -44,9 +44,9 @@ func (p *parser) fields(it *Item, block ast.Node) {
 		}
 		it.Route = route
 	}
-	it.lead = head
-	if r, ok := titleRef(head); ok {
-		it.Ref = r.String()
+	it.lead, it.Bare = head, head
+	if r, rest, ok := titleRef(head); ok {
+		it.Ref, it.Bare = r.String(), rest
 	}
 }
 

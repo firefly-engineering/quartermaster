@@ -129,6 +129,12 @@ func TestItemFields(t *testing.T) {
 		if it.Ref != w.ref || it.Cost != w.cost || it.Route != w.route {
 			t.Errorf("^%s: ref %q cost %q route %q, want %q %q %q", w.id, it.Ref, it.Cost, it.Route, w.ref, w.cost, w.route)
 		}
+		// Its bare title is the title it was rendered from.
+		for _, u := range append(items, sent...) {
+			if u.ID == w.id && it.Bare != u.Title {
+				t.Errorf("^%s: bare title %q, want %q", w.id, it.Bare, u.Title)
+			}
+		}
 		// Its title unit renders its title line back, as a transition writes it.
 		line, err := testRenderer.ItemTitle(it.TitleUnit())
 		if head := string(src[it.IconSpan.Start:it.Head.End]); err != nil || string(line) != head {
