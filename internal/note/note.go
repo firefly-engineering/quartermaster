@@ -131,8 +131,9 @@ type Next struct {
 // NextItem is one action in *Next*.
 type NextItem struct {
 	Span
-	Box Box
-	Ref string // the item id of its `[[#^<id>|details]]` link, "" without one
+	Box    Box
+	Ref    string // the item id of its `[[#^<id>|details]]` link, "" without one
+	Button Span   // its ▶ button and the field separator before it; zero without a button
 }
 
 // Project is a `## <icon> <owner/repo>` section.
@@ -238,13 +239,15 @@ type Anchor struct {
 // CarryOver is the `## Carry-over` section; Rows are its table's rows.
 type CarryOver struct {
 	Span
-	Rows []CarryOverRow
+	Table *Span // its table, header included; nil without one
+	Rows  []CarryOverRow
 }
 
 // CarryOverRow is one row of the carry-over table. Cells hold their trimmed source.
 type CarryOverRow struct {
 	Span
 	Item, State, Verdict string
+	Ref                  string // the block id its item's `[[<note>#^<id>|…]]` link targets, "" without one
 }
 
 // Process is the `## Process` section and its list.

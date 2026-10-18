@@ -175,6 +175,14 @@ func TestTemplate(t *testing.T) {
 	if len(n.Next.Items) != 2 || n.Next.Items[0].Ref != "grill-2" || n.Next.Items[1].Ref != "grill-2" {
 		t.Errorf("next: %+v", n.Next.Items)
 	}
+	// A Next line's button span runs from the field separator before it to its link's end.
+	if b := at(src, n.Next.Items[0].Button); !strings.HasPrefix(b, " · [▶ ") || !strings.HasSuffix(b, "&_item=grill-2)") ||
+		!strings.HasSuffix(strings.TrimSuffix(at(src, n.Next.Items[0].Span), "\n"), b) {
+		t.Errorf("next button: %q", b)
+	}
+	if b := n.Next.Items[1].Button; b != (Span{}) {
+		t.Errorf("next line without a button: button %+v", b)
+	}
 	if len(n.Projects) != 1 {
 		t.Fatalf("projects: %d", len(n.Projects))
 	}
@@ -200,6 +208,32 @@ func TestTemplate(t *testing.T) {
 	}
 	if len(n.CarryOver.Rows) != 1 || n.CarryOver.Rows[0].Verdict != "defer: tomorrow" {
 		t.Errorf("carry-over: %+v", n.CarryOver.Rows)
+	}
+}
+
+// TestCarryOverRowRef reads the block id a carry-over row's item links, from its own text only.
+func TestCarryOverRowRef(t *testing.T) {
+	t.Parallel()
+	for item, want := range map[string]string{
+		`Vendor credential [[2026-10-16#^vendor-cred\|^vendor-cred]]`: "vendor-cred",
+		"Vendor credential [[2026-10-16#^vendor-cred]]":               "vendor-cred",
+		"[[2026-10-16]] then [[2026-10-16#^b]]":                       "b",
+		"Vendor credential `[[2026-10-16#^vendor-cred]]`":             "",
+		"[[2026-10-16#^Bad id]]":                                      "",
+		"[#9](https://github.com/acme/web/issues/9) flaky test":       "",
+	} {
+		src := "# Worklog — 2026-10-19\n\n**08:00 UTC:** ok.\n\n## Carry-over\n\n" +
+			"| Item | State now | Verdict |\n|---|---|---|\n| " + item + " | open | |\n"
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatalf("%s: %v", item, err)
+		}
+		if got := n.CarryOver.Rows[0].Ref; got != want {
+			t.Errorf("%s: ref %q, want %q", item, got, want)
+		}
+		if n.CarryOver.Table == nil || n.CarryOver.Table.End != len(src) {
+			t.Errorf("%s: table %+v", item, n.CarryOver.Table)
+		}
 	}
 }
 
@@ -366,6 +400,20 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+// TestParseIntermediate: a dangling *Next* details link parses halfway through an edit, and
+// every other error still stops it.
+func TestParseIntermediate(t *testing.T) {
+	t.Parallel()
+	const head = "# Worklog — 2026-10-18\n\n**09:00 UTC:** open.\n\n"
+	n, err := ParseIntermediate([]byte(head + "## Next\n\n1. go · [[#^gone|details]]\n"))
+	if err != nil || n.Next == nil || len(n.Next.Items) != 1 || n.Next.Items[0].Ref != "gone" {
+		t.Fatalf("got %+v, %v", n, err)
+	}
+	if _, err := ParseIntermediate([]byte(head + "## Next\n\n1. go · [[#^Bad|details]]\n")); err == nil {
+		t.Error("an invalid details link parsed")
+	}
+}
+
 // TestPartialResult: a note with an error still returns every unit that could be placed.
 func TestPartialResult(t *testing.T) {
 	t.Parallel()
@@ -383,6 +431,31 @@ func TestNextRefResolves(t *testing.T) {
 		"## ⬜ o/r\n\n### ⬜ Part 1 — Land: x, done\n\nmerged. ^part-1\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n- ⬜ y ^it\n"
 	if _, err := Parse([]byte(src)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestNextButton: a *Next* line's button span takes one field separator, before it or after
+// it, so cutting it leaves the line's other fields parted as they were (#59).
+func TestNextButton(t *testing.T) {
+	t.Parallel()
+	const button = "[▶ go](obsidian://shell-commands/?vault=v&execute=c&_date=2026-10-18&_item=it)"
+	for line, want := range map[string]string{
+		"1. a · [[#^it|details]] · " + button + "\n":         "1. a · [[#^it|details]]",
+		"1. a · " + button + " · [[#^it|details]]\n":         "1. a · [[#^it|details]]",
+		"1. " + button + " · a · [[#^it|details]]\n":         "1. a · [[#^it|details]]",
+		"1. a · [[#^it|details]] · [link](https://x.org/)\n": "1. a · [[#^it|details]] · [link](https://x.org/)",
+	} {
+		src := "# Worklog — 2026-10-18\n\n**09:00 UTC:** open.\n\n## Next\n\n" + line + "\n" +
+			"## ⬜ o/r\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n- ⬜ y ^it\n"
+		n, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		it := n.Next.Items[0]
+		got := strings.TrimSuffix(string(Replace([]byte(src), it.Button, nil)[it.Start:it.End-(it.Button.End-it.Button.Start)]), "\n")
+		if got != want {
+			t.Errorf("%q: cut to %q, want %q", line, got, want)
+		}
 	}
 }
 

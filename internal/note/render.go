@@ -305,6 +305,48 @@ func (r Renderer) CarryOver(u CarryOverUnit) ([]byte, error) {
 	return tableRow(u.Item, u.State, u.Verdict)
 }
 
+// carryOverHeader is the carry-over table's header and delimiter rows.
+const carryOverHeader = "| Item | State now | Verdict |\n|---|---|---|\n"
+
+// CarryOverRows renders carry-over table rows, a line each.
+func (r Renderer) CarryOverRows(rows []CarryOverUnit) ([]byte, error) {
+	var b []byte
+	for _, u := range rows {
+		line, err := r.CarryOver(u)
+		if err != nil {
+			return nil, err
+		}
+		b = append(b, line...)
+	}
+	return b, nil
+}
+
+// CarryOverTable renders the carry-over table: its header, then rows.
+func (r Renderer) CarryOverTable(rows []CarryOverUnit) ([]byte, error) {
+	b, err := r.CarryOverRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(carryOverHeader), b...), nil
+}
+
+// CarryOverSection renders the `## Carry-over` section: its heading, `From [[<prev>]].` when
+// prev is not "", and its table holding rows.
+func (r Renderer) CarryOverSection(prev string, rows []CarryOverUnit) ([]byte, error) {
+	if prev != "" && !IsDate(prev) {
+		return nil, fmt.Errorf("previous date %q: want YYYY-MM-DD", prev)
+	}
+	table, err := r.CarryOverTable(rows)
+	if err != nil {
+		return nil, err
+	}
+	s := "## Carry-over\n\n"
+	if prev != "" {
+		s += "From [[" + prev + "]].\n\n"
+	}
+	return append([]byte(s), table...), nil
+}
+
 // NextLine renders the n-th action of *Next* (1-based):
 // `n. [ ] <action> · <cost> · [[#^<id>|details]] · [▶ <label>](<uri>)`.
 func (r Renderer) NextLine(n int, u NextUnit) ([]byte, error) {
@@ -602,19 +644,11 @@ func (r Renderer) Note(d Day) ([]byte, error) {
 		add(b...)
 	}
 
-	add("## Carry-over\n")
-	if d.Previous != "" {
-		add("From [[" + d.Previous + "]].\n")
+	carry, err := r.CarryOverSection(d.Previous, d.CarryOver)
+	if err != nil {
+		return nil, err
 	}
-	carry := "| Item | State now | Verdict |\n|---|---|---|\n"
-	for _, c := range d.CarryOver {
-		b, err := r.CarryOver(c)
-		if err != nil {
-			return nil, err
-		}
-		carry += string(b)
-	}
-	add(carry)
+	add(string(carry))
 
 	process, err := list(d.Process, "process")
 	if err != nil {
@@ -877,7 +911,7 @@ func prompt(id string, p PromptUnit) (string, error) {
 	return b.String(), nil
 }
 
-// tableRow renders a table row; a bare `|` in a cell is escaped so it stays in its cell.
+// tableRow renders a table row, each cell as Cell writes it.
 func tableRow(cells ...string) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString("|")
@@ -885,18 +919,24 @@ func tableRow(cells ...string) ([]byte, error) {
 		if err := oneLine("table cell", c); err != nil {
 			return nil, err
 		}
-		b.WriteString(" ")
-		escaped := false // the byte before is an unescaped backslash
-		for i := range len(c) {
-			if c[i] == '|' && !escaped {
-				b.WriteByte('\\')
-			}
-			escaped = c[i] == '\\' && !escaped
-			b.WriteByte(c[i])
-		}
-		b.WriteString(" |")
+		b.WriteString(" " + Cell(c) + " |")
 	}
 	return []byte(b.String() + "\n"), nil
+}
+
+// Cell is c as a table cell holds it: a bare `|` is escaped so it stays in its cell. A `\|`
+// is kept, so Cell of a parsed cell is that cell.
+func Cell(c string) string {
+	var b strings.Builder
+	escaped := false // the byte before is an unescaped backslash
+	for i := range len(c) {
+		if c[i] == '|' && !escaped {
+			b.WriteByte('\\')
+		}
+		escaped = c[i] == '\\' && !escaped
+		b.WriteByte(c[i])
+	}
+	return b.String()
 }
 
 // list renders lines as a `- ` list, `- —` when there are none.

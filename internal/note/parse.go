@@ -23,7 +23,16 @@ var md = goldmark.New(goldmark.WithExtensions(extension.Table, extension.TaskLis
 
 // Parse locates every unit of the note in src. It always returns the units it could place;
 // the error, when non-nil, joins one *ParseError per unit it could not, in line order.
-func Parse(src []byte) (*Note, error) {
+func Parse(src []byte) (*Note, error) { return parse(src, true) }
+
+// ParseIntermediate is Parse without its check that each *Next* details link names a work item
+// or anchor; every other check holds. It is for an edit's intermediate source, such as a move's
+// between taking a work item out and putting it back, where a link may name nothing for a
+// while. The edit's result is still a note, which Parse checks whole.
+func ParseIntermediate(src []byte) (*Note, error) { return parse(src, false) }
+
+// parse is Parse, checking *Next*'s details links when checkNextRefs is set.
+func parse(src []byte, checkNextRefs bool) (*Note, error) {
 	p := &parser{
 		src:    src,
 		n:      &Note{items: map[string]*Item{}},
@@ -39,7 +48,9 @@ func Parse(src []byte) (*Note, error) {
 	p.structure(doc)
 	p.unplaced(doc)
 	p.duplicates()
-	p.nextRefs()
+	if checkNextRefs {
+		p.nextRefs()
+	}
 	return p.n, p.err()
 }
 
@@ -563,16 +574,48 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 // buttonLabel is the label after the ▶ of a paragraph's button: a link to the Shell commands
 // plugin reading `▶ <label>`. It is "" when the paragraph has none.
 func (p *parser) buttonLabel(para *ast.Paragraph) string {
-	for c := para.FirstChild(); c != nil; c = c.NextSibling() {
-		l, ok := c.(*ast.Link)
-		if !ok || !bytes.HasPrefix(l.Destination, []byte(buttonURI)) {
-			continue
-		}
-		if label, ok := strings.CutPrefix(p.inlineText(l), buttonMark); ok {
-			return label
+	l := p.buttonLink(para)
+	if l == nil {
+		return ""
+	}
+	return strings.TrimPrefix(p.inlineText(l), buttonMark)
+}
+
+// buttonLink is the first of a block's inlines that is a button: a link to the Shell commands
+// plugin whose text starts with the ▶ mark. It is nil when the block has none.
+func (p *parser) buttonLink(block ast.Node) *ast.Link {
+	for c := block.FirstChild(); c != nil; c = c.NextSibling() {
+		if l, ok := c.(*ast.Link); ok && bytes.HasPrefix(l.Destination, []byte(buttonURI)) &&
+			strings.HasPrefix(p.inlineText(l), buttonMark) {
+			return l
 		}
 	}
-	return ""
+	return nil
+}
+
+// nextButton is the span of button l in a *Next* line's block: from the field separator before
+// it, when there is one, to where the inline after it starts, else to the end of its line's text.
+// A button with no separator before it takes the one after it, so the line keeps one between
+// its other fields.
+func (p *parser) nextButton(block ast.Node, l *ast.Link) Span {
+	start, end := l.Pos(), 0
+	sepBefore := bytes.HasSuffix(p.src[:start], []byte(fieldSep))
+	if sepBefore {
+		start -= len(fieldSep)
+	}
+	switch next := l.NextSibling().(type) {
+	case nil:
+		last := block.Lines().At(block.Lines().Len() - 1)
+		end = last.Start + len(bytes.TrimRight(last.Value(p.src), " \t\r\n"))
+	case *ast.Text:
+		end = next.Segment.Start
+	default:
+		end = next.Pos()
+	}
+	if !sepBefore && bytes.HasPrefix(p.src[end:], []byte(fieldSep)) {
+		end += len(fieldSep)
+	}
+	return p.span(start, end)
 }
 
 // dispatch sets it's Dispatch from the first dispatch marker among block's inlines, and
@@ -769,6 +812,9 @@ func (p *parser) nextItem(li ast.Node) NextItem {
 			it.Box = Checked
 		}
 	}
+	if l := p.buttonLink(first); l != nil {
+		it.Button = p.nextButton(first, l)
+	}
 	// The details link is an Obsidian wikilink, plain text to goldmark: `[[#^<id>|details]]`.
 	// Only the block's own text counts, never a code span or a link's label.
 	var plain strings.Builder
@@ -898,17 +944,49 @@ func (p *parser) table(t *extast.Table) {
 		if !ok {
 			return
 		}
+		table := p.blockSpan(t)
+		p.n.CarryOver.Table = &table
 		for _, r := range rows {
 			p.n.CarryOver.Rows = append(p.n.CarryOver.Rows, CarryOverRow{
-				Span: r.span, Item: r.cells[0], State: r.cells[1], Verdict: r.cells[2],
+				Span: r.span, Item: r.cells[0], State: r.cells[1], Verdict: r.cells[2], Ref: p.blockRef(r.first),
 			})
 		}
+	}
+}
+
+// blockRef is the block id an item cell's wikilink `[[<note>#^<id>|…]]` targets, as a
+// carried row links its item; "" without a valid one. The wikilink is plain text to goldmark:
+// only the cell's own text counts, never a code span or a link's label.
+func (p *parser) blockRef(cell ast.Node) string {
+	var plain strings.Builder
+	for c := cell.FirstChild(); c != nil; c = c.NextSibling() {
+		if t, ok := c.(*ast.Text); ok {
+			plain.Write(t.Segment.Value(p.src))
+		}
+	}
+	for rest := plain.String(); ; {
+		_, link, ok := strings.Cut(rest, "[[")
+		if !ok {
+			return ""
+		}
+		target, after, ok := strings.Cut(link, "]]")
+		if !ok {
+			return ""
+		}
+		if end := strings.IndexAny(target, `|\`); end >= 0 {
+			target = target[:end]
+		}
+		if _, id, ok := strings.Cut(target, "#^"); ok && ValidID(id) {
+			return id
+		}
+		rest = after
 	}
 }
 
 type row struct {
 	span  Span
 	cells []string
+	first ast.Node // its first cell
 }
 
 // rows checks a section's one table against its header and returns its body rows.
@@ -933,7 +1011,7 @@ func (p *parser) rows(t *extast.Table, seen *bool, section string, header ...str
 			continue
 		}
 		start := p.lineStart(r.Pos())
-		rows = append(rows, row{span: p.span(start, p.lineEnd(start)), cells: cells})
+		rows = append(rows, row{span: p.span(start, p.lineEnd(start)), cells: cells, first: r.FirstChild()})
 	}
 	return rows, true
 }

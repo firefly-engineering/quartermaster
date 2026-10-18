@@ -105,7 +105,8 @@ func All(d Deps) []Tool {
 		Def[DayOpenInput, DayOpenOutput]{
 			Name: "day_open", Verb: "open",
 			Description: "Create today's note from the template, with every open item of the previous note " +
-				"(the latest dated note before today) as a carry-over row. Refuses if a non-empty note exists.",
+				"(the latest dated note before today) as a carry-over row. A note prepared ahead is kept: it gains " +
+				"only the rows it does not carry yet, and its status line reads open. One that does not parse is refused.",
 			Run: d.dayOpen,
 		},
 		Def[DayReadInput, DayReadOutput]{

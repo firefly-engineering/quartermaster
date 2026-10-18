@@ -36,6 +36,20 @@ The ▶ buttons need the community **Shell commands** plugin
 `.obsidian/plugins/obsidian-shellcommands/data.json`. Once the command exists, every work
 item with a prompt that it writes carries its button, in its bucket and in *Next*.
 
+## After `data.json` changes outside Obsidian
+
+The plugin reads `data.json` only when it loads. The file can change while Obsidian runs:
+by hand, by a nix or home-manager switch, or by sync. The buttons then keep running the
+old command.
+
+To load the new command, do one of these:
+
+- go to Settings → Community plugins, then turn **Shell commands** off and on again;
+- restart Obsidian.
+
+Do this **before** you open the plugin's settings. Otherwise the plugin can write the old
+command back over the file.
+
 ## Why the URI carries only a reference
 
 The plugin runs a URI's command with no confirmation, and its own docs say its variable

@@ -163,15 +163,21 @@ TODO ──start──► IN_PROGRESS ──review──► IN_REVIEW ──comp
   │              └──block──► WAITING ──unblock──► IN_PROGRESS
   │                          └──complete (evidence required)──► DONE
   └──────────complete / drop (direct close)──────────────────► DONE / DROPPED
+
+every state, DONE and DROPPED included ──restate (summary required)──► itself
 ```
 
-Any state may go to `DROPPED` (with a reason) or `WAITING` (with what it waits on);
-`WAITING` to `WAITING` re-states what the item waits on, and no other state moves to itself.
+Any state may go to `DROPPED` (with a reason) or `WAITING` (with what it waits on). A work
+item in any state may move to itself with a `summary`, which rewrites only the summary, in one commit:
+the evidence changed but the state did not (a PR went up, CI turned green, a `DONE` item's
+evidence was wrong). `WAITING` to `WAITING` re-states what the item waits on. A move to
+itself without a `summary` is refused, as is one that also files the item into a Part. A
+manual action has no summary, so a ticked one cannot move to itself ([§4.4]).
 `IN_PROGRESS` may complete without a review (a manual operation, a push to `main`), but its
 summary must name the evidence: the commit, run or result. `WAITING` may complete on the
 same terms, when what it waited on is done: an issue closed or a PR merged, named in its
 summary. An item sent to another repo closes this way, with no unblock first. `DONE` and `DROPPED` are
-terminal; reopening is a new item. A transition carries a `summary`
+terminal but for that restatement; reopening is a new item. A transition carries a `summary`
 (PR URL, commit, reason), rendered into the item's line or paragraph.
 
 ### 4.4 Manual actions
@@ -203,11 +209,11 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 
 | Tool | Does | Draft equivalent |
 |---|---|---|
-| `day_open` | Create today's note from the template, with every open item of the previous note as a carry-over row. Its front matter lists the projects of the rows it carries. Refuses if a non-empty note exists. | `session_init_plan` |
+| `day_open` | Create today's note from the template, with every open item of the previous note as a carry-over row. Its front matter lists the projects of the rows it carries. A note prepared ahead, one that exists and is not empty, is kept: it gains a carry-over row for each open item of the previous note it does not carry yet, its status line is rewritten as `open`, and its front matter's projects list gains the carried projects; nothing else is written. It already carries an item with an `^<id>` when it holds that id anywhere (a work item, a manual action, or a carry-over row linking `^<id>`), and one without an id when a carry-over row's item is that item's row as rendered. Only the previous note is collected. A prepared note that does not parse is refused, naming its errors. | `session_init_plan` |
 | `day_read` | Return the note as structured data: status, objectives, Next, items by project and bucket, states. Read-only. | — |
 | `objective_set` | Add, refine (stamping `(refined HH:MM UTC: <reason>)`) or settle an objective. | `session_init_plan` |
-| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status and the parser reads it; nothing else parses the title. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. | — |
-| `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. | `task_update_state` |
+| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status and the parser reads it; nothing else parses the title. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. An update rewrites the item whole, so it refuses to drop a prompt left out; an explicit `"prompt": null` drops the prompt and its ▶ button, in its bucket and on its *Next* line, and the item stays a `#####` item only when the update gives a body. | — |
+| `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. A move to the item's own state, in any state, rewrites only its summary and needs one; it takes no `part`. | `task_update_state` |
 | `part_write` | Create or rewrite one Part whole: number, kind, title, icon (🔄, 🔍 or ✅, written, never derived) and body. The body may carry anchors. | — |
 | `action_upsert` | Create, reword or move a manual action, a checkbox with an id. Ticking it is `item_transition`; nothing unticks it ([§4.4]). | — |
 | `process_set` | Add, reword or settle a *Process* entry. | — |

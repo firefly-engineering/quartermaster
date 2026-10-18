@@ -153,6 +153,9 @@ func fileItem(n *note.Note, src []byte, r note.Renderer, id string, to note.Stat
 	}
 	summary = strings.TrimSpace(summary)
 	from, _ := note.StateOf(it.Icon)
+	if from == to {
+		return nil, fmt.Errorf("^%s: %w: %s to %s rewrites only its summary, so give no part", id, note.ErrIllegalTransition, from, to)
+	}
 	if err := note.Transition(from, to, summary); err != nil {
 		return nil, fmt.Errorf("^%s: %w", id, err)
 	}

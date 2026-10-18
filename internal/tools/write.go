@@ -62,9 +62,17 @@ func (d Deps) clock(at string) (string, error) {
 	return at, nil
 }
 
-// reparse parses an edit's intermediate source, which must parse as the engine's would.
-func reparse(src []byte) (*note.Note, error) {
-	n, err := note.Parse(src)
+// reparse parses a source an edit has spliced, which must parse as the engine's would.
+func reparse(src []byte) (*note.Note, error) { return parsed(note.Parse(src)) }
+
+// reparseIntermediate is reparse for a source between taking a work item out and putting it
+// back, whose *Next* may link the id it has yet to put back. The engine parses the result whole.
+func reparseIntermediate(src []byte) (*note.Note, error) {
+	return parsed(note.ParseIntermediate(src))
+}
+
+// parsed is a reparse's result.
+func parsed(n *note.Note, err error) (*note.Note, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the edit would leave a note that does not parse: %w", err)
 	}

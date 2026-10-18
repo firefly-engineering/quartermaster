@@ -86,7 +86,7 @@ var (
 )
 
 // moves are the named transitions of spec §4.3. Besides them, any open state may go to
-// WAITING or DROPPED; DONE and DROPPED are terminal.
+// WAITING or DROPPED, and any state to itself; DONE and DROPPED are otherwise terminal.
 var moves = map[State][]State{
 	Todo:       {InProgress, Done}, // start, direct close
 	InProgress: {InReview, Done},   // review, complete without review
@@ -97,10 +97,12 @@ var moves = map[State][]State{
 // Transition reports whether a work item may move from one state to another (spec §4.3),
 // as nil or an error wrapping ErrIllegalTransition or ErrReasonRequired. A move to WAITING or
 // DROPPED needs a summary naming what it waits on or why it was dropped, and IN_PROGRESS or
-// WAITING to DONE one naming the evidence, since no review stands in for it.
+// WAITING to DONE one naming the evidence, since no review stands in for it. A move to the
+// item's own state, in any state, rewrites only its summary, so it needs one.
 func Transition(from, to State, summary string) error {
-	needsReason := to == Waiting || to == Dropped || (from == InProgress || from == Waiting) && to == Done
-	terminal := from == Done || from == Dropped
+	restate := from == to
+	needsReason := restate || to == Waiting || to == Dropped || (from == InProgress || from == Waiting) && to == Done
+	terminal := !restate && (from == Done || from == Dropped)
 	if !from.valid() || !to.valid() || terminal || !needsReason && !slices.Contains(moves[from], to) {
 		return fmt.Errorf("%w: %s to %s", ErrIllegalTransition, from, to)
 	}

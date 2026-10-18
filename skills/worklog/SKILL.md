@@ -32,7 +32,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `day_read` | read a note: status, objectives, *Next*, items by project and bucket, states, parse errors |
 | `objective_set` | add, refine, progress or settle an objective |
 | `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status |
-| `item_transition` | move a work item to a new state with a summary, or tick a manual action; with `part`, file a done or dropped item into that Part |
+| `item_transition` | move a work item to a new state with a summary, or to its own state to rewrite only the summary, or tick a manual action; with `part`, file a done or dropped item into that Part |
 | `part_write` | create or rewrite one Part whole: number, kind, title, icon and body |
 | `action_upsert` | create, reword or move a manual action: a checkbox with an id |
 | `process_set` | add, reword or settle a *Process* entry |
@@ -95,6 +95,9 @@ in review, ✅ when it is done. A finished Part holds plain lines, not work item
 body may carry anchors, paragraphs ending `^<id>`, for *Next* to link.
 `item_transition` refuses a move the state model forbids
 ([spec §4.3](https://github.com/firefly-engineering/quartermaster/blob/main/docs/spec.md#43-transitions)).
+When the evidence changes but the state does not (a PR goes up, CI turns green, a `DONE`
+item's evidence needs correcting), move the item to its own state with the new summary. Never route through
+another state to change a summary; that writes a false step into the history.
 
 **Next** is rebuilt at every update with `next_set`, from the *What remains* buckets and
 the routes. Each action is a step the user takes now: a decision to settle, a batch to
@@ -125,9 +128,14 @@ result, then `status_set` and `next_set`.
 
 1. Call `day_open`. It creates the note and collects **every open item of the previous
    note** as a carry-over row: unmet objectives, open *What remains* items, unticked
-   manual actions, carry-over rows not kept, dropped or done, and *Process* entries. When today's note already exists,
-   call `day_read` instead. Review findings left as judgement calls in prose are not
-   collected: read the previous note and capture them.
+   manual actions, carry-over rows not kept, dropped or done, and *Process* entries. When
+   today's note was prepared ahead, `day_open` keeps it: it adds only the rows the note
+   does not carry yet (`added` counts them) and rewrites the status line as `open`, leaving
+   its objectives, *Next* and buckets as written. A prepared note that does not parse is
+   refused with its errors: fix them through the tools, then call `day_open` again. Open
+   once a day: a later call rewrites the status line as `open` again.
+   Review findings left as judgement calls in prose are not collected: read the previous
+   note and capture them.
 2. Check each row against its source of truth (`gh issue view`, `gh pr view`, herdr
    replies). An item closed overnight is reported, not triaged: drop it with the link.
 3. Ask for the day's **objectives**, and add each with `objective_set`. Each names its
@@ -283,6 +291,11 @@ Give a work item a prompt with `item_upsert`: `prompt.to` is the workspace label
 button and its prompt block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
 `next_set` repeats the button on the item's line in *Next*.
+
+Once a prompt has been sent and done its job, drop it: `item_upsert` with
+`"prompt": null` removes the prompt, its button and the button on its *Next* line, so
+no stale button re-sends it. Give the body again to keep a `#####` item; without one
+it becomes a one-line item. Leaving `prompt` out is refused, not a drop.
 
 The judgement stays here:
 

@@ -257,7 +257,9 @@ PATH="/etc/profiles/per-user/$USER/bin:$PATH" worklog send {{vault_path}} {{_dat
 An Obsidian started from the Dock does not have the nix profile on `PATH`; the prefix lets
 it find `worklog` and `herdr`.
 [`skills/worklog/buttons-setup.md`](skills/worklog/buttons-setup.md) has the steps and why
-the URI carries only a reference.
+the URI carries only a reference. If `data.json` changes outside Obsidian, read
+[After `data.json` changes outside Obsidian](skills/worklog/buttons-setup.md#after-datajson-changes-outside-obsidian)
+before you open the plugin's settings.
 
 ## Development
 
