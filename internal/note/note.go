@@ -201,6 +201,7 @@ type Item struct {
 	ID       string
 	Icon     Icon
 	Title    string // the source after the icon, its lines joined by one space, without the `^<id>` or a list item's dispatch marker
+	Bare     string // its title as item_upsert takes it: Title without its ref link, cost, route, sent status and summary
 	Heading  bool
 	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
 	Prompt   *Prompt
@@ -252,6 +253,7 @@ type CarryOverRow struct {
 	Span
 	Item, State, Verdict string
 	Ref                  string // the block id its item's `[[<note>#^<id>|…]]` link targets, "" without one
+	RefNote              string // the note that link names, "" without one
 }
 
 // Process is the `## Process` section and its list.

@@ -949,17 +949,17 @@ func (p *parser) table(t *extast.Table) {
 		table := p.blockSpan(t)
 		p.n.CarryOver.Table = &table
 		for _, r := range rows {
-			p.n.CarryOver.Rows = append(p.n.CarryOver.Rows, CarryOverRow{
-				Span: r.span, Item: r.cells[0], State: r.cells[1], Verdict: r.cells[2], Ref: p.blockRef(r.first),
-			})
+			row := CarryOverRow{Span: r.span, Item: r.cells[0], State: r.cells[1], Verdict: r.cells[2]}
+			row.RefNote, row.Ref = p.blockRef(r.first)
+			p.n.CarryOver.Rows = append(p.n.CarryOver.Rows, row)
 		}
 	}
 }
 
-// blockRef is the block id an item cell's wikilink `[[<note>#^<id>|…]]` targets, as a
-// carried row links its item; "" without a valid one. The wikilink is plain text to goldmark:
-// only the cell's own text counts, never a code span or a link's label.
-func (p *parser) blockRef(cell ast.Node) string {
+// blockRef is the note and block id an item cell's wikilink `[[<note>#^<id>|…]]` targets, as
+// a carried row links its item; "", "" without a valid one. The wikilink is plain text to
+// goldmark: only the cell's own text counts, never a code span or a link's label.
+func (p *parser) blockRef(cell ast.Node) (note, id string) {
 	var plain strings.Builder
 	for c := cell.FirstChild(); c != nil; c = c.NextSibling() {
 		if t, ok := c.(*ast.Text); ok {
@@ -969,17 +969,17 @@ func (p *parser) blockRef(cell ast.Node) string {
 	for rest := plain.String(); ; {
 		_, link, ok := strings.Cut(rest, "[[")
 		if !ok {
-			return ""
+			return "", ""
 		}
 		target, after, ok := strings.Cut(link, "]]")
 		if !ok {
-			return ""
+			return "", ""
 		}
 		if end := strings.IndexAny(target, `|\`); end >= 0 {
 			target = target[:end]
 		}
-		if _, id, ok := strings.Cut(target, "#^"); ok && ValidID(id) {
-			return id
+		if n, b, ok := strings.Cut(target, "#^"); ok && ValidID(b) {
+			return n, b
 		}
 		rest = after
 	}

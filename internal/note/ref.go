@@ -72,26 +72,34 @@ func appendByRef(out, items []*Item, r Ref) []*Item {
 	return out
 }
 
-// titleRef reads the ref of the link opening title, as the renderer writes it (refLink).
-func titleRef(title string) (Ref, bool) {
+// titleRef reads the ref of the link opening title, as the renderer writes it (refLink), and
+// rest, the title after the link and its `: `; rest is "" when no text follows the link, as
+// goldmark gives no other inline's start.
+func titleRef(title string) (ref Ref, rest string, ok bool) {
 	src := []byte(title)
 	doc := md.Parser().Parse(text.NewReader(src))
 	para := doc.FirstChild()
 	if para == nil {
-		return Ref{}, false
+		return Ref{}, "", false
 	}
 	l, ok := para.FirstChild().(*ast.Link)
 	if !ok {
-		return Ref{}, false
+		return Ref{}, "", false
 	}
 	u, err := url.Parse(string(l.Destination))
 	if err != nil || u.Scheme != "https" || u.Host != "github.com" {
-		return Ref{}, false
+		return Ref{}, "", false
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) != 4 || parts[2] != "issues" && parts[2] != "pull" {
-		return Ref{}, false
+		return Ref{}, "", false
 	}
 	f, err := ParseRef(parts[0]+"/"+parts[1]+"#"+parts[3], "")
-	return f, err == nil
+	if err != nil {
+		return Ref{}, "", false
+	}
+	if next, ok := l.NextSibling().(*ast.Text); ok {
+		rest = strings.TrimSpace(strings.TrimPrefix(title[next.Segment.Start:], ":"))
+	}
+	return f, rest, true
 }
