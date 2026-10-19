@@ -1,12 +1,12 @@
 package refresh
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/firefly-engineering/quartermaster/internal/command"
 )
 
 // Runner runs one external command, as gh, with args and returns its standard output.
@@ -15,18 +15,12 @@ type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
 // ExitError is a command that exited non-zero, with what it wrote to standard error.
 type ExitError struct {
-	Name   string // the command, as `gh`
-	Args   []string
-	Stderr []byte
-	Stdout []byte
+	Name string // the command, as `gh`
+	command.ExitError
 }
 
 func (e *ExitError) Error() string {
-	msg := strings.TrimSpace(string(e.Stderr))
-	if msg == "" {
-		msg = strings.TrimSpace(string(e.Stdout))
-	}
-	return e.Name + " " + strings.Join(e.Args[:min(2, len(e.Args))], " ") + ": " + msg
+	return e.Name + " " + strings.Join(e.Args[:min(2, len(e.Args))], " ") + ": " + e.Message()
 }
 
 // Command is a Runner for the executable at path, run directly with no shell and with env as
@@ -36,21 +30,13 @@ func Command(name, path string, env []string) Runner {
 		if path == "" {
 			return nil, fmt.Errorf("%s not found on PATH", name)
 		}
-		cmd := exec.CommandContext(ctx, path, args...)
-		cmd.Env = env
-		if cmd.Env == nil {
-			cmd.Env = []string{} // nil would hand the command this process's environment
-		}
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		err := cmd.Run()
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return nil, &ExitError{Name: name, Args: args, Stderr: stderr.Bytes(), Stdout: stdout.Bytes()}
+		out, err := command.Run(ctx, path, "", env, args)
+		if exit := (*command.ExitError)(nil); errors.As(err, &exit) {
+			return nil, &ExitError{Name: name, ExitError: *exit}
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		return stdout.Bytes(), nil
+		return out, nil
 	}
 }

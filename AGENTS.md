@@ -10,6 +10,7 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | Path | Holds |
 |---|---|
 | `cmd/worklog/` | the `worklog` binary's entry point |
+| `internal/command/` | runs an external executable directly, with injected env and dir, for herdr, gh, and dispatch's jj and git |
 | `internal/config/` | config loading: defaults, then `worklog.toml`, then flags (spec §3) |
 | `internal/dispatch/` | `task_dispatch`: session mode, and fresh mode in a jj workspace (spec §9.2, ADR 0004) |
 | `internal/engine/` | the mutation engine: lock, hash check, rename, jj commit; the only writer of a note (ADR 0006) |

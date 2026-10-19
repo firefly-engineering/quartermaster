@@ -9,14 +9,14 @@
 package herdr
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/firefly-engineering/quartermaster/internal/command"
 )
 
 // Runner runs herdr with args and returns its standard output. A run that exits non-zero
@@ -35,40 +35,25 @@ func New(path string, env []string) Client {
 		if path == "" {
 			return nil, errors.New("herdr not found on PATH")
 		}
-		cmd := exec.CommandContext(ctx, path, args...)
-		cmd.Env = env
-		if cmd.Env == nil {
-			cmd.Env = []string{} // nil would hand herdr this process's environment
-		}
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		err := cmd.Run()
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return nil, &ExitError{Args: args, Stderr: stderr.Bytes(), Stdout: stdout.Bytes()}
+		out, err := command.Run(ctx, path, "", env, args)
+		if exit := (*command.ExitError)(nil); errors.As(err, &exit) {
+			return nil, (*ExitError)(exit)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("herdr: %w", err)
 		}
-		return stdout.Bytes(), nil
+		return out, nil
 	}}
 }
 
-// ExitError is a herdr call that exited non-zero, with what it wrote to standard error.
-type ExitError struct {
-	Args           []string
-	Stderr, Stdout []byte
-}
+// ExitError is a herdr call that exited non-zero, with what it wrote to standard error:
+// command's exit error, named for herdr.
+type ExitError command.ExitError
 
 func (e *ExitError) Error() string { return "herdr " + verb(e.Args) + ": " + e.Message() }
 
 // Message is what herdr wrote to standard error, else to standard output, trimmed.
-func (e *ExitError) Message() string {
-	if msg := strings.TrimSpace(string(e.Stderr)); msg != "" {
-		return msg
-	}
-	return strings.TrimSpace(string(e.Stdout))
-}
+func (e *ExitError) Message() string { return (*command.ExitError)(e).Message() }
 
 // PaneNotFound is the error code of a call on a pane that does not exist.
 const PaneNotFound = "pane_not_found"
