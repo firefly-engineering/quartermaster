@@ -58,6 +58,8 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 - Parse markdown with goldmark and splice source ranges (ADR 0002). No regex parsers.
 - No package reads the environment or cwd. `main` resolves paths and passes them down.
 - Every note mutation goes through the lock, check, rename and commit sequence (ADR 0006).
+- Built-in defaults stay neutral: no developer's preference (a model, a harness, a path)
+  becomes a default. A personal choice lives in that developer's own config, stated in full.
 
 ## Agent skills
 
