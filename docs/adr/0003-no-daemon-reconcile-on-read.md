@@ -17,3 +17,7 @@ that moment.
 - A crashed worker is noticed at the next `refresh`, not when it dies.
 - If push-style notification is ever needed, it can be added as a separate process that
   calls the same engine. The tools do not change.
+- Amended by [ADR 0011](0011-a-work-items-tier-routes-it-to-a-harness.md): `refresh` also
+  cleans up a finished `fresh` dispatch outside the note. It closes the dispatch's herdr tab,
+  then removes its checkout, only for a `DONE` or `DROPPED` item, under the guards of spec
+  §9.2, and never forced. It still applies a transition only when the evidence proves it.
