@@ -19,7 +19,10 @@ work), the mode picks the checkout (where it happens).
 
 This builds on [ADR 0003](0003-no-daemon-reconcile-on-read.md) and
 [ADR 0005](0005-the-skill-is-the-single-source-of-workflow-rules.md). It amends
-[ADR 0004](0004-dispatch-isolates-in-a-jj-workspace.md) only in naming a batch's checkout.
+[ADR 0004](0004-dispatch-isolates-in-a-jj-workspace.md) only in naming a batch's checkout,
+and ADR 0003 only in letting `refresh` write outside the note: it closes a finished `fresh`
+dispatch's tab and removes its checkout, under guards. It still reconciles on read, with no
+daemon.
 
 ## Why
 
