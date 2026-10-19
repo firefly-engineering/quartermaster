@@ -436,11 +436,14 @@ A `herdr-prompt` block's `to=owner/repo` resolves here; a bare label is only loo
      `ws=` records a `fresh` dispatch, so a session's pane is never closed.
   8. Once `pane=` is dropped, the next `refresh` removes the workspace from the project's
      checkout, as step 2 made it, and drops `ws=`; the marker, then empty, goes. jj: snapshot
-     it (`jj -R <ws> status`), `jj workspace forget issue-<N>` in the checkout, then delete
-     its directory. git: `git worktree remove <ws>`, never `--force`, so git refuses a dirty
-     tree. A directory already gone just has `ws=` dropped, once git has run
-     `git worktree prune` or jj has forgotten the workspace. A removal that fails (a dirty
-     tree, a permission error, a failed forget) keeps `ws=`, and the next `refresh` retries.
+     it (`jj -R <ws> workspace update-stale`, then `jj -R <ws> status`), `jj workspace forget
+     issue-<N>` in the checkout, then delete its directory. A workspace whose commit was
+     rewritten from another one, as linearising a stack does, is stale: `update-stale` first
+     snapshots its edits into a commit of their own, a divergent copy of its change, so none is
+     lost. git: `git worktree remove <ws>`, never `--force`, so git refuses a dirty tree. A
+     directory already gone just has `ws=` dropped, once git has run `git worktree prune` or
+     jj has forgotten the workspace. A removal that fails (a dirty tree, a permission error, a
+     failed forget) keeps `ws=`, and the next `refresh` retries.
      The `issue-<N>` branch is never deleted, merged or not: committed work stays
      recoverable.
   9. A worker that can't finish moves its item to `WAITING` with its summary
@@ -491,7 +494,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 |---|---|---|
 | Worker crashes | Item stays 🔄 | `refresh` asks herdr for a `fresh` dispatch's recorded pane (a marker with `ws=`). Gone, or the agent exited, with no transition recorded: move to `WAITING` with "worker exited". Never to `DONE`. A session's pane, recorded by a send with no `ws=`, is the user's agent, not the item's worker: its leaving moves nothing ([§9.1]). |
 | Closing a finished `fresh` dispatch's tab fails | Tab stays, `pane=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. A tab already gone counts as closed ([§9.2]). |
-| Removing a finished `fresh` dispatch's checkout fails (dirty git tree, permission error, failed forget) | Checkout stays, `ws=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. It never forces a removal. A checkout already gone counts as removed ([§9.2]). |
+| Removing a finished `fresh` dispatch's checkout fails (dirty git tree, permission error, failed forget) | Checkout stays, `ws=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. It never forces a removal. A checkout already gone counts as removed, and a stale jj workspace is not a failure: its edits are snapshotted first ([§9.2]). |
 | `fresh` dispatch again while the previous worker runs | Two agents would write in one checkout | Refused, "its worker is still running", while the marker's agent is `working` or `blocked`; nothing is created and the item stays. Dispatch again once it is `idle` or `done` ([§9.2]). |
 | Worker can't finish | Item moves to `WAITING`, `question: …` or `stuck: …` | `question:` goes to the developer. `stuck:` from a non-claude tier is escalated once to `complex-implementation`, re-dispatched by a human; `stuck:` at a claude tier goes to the developer ([§9.2]). |
 | Process dies holding the lock | — | The OS frees an `flock` with the descriptor. |
