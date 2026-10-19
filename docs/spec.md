@@ -174,15 +174,15 @@ TODO ──start──► IN_PROGRESS ──review──► IN_REVIEW ──comp
   │                          └──complete (evidence required)──► DONE
   └──────────complete / drop (direct close)──────────────────► DONE / DROPPED
 
-every state, DONE and DROPPED included ──restate (summary required)──► itself
+every state, DONE and DROPPED included ──restate (summary required unless filed)──► itself
 ```
 
 Any state may go to `DROPPED` (with a reason) or `WAITING` (with what it waits on). A work
 item in any state may move to itself with a `summary`, which rewrites only the summary, in one commit:
 the evidence changed but the state did not (a PR went up, CI turned green, a `DONE` item's
 evidence was wrong). `WAITING` to `WAITING` re-states what the item waits on. A move to
-itself without a `summary` is refused, as is one that also files the item into a Part. A
-manual action has no summary, so a ticked one cannot move to itself ([§4.4]).
+itself without a `summary` is refused, unless it files a `DONE` or `DROPPED` item into a
+Part ([§6]). A manual action has no summary, so a ticked one cannot move to itself ([§4.4]).
 `IN_PROGRESS` may complete without a review (a manual operation, a push to `main`), but its
 summary must name the evidence: the commit, run or result. `WAITING` may complete on the
 same terms, when what it waited on is done: an issue closed or a PR merged, named in its
@@ -223,7 +223,7 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `day_read` | Return the note as structured data: status, objectives, Next, items by project and bucket, states. Read-only. | — |
 | `objective_set` | Add, refine (stamping `(refined HH:MM UTC: <reason>)`) or settle an objective. | `session_init_plan` |
 | `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status, ref, cost and route, and the parser reads them back ([§4.1]); nothing else parses the title. An update keeps a ref, cost or route left out or `""`, as it keeps the repo, bucket and sent status; an explicit `null` clears one, dropping the ref's link from the title or that part of the item. On create, and in `carryover_verdict`'s keep, a `null` is absent. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. An update rewrites the item whole, so it refuses to drop a prompt left out; an explicit `"prompt": null` drops the prompt and its ▶ button, in its bucket and on its *Next* line, and the item stays a `#####` item only when the update gives a body. When the item as written is `TODO`, its route starts with `/` and it has no prompt, it has no ▶ button to send that command: the result's `warnings` names the item and its route. The write goes through all the same. | — |
-| `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. A move to the item's own state, in any state, rewrites only its summary and needs one; it takes no `part`. | `task_update_state` |
+| `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. A move to the item's own state, in any state, rewrites only its summary and needs one. With `part: N`, a move to its own `DONE` or `DROPPED` state files the item into Part N as above, and keeps its last summary when none is given. | `task_update_state` |
 | `part_write` | Create or rewrite one Part whole: number, kind, title, icon (🔄, 🔍 or ✅, written, never derived) and body. The body may carry anchors. | — |
 | `action_upsert` | Create, reword or move a manual action, a checkbox with an id. Ticking it is `item_transition`; nothing unticks it ([§4.4]). | — |
 | `process_set` | Add, reword or settle a *Process* entry. | — |

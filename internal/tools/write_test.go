@@ -481,7 +481,7 @@ func TestItemTransitionSameState(t *testing.T) {
 }
 
 // TestItemTransitionDoneSummary corrects a DONE item's evidence: DONE is terminal, but a move
-// to itself rewrites the summary and leaves it DONE. It files nothing into a Part.
+// to itself rewrites the summary and leaves it DONE. Without part it files nothing into a Part.
 func TestItemTransitionDoneSummary(t *testing.T) {
 	t.Parallel()
 	d := fixtureDeps(t, settled(t), true)
@@ -502,9 +502,9 @@ func TestItemTransitionDoneSummary(t *testing.T) {
 	if c := d.commits(t); len(c)-before != 1 {
 		t.Errorf("commits %q, %d before", c, before)
 	}
-	_, err = d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: "DONE", Summary: "x", Part: 1})
-	if !errors.Is(err, note.ErrIllegalTransition) || !strings.Contains(err.Error(), "give no part") {
-		t.Errorf("same-state move with part: %v", err)
+	// Without a summary it has nothing to rewrite, and the item stays.
+	if _, err := d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: "DONE"}); !errors.Is(err, note.ErrReasonRequired) {
+		t.Errorf("same-state move without summary: %v", err)
 	}
 	d.checkNote(t, want)
 }
