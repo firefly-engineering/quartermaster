@@ -179,7 +179,7 @@ func (s Sender) deliver(ctx context.Context, p Prompt) (Sent, error) {
 	if p.Item != "" {
 		what = Item(p.Item)
 	}
-	if err := s.herdr().AgentPrompt(ctx, a.Pane, p.Text+"\n\n"+Closing(what, path)); err != nil {
+	if err := s.herdr().AgentPrompt(ctx, a.Pane, h.Prompt(p.Text)+"\n\n"+Closing(what, path)); err != nil {
 		return Sent{}, err
 	}
 	sent := Sent{ID: p.Item, To: p.To.Label, Pane: a.Pane, Path: path}

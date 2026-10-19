@@ -257,7 +257,7 @@ func TestFreshJJ(t *testing.T) {
 	if got := f.run(t, f.jjBin, "-R", f.jjRepo, "workspace", "root", "--name", "issue-11"); !same(t, strings.TrimSpace(got), ws) {
 		t.Errorf("workspace issue-11 at %s, want %s", got, ws)
 	}
-	prompt := "/implement https://github.com/o/r/issues/11\n\nKeep it small.\n\nWhen this is done, update the worklog with the " +
+	prompt := "/skill:implement https://github.com/o/r/issues/11\n\nKeep it small.\n\nWhen this is done, update the worklog with the " +
 		"worklog skill: work item ^d11 in " + f.notePath + ". Record the outcome and refresh Next."
 	if got, want := f.calls(t), freshCalls(ws, 11, prompt); got != want {
 		t.Errorf("herdr calls:\n%s\nwant:\n%s", got, want)
@@ -498,7 +498,7 @@ func TestSession(t *testing.T) {
 				t.Errorf("result %+v", res)
 			}
 			n := strings.TrimPrefix(c.ref, "o/r#")
-			want := "[workspace][list]\n[pane][list]\n[agent][list]\n[agent][prompt][w1:p1][/implement https://github.com/o/r/issues/" + n +
+			want := "[workspace][list]\n[pane][list]\n[agent][list]\n[agent][prompt][w1:p1][/skill:implement https://github.com/o/r/issues/" + n +
 				"\n\nWhen this is done, update the worklog with the worklog skill: " + c.what + " in " + f.notePath +
 				". Record the outcome and refresh Next.]\n"
 			if got := f.calls(t); got != want {

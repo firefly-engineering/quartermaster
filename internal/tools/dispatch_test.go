@@ -260,7 +260,7 @@ func TestTaskDispatchBatchSession(t *testing.T) {
 		!strings.Contains(got, `"committed": true`) {
 		t.Errorf("output:\n%s", got)
 	}
-	if calls := h.calls(t); !strings.Contains(calls, "[agent][prompt][w1:p2][/mass-implement acme/web #20 #21\n") {
+	if calls := h.calls(t); !strings.Contains(calls, "[agent][prompt][w1:p2][/skill:mass-implement acme/web #20 #21\n") {
 		t.Errorf("herdr calls:\n%s\nlack the batch's prompt to the glm agent", calls)
 	}
 	const id = "Tier: `basic-implementation`. ^wave-2"
@@ -307,7 +307,7 @@ func TestTaskDispatchBatchFresh(t *testing.T) {
 			for _, want := range []string{
 				"[tab][create][--workspace][w1][--cwd][" + ws + "][--label][web-wave-2][--no-focus]\n",
 				"[agent][start][web-wave-2][--kind][omp][--pane][w1:p9][--][--model][glm-5]\n",
-				"[agent][prompt][w1:p9][/mass-implement acme/web #20 #21\n\nKeep it small.\n\n",
+				"[agent][prompt][w1:p9][/skill:mass-implement acme/web #20 #21\n\nKeep it small.\n\n",
 			} {
 				if !strings.Contains(calls, want) {
 					t.Errorf("herdr calls:\n%s\nlack %s", calls, want)

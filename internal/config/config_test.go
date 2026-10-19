@@ -452,3 +452,24 @@ func TestProject(t *testing.T) {
 		t.Errorf("no root: %+v, want no path", got)
 	}
 }
+
+func TestHarnessPrompt(t *testing.T) {
+	t.Parallel()
+	omp, claude := Harness{Kind: "omp"}, Harness{Kind: "claude"}
+	for _, tc := range []struct {
+		h          Harness
+		text, want string
+	}{
+		{omp, "/mass-implement acme/web #20\n\nKeep it small.", "/skill:mass-implement acme/web #20\n\nKeep it small."},
+		{omp, "/implement", "/skill:implement"},
+		{omp, "/skill:implement acme/web#20", "/skill:implement acme/web#20"},
+		{omp, "/Users/me/notes.md says why", "/Users/me/notes.md says why"},
+		{omp, "Fix the form, then /implement it", "Fix the form, then /implement it"},
+		{omp, "/ alone", "/ alone"},
+		{claude, "/mass-implement acme/web #20", "/mass-implement acme/web #20"},
+	} {
+		if got := tc.h.Prompt(tc.text); got != tc.want {
+			t.Errorf("%s %q: %q, want %q", tc.h.Kind, tc.text, got, tc.want)
+		}
+	}
+}

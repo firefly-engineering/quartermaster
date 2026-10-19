@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 
@@ -48,6 +49,24 @@ type Dispatch struct {
 type Harness struct {
 	Kind string   `toml:"kind"`
 	Args []string `toml:"args"`
+}
+
+// Prompt is text as h's harness runs it. The note writes a route's command as `/<name>`,
+// which claude runs as a skill; omp runs a skill only as `/skill:<name>`, so for kind omp a
+// leading `/<name>` becomes that. Text led by a path or an already-qualified command is kept.
+func (h Harness) Prompt(text string) string {
+	rest, ok := strings.CutPrefix(text, "/")
+	if h.Kind != "omp" || !ok {
+		return text
+	}
+	name := rest
+	if end := strings.IndexFunc(rest, unicode.IsSpace); end >= 0 {
+		name = rest[:end]
+	}
+	if name == "" || strings.ContainsAny(name, "/:") {
+		return text
+	}
+	return "/skill:" + rest
 }
 
 // DefaultTier is the [tiers] key every tier it does not list, and every item with no tier,

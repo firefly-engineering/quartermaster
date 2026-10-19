@@ -50,10 +50,11 @@ func TestPromptSend(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		name, tier, pane string
+		command          string // the prompt's command, as the pane's harness runs it
 	}{
-		{"no tier goes to default", "", "w1:p6"},
-		{"a tier [tiers] lists", "basic-implementation", "w1:p2"},
-		{"a tier [tiers] does not list", "design", "w1:p6"},
+		{"no tier goes to default", "", "w1:p6", "/grill-with-docs"},
+		{"a tier [tiers] lists", "basic-implementation", "w1:p2", "/skill:grill-with-docs"},
+		{"a tier [tiers] does not list", "design", "w1:p6", "/grill-with-docs"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -75,7 +76,7 @@ func TestPromptSend(t *testing.T) {
 					t.Errorf("output lacks %s:\n%s", want, out.String())
 				}
 			}
-			if want := "[workspace][list]\n[agent][list]\n[agent][prompt][" + c.pane + "][/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
+			if want := "[workspace][list]\n[agent][list]\n[agent][prompt][" + c.pane + "][" + c.command + " https://github.com/acme/web/issues/14\n\n" +
 				send.Closing(send.Item("session-store"), path) + "]\n"; h.calls(t) != want {
 				t.Errorf("herdr got\n%s\nwant\n%s", h.calls(t), want)
 			}
@@ -126,14 +127,15 @@ func TestPromptSendSpawns(t *testing.T) {
 		agents     []herdr.Agent
 		start      string // agent start's arguments after its name
 		agent      string // the name it starts
+		command    string // the prompt's command, as the harness runs it
 	}{
-		{"no agent", "", nil, "[--kind][claude][--pane][w1:p9]", "web-claude"},
-		{"only busy agents", "", busy, "[--kind][claude][--pane][w1:p9]", "web-claude"},
+		{"no agent", "", nil, "[--kind][claude][--pane][w1:p9]", "web-claude", "/grill-with-docs"},
+		{"only busy agents", "", busy, "[--kind][claude][--pane][w1:p9]", "web-claude", "/grill-with-docs"},
 		{"only busy agents of a harness with args", "basic-implementation",
 			[]herdr.Agent{herdrAgent("omp", "web-glm", "working", "/src/web", 1), herdrAgent("claude", "", "idle", "/src/web", 2)},
-			"[--kind][omp][--pane][w1:p9][--][--model][glm-5]", "web-glm-2"},
+			"[--kind][omp][--pane][w1:p9][--][--model][glm-5]", "web-glm-2", "/skill:grill-with-docs"},
 		{"a name collision", "", []herdr.Agent{herdrAgent("claude", "web-claude", "working", "/src/web", 1), elsewhere},
-			"[--kind][claude][--pane][w1:p9]", "web-claude-3"},
+			"[--kind][claude][--pane][w1:p9]", "web-claude-3", "/grill-with-docs"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -154,7 +156,7 @@ func TestPromptSendSpawns(t *testing.T) {
 			want := "[workspace][list]\n[agent][list]\n" +
 				"[tab][create][--workspace][w1][--cwd][/src/web][--label][" + c.agent + "][--no-focus]\n" +
 				"[agent][start][" + c.agent + "]" + c.start + "\n" +
-				"[agent][prompt][w1:p9][/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
+				"[agent][prompt][w1:p9][" + c.command + " https://github.com/acme/web/issues/14\n\n" +
 				send.Closing(send.Item("session-store"), path) + "]\n"
 			if got := h.calls(t); got != want {
 				t.Errorf("herdr got\n%s\nwant\n%s", got, want)
