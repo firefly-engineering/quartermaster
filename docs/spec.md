@@ -312,8 +312,18 @@ workspace by its label (§9.1).
      `<workspace_root>/<owner>/<repo>/issue-<N>` from the project's checkout:
      `jj workspace add` when the checkout has `.jj`, else `git worktree add -b issue-<N>`
      ([ADR 0004]). An existing workspace for the ref is reused, never clobbered.
-  3. `herdr tab create` in the project's herdr workspace, cwd at the new workspace.
-  4. `herdr agent start issue-<N> --kind <harness.kind> --pane <pane> -- <args>`.
+  3. `herdr tab create` in the project's herdr workspace, cwd at the new workspace, labelled
+     with the agent's name (step 4).
+  4. `herdr agent start <name> --kind <harness.kind> --pane <pane> -- <args>`. herdr agent
+     names are unique among all live agents and match `[a-z][a-z0-9_-]{0,31}`, so the name is
+     the first of `<repo>-<N>`, `<repo>-<N>-2`, `<repo>-<N>-3`, … that no live agent has in
+     `herdr agent list` (its `name` field), read with step 2's read-only checks. `<repo>` is
+     the repo part of `owner/repo`; the owner stays out. The name is lowercased, every
+     character outside `[a-z0-9_-]` becomes `-`, and it is prefixed `a` unless it starts with a
+     letter (`1password` → `a1password-5`). Only the repo part is cut to fit 32 characters;
+     `-<N>` and `-<k>` never are. An agent taking the name before `agent start` makes herdr
+     refuse it, a herdr failure like any other. The workspace's directory, jj workspace name
+     and git branch stay `issue-<N>`.
   5. `herdr agent prompt` with the issue and the instruction.
   6. Record the pane id and workspace path on the work item (an HTML comment
      `<!-- qm pane=<id> ws=<path> -->` on the item's line), and transition it to

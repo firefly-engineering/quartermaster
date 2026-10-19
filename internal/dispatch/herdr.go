@@ -45,6 +45,28 @@ func (d Dispatcher) agent(ctx context.Context, id, ws, name, prompt string) (pan
 	return pane, nil
 }
 
+// agentNames are the names of herdr's live agents. `herdr agent list` answers
+// .result.agents[].name, absent for an agent not started or renamed through herdr.
+func (d Dispatcher) agentNames(ctx context.Context) ([]string, error) {
+	var agents struct {
+		Result struct {
+			Agents []struct {
+				Name string `json:"name"`
+			} `json:"agents"`
+		} `json:"result"`
+	}
+	if err := d.herdrJSON(ctx, &agents, "agent", "list"); err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, a := range agents.Result.Agents {
+		if a.Name != "" {
+			names = append(names, a.Name)
+		}
+	}
+	return names, nil
+}
+
 func (d Dispatcher) herdrJSON(ctx context.Context, v any, args ...string) error {
 	out, err := d.herdr(ctx, args...)
 	if err != nil {
