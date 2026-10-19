@@ -25,7 +25,7 @@ func (k *Kept) Error() string {
 
 // Running reports whether the kept agent is working or blocked: running a turn, or waiting on
 // a prompt.
-func (k *Kept) Running() bool { return k.Status == "working" || k.Status == "blocked" }
+func (k *Kept) Running() bool { return k.Status == herdr.Working || k.Status == herdr.Blocked }
 
 // CloseTab closes the herdr tab of pane, where a fresh dispatch in workspace ws started its
 // agent, once the agent is idle or done and still bears the name the dispatch gave it, or once
@@ -56,7 +56,7 @@ func CloseTab(ctx context.Context, h herdr.Client, agents func(context.Context) 
 		if !IsFreshAgent(name, ws) {
 			return "", &Kept{Pane: pane, Name: name}
 		}
-		if p.Status != "idle" && p.Status != "done" {
+		if p.Status != herdr.Idle && p.Status != herdr.Done {
 			return "", &Kept{Pane: pane, Name: name, Status: p.Status}
 		}
 	}

@@ -4,10 +4,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-)
 
-// maxName is the longest name herdr gives an agent: it takes [a-z][a-z0-9_-]{0,31}.
-const maxName = 32
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
+)
 
 // AgentName is the herdr agent name for repo, the repo part of owner/repo, with suffix: the
 // first of `<repo>-<suffix>`, then with `-2`, `-3`, … appended, that is not in taken, the
@@ -41,20 +40,21 @@ func IsAgentName(name, repo, suffix string) bool {
 // agentName is AgentName's k-th candidate: `<repo>-<suffix>`, then with `-<k>` for k > 1.
 func agentName(repo, suffix string, k int) string {
 	repo = sanitize(repo)
-	if repo == "" || repo[0] < 'a' || repo[0] > 'z' {
+	if repo == "" || !herdr.NameStart(rune(repo[0])) {
 		repo = "a" + repo
 	}
 	t := "-" + sanitize(suffix)
 	if k > 1 {
 		t += "-" + strconv.Itoa(k)
 	}
-	return repo[:max(1, min(len(repo), maxName-len(t)))] + t
+	return repo[:max(1, min(len(repo), herdr.MaxName-len(t)))] + t
 }
 
-// sanitize lowercases s and maps every character outside [a-z0-9_-] to `-`.
+// sanitize lowercases s and maps every character herdr does not take in a name (herdr.NameChar)
+// to `-`.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+		if herdr.NameChar(r) {
 			return r
 		}
 		return '-'

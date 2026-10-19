@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/firefly-engineering/quartermaster/internal/dispatch"
 )
 
 // removeCheckout removes ws, `<workspace_root>/<owner>/<repo>/<name>`, a finished fresh
@@ -14,7 +16,8 @@ import (
 // with jj when the project has .jj, else with git. It returns "" once ws is removed, or found
 // gone, else why it stays, to be retried by the next refresh.
 func (g *gatherer) removeCheckout(ctx context.Context, ws string) (reason string) {
-	repo := filepath.Base(filepath.Dir(filepath.Dir(ws))) + "/" + filepath.Base(filepath.Dir(ws))
+	owner, name, _ := dispatch.SplitCheckout(ws)
+	repo := owner + "/" + name
 	project := g.Projects.Project(repo).Path
 	if project == "" {
 		return fmt.Sprintf("removing checkout %s: neither projects.root nor projects.%q.path is set; retried next refresh", ws, repo)
@@ -32,7 +35,7 @@ func (g *gatherer) removeCheckout(ctx context.Context, ws string) (reason string
 }
 
 // jjRemove snapshots ws, stale or not, so its last edits are in a commit, forgets it in
-// project, and deletes it. The workspace's name is ws's base, as dispatch names it. Forgetting
+// project, and deletes it. The workspace's name is ws's, as dispatch names it. Forgetting
 // a workspace already forgotten is not an error, so a deletion that failed is retried whole.
 func (g *gatherer) jjRemove(ctx context.Context, project, ws string) error {
 	there, err := exists(ws)
@@ -51,7 +54,8 @@ func (g *gatherer) jjRemove(ctx context.Context, project, ws string) error {
 		}
 	}
 	// The forget needs no snapshot of the project's own working copy.
-	if _, err := g.JJ(ctx, "-R", project, "--ignore-working-copy", "workspace", "forget", filepath.Base(ws)); err != nil {
+	_, _, name := dispatch.SplitCheckout(ws)
+	if _, err := g.JJ(ctx, "-R", project, "--ignore-working-copy", "workspace", "forget", name); err != nil {
 		return err
 	}
 	return os.RemoveAll(ws)

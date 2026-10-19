@@ -256,8 +256,7 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 		return Result{}, errors.New("herdr not found on PATH")
 	}
 	wsName := j.name()
-	owner, repo, _ := strings.Cut(j.repo, "/")
-	ws := filepath.Join(d.Config.Dispatch.WorkspaceRoot, owner, repo, wsName)
+	ws := checkoutPath(d.Config.Dispatch.WorkspaceRoot, j.repo, wsName)
 	// The marker must be writable before anything is made that it would record.
 	if err := (note.Dispatch{Pane: "-", Workspace: ws}).Check(); err != nil {
 		return Result{}, fmt.Errorf("dispatch.workspace_root: %w", err)
@@ -283,6 +282,7 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 	if err != nil {
 		return Result{}, err
 	}
+	_, repo, _ := strings.Cut(j.repo, "/")
 	agentName := send.AgentName(repo, j.suffix(), taken)
 	if res.Reused, err = d.workspace(ctx, checkout, ws, wsName); err != nil {
 		return Result{}, err

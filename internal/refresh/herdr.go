@@ -73,7 +73,7 @@ func (g *gatherer) reply(ctx context.Context, id, pane, title string) (links []s
 		return nil, "herdr: no agent in " + who
 	}
 	a := agents[i]
-	if a.Status != "idle" && a.Status != "done" {
+	if a.Status != herdr.Idle && a.Status != herdr.Done {
 		return nil, fmt.Sprintf("the agent in %s is %s", who, a.Status)
 	}
 	text, err := g.Herdr.AgentRead(ctx, a.Pane, readLines)

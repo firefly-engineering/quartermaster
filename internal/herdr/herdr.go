@@ -61,6 +61,25 @@ const (
 	TabNotFound  = "tab_not_found"
 )
 
+// The statuses herdr reports an agent in: idle or done, its turn over; working, running a
+// turn; blocked, waiting on an approval or a question.
+const (
+	Idle    = "idle"
+	Done    = "done"
+	Working = "working"
+	Blocked = "blocked"
+)
+
+// MaxName is the longest agent name herdr takes. A name is [a-z][a-z0-9_-]{0,31}: a NameStart,
+// then NameChars.
+const MaxName = 32
+
+// NameStart reports whether r may start a herdr agent name: [a-z].
+func NameStart(r rune) bool { return r >= 'a' && r <= 'z' }
+
+// NameChar reports whether r may be in a herdr agent name: [a-z0-9_-].
+func NameChar(r rune) bool { return NameStart(r) || r >= '0' && r <= '9' || r == '_' || r == '-' }
+
 // Code is herdr's error code in err, as PaneNotFound; "" when err is not one of herdr's.
 func Code(err error) string {
 	var exit *ExitError
