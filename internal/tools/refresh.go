@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 	"github.com/firefly-engineering/quartermaster/internal/refresh"
 )
@@ -32,7 +33,7 @@ type RefreshOutput struct {
 // that proves nothing still settles the note.
 func (d Deps) refresh(ctx context.Context, in RefreshInput) (RefreshOutput, error) {
 	return d.refreshWith(ctx, in, refresh.Reconciler{
-		GH: refresh.Command("gh", d.GH, d.Env), Herdr: refresh.Command("herdr", d.Herdr, d.Env),
+		GH: refresh.Command("gh", d.GH, d.Env), Herdr: herdr.New(d.Herdr, d.Env),
 	})
 }
 

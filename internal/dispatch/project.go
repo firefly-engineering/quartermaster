@@ -17,22 +17,15 @@ import (
 //  1. the workspace labelled as the project's override says;
 //  2. the one workspace with a pane whose cwd is the checkout or under it;
 //  3. the workspace labelled with the repo's name.
-//
-// `herdr workspace list` answers .result.workspaces[].{workspace_id,label}, and
-// `herdr pane list` .result.panes[].{workspace_id,cwd}.
 func (d Dispatcher) herdrWorkspace(ctx context.Context, repo string) (send.Workspace, error) {
 	p := d.Config.Projects.Project(repo)
-	var spaces struct {
-		Result struct {
-			Workspaces []send.Workspace `json:"workspaces"`
-		} `json:"result"`
-	}
-	if err := d.herdrJSON(ctx, &spaces, "workspace", "list"); err != nil {
+	spaces, err := d.herdr().WorkspaceList(ctx)
+	if err != nil {
 		return send.Workspace{}, err
 	}
 	labelled := func(label string) (send.Workspace, int) {
 		var ids []string
-		for _, w := range spaces.Result.Workspaces {
+		for _, w := range spaces {
 			if w.Label == label && !slices.Contains(ids, w.ID) {
 				ids = append(ids, w.ID)
 			}
@@ -52,25 +45,18 @@ func (d Dispatcher) herdrWorkspace(ctx context.Context, repo string) (send.Works
 	}
 
 	if p.Path != "" {
-		var panes struct {
-			Result struct {
-				Panes []struct {
-					Workspace string `json:"workspace_id"`
-					Cwd       string `json:"cwd"`
-				} `json:"panes"`
-			} `json:"result"`
-		}
-		if err := d.herdrJSON(ctx, &panes, "pane", "list"); err != nil {
+		panes, err := d.herdr().PaneList(ctx)
+		if err != nil {
 			return send.Workspace{}, err
 		}
 		var at []send.Workspace
-		for _, pn := range panes.Result.Panes {
+		for _, pn := range panes {
 			if !within(p.Path, pn.Cwd) || slices.ContainsFunc(at, func(w send.Workspace) bool { return w.ID == pn.Workspace }) {
 				continue
 			}
 			ws := send.Workspace{ID: pn.Workspace, Label: pn.Workspace}
-			if i := slices.IndexFunc(spaces.Result.Workspaces, func(w send.Workspace) bool { return w.ID == pn.Workspace }); i >= 0 {
-				ws.Label = spaces.Result.Workspaces[i].Label
+			if i := slices.IndexFunc(spaces, func(w send.Workspace) bool { return w.ID == pn.Workspace }); i >= 0 {
+				ws.Label = spaces[i].Label
 			}
 			at = append(at, ws)
 		}

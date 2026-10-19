@@ -9,14 +9,13 @@ import (
 	"strings"
 )
 
-// Runner runs one external command, gh or herdr, with args and returns its standard output.
+// Runner runs one external command, as gh, with args and returns its standard output.
 // A run that exits non-zero returns an *ExitError. Tests stand in a fake for it.
 type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
-// ExitError is a command that exited non-zero, with what it wrote to standard error: herdr
-// writes its errors there as JSON.
+// ExitError is a command that exited non-zero, with what it wrote to standard error.
 type ExitError struct {
-	Name   string // the command, as `herdr`
+	Name   string // the command, as `gh`
 	Args   []string
 	Stderr []byte
 	Stdout []byte

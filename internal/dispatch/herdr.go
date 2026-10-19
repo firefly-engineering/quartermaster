@@ -2,8 +2,11 @@ package dispatch
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 )
 
 // herdr 0.9.5 has no call that creates a pane running a command, so an agent starts in three
@@ -12,54 +15,33 @@ import (
 //	herdr tab create --workspace <id> --cwd <path> --label <text> --no-focus
 //	herdr agent start <name> --kind <kind> --pane <id> [-- <agent-args>...]
 //	herdr agent prompt <pane> <text>
-//
-// `tab create` answers JSON, the new tab's pane in .result.root_pane.pane_id.
 
 // agent starts the configured worker, named name, in a new tab of herdr workspace id, at ws,
 // and prompts it. pane is the tab's pane once created, even when a later step fails.
 func (d Dispatcher) agent(ctx context.Context, id, ws, name, prompt string) (pane string, err error) {
-	var tab struct {
-		Result struct {
-			RootPane struct {
-				ID string `json:"pane_id"`
-			} `json:"root_pane"`
-		} `json:"result"`
-	}
-	if err := d.herdrJSON(ctx, &tab, "tab", "create", "--workspace", id, "--cwd", ws, "--label", name, "--no-focus"); err != nil {
+	h := d.herdr()
+	if pane, err = h.TabCreate(ctx, id, ws, name); err != nil {
 		return "", err
 	}
-	if pane = tab.Result.RootPane.ID; pane == "" {
-		return "", fmt.Errorf("herdr tab create: no root pane in its answer")
-	}
 	w := d.Config.Harness.Worker
-	start := []string{"agent", "start", name, "--kind", w.Kind, "--pane", pane}
-	if len(w.Args) > 0 {
-		start = append(append(start, "--"), w.Args...)
-	}
-	if _, err := d.herdr(ctx, start...); err != nil {
+	if err := h.AgentStart(ctx, name, w.Kind, pane, w.Args); err != nil {
 		return pane, err
 	}
-	if _, err := d.herdr(ctx, "agent", "prompt", pane, prompt); err != nil {
+	if err := h.AgentPrompt(ctx, pane, prompt); err != nil {
 		return pane, err
 	}
 	return pane, nil
 }
 
-// agentNames are the names of herdr's live agents. `herdr agent list` answers
-// .result.agents[].name, absent for an agent not started or renamed through herdr.
+// agentNames are the names of herdr's live agents. An agent not started or renamed through
+// herdr has none.
 func (d Dispatcher) agentNames(ctx context.Context) ([]string, error) {
-	var agents struct {
-		Result struct {
-			Agents []struct {
-				Name string `json:"name"`
-			} `json:"agents"`
-		} `json:"result"`
-	}
-	if err := d.herdrJSON(ctx, &agents, "agent", "list"); err != nil {
+	agents, err := d.herdr().AgentList(ctx)
+	if err != nil {
 		return nil, err
 	}
 	var names []string
-	for _, a := range agents.Result.Agents {
+	for _, a := range agents {
 		if a.Name != "" {
 			names = append(names, a.Name)
 		}
@@ -67,17 +49,15 @@ func (d Dispatcher) agentNames(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-func (d Dispatcher) herdrJSON(ctx context.Context, v any, args ...string) error {
-	out, err := d.herdr(ctx, args...)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal([]byte(out), v); err != nil {
-		return fmt.Errorf("herdr %s %s: %w", args[0], args[1], err)
-	}
-	return nil
-}
-
-func (d Dispatcher) herdr(ctx context.Context, args ...string) (string, error) {
-	return d.run(ctx, "herdr", d.Herdr, "", args...)
+// herdr is the client dispatch calls herdr through. A failed call names up to four of its
+// arguments, as every command dispatch runs does (run).
+func (d Dispatcher) herdr() herdr.Client {
+	run := herdr.New(d.Herdr, d.Env).Run
+	return herdr.Client{Run: func(ctx context.Context, args ...string) ([]byte, error) {
+		out, err := run(ctx, args...)
+		if exit := (*herdr.ExitError)(nil); errors.As(err, &exit) {
+			return nil, fmt.Errorf("herdr %s: %s", strings.Join(args[:min(len(args), 4)], " "), exit.Message())
+		}
+		return out, err
+	}}
 }
