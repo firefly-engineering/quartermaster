@@ -362,6 +362,31 @@ func TestRefreshRemovesFinishedCheckout(t *testing.T) {
 			t.Errorf("work.txt in %q", got)
 		}
 	})
+	t.Run("jj, stale after a rebase", func(t *testing.T) {
+		t.Parallel()
+		d, project, ws := checkoutDeps(t, "jj")
+		if err := os.WriteFile(filepath.Join(ws, "work.txt"), []byte("work\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		d.jj(t, "-R", ws, "status")
+		// Rewriting its commit from another workspace, as linearising a stack does, leaves it stale.
+		if err := os.WriteFile(filepath.Join(project, "other.txt"), []byte("other\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		d.jj(t, "-R", project, "commit", "-m", "other")
+		d.jj(t, "-R", project, "rebase", "-r", filepath.Base(ws)+"@", "-d", "@-")
+		// Written after its last snapshot, so only the stale working copy holds it.
+		if err := os.WriteFile(filepath.Join(ws, "late.txt"), []byte("late\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		applied, skip := d.refreshCheckout(t)
+		d.checkRemoved(t, applied, skip, ws)
+		for _, f := range []string{"work.txt", "late.txt"} {
+			if got := d.jj(t, "-R", project, "log", "--no-graph", "-r", `files(root:"`+f+`")`, "-T", `"found\n"`); !strings.Contains(got, "found") {
+				t.Errorf("%s in no commit", f)
+			}
+		}
+	})
 	t.Run("jj, its directory gone", func(t *testing.T) {
 		t.Parallel()
 		d, project, ws := checkoutDeps(t, "jj")

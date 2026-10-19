@@ -31,15 +31,21 @@ func (g *gatherer) removeCheckout(ctx context.Context, ws string) (reason string
 	return ""
 }
 
-// jjRemove snapshots ws, so its last edits are in a commit, forgets it in project, and deletes
-// it. The workspace's name is ws's base, as dispatch names it. Forgetting a workspace already
-// forgotten is not an error, so a deletion that failed is retried whole.
+// jjRemove snapshots ws, stale or not, so its last edits are in a commit, forgets it in
+// project, and deletes it. The workspace's name is ws's base, as dispatch names it. Forgetting
+// a workspace already forgotten is not an error, so a deletion that failed is retried whole.
 func (g *gatherer) jjRemove(ctx context.Context, project, ws string) error {
 	there, err := exists(ws)
 	if err != nil {
 		return err
 	}
 	if there {
+		// A workspace whose commit was rewritten elsewhere, as linearising a stack does, is
+		// stale: update-stale first snapshots its edits into a commit of their own. On one not
+		// stale it does nothing.
+		if _, err := g.JJ(ctx, "-R", ws, "workspace", "update-stale"); err != nil {
+			return err
+		}
 		if _, err := g.JJ(ctx, "-R", ws, "status"); err != nil {
 			return err
 		}
