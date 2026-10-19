@@ -1,6 +1,6 @@
 {
   "name": "quartermaster",
-  "description": "The quartermaster skills: worklog keeps the day's Obsidian worklog note and dispatches its work to herdr sessions; worktree-build-cache checks that fresh worktrees and jj workspaces reuse the shared build and test caches.",
+  "description": "The quartermaster skills: worklog keeps the day's Obsidian worklog note and dispatches its work to herdr sessions; worktree-build-cache checks that fresh worktrees and jj workspaces reuse the shared build and test caches; mass-implement implements a DAG of ready-for-agent tickets and ships a clean PR stack.",
   "author": { "name": "Firefly Engineering" },
-  "skills": ["./skills/worklog", "./skills/worktree-build-cache"]
+  "skills": ["./skills/worklog", "./skills/worktree-build-cache", "./skills/mass-implement"]
 }

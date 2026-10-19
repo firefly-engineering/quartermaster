@@ -26,8 +26,8 @@ Built today:
   ([spec §9.1](docs/spec.md#91-worklog-send--buttons)).
 - The configuration ([spec §3](docs/spec.md#3-configuration)): `serve` and `note` read
   `worklog.toml` and take `--config` and `--vault`.
-- The `skills` flake package: the `worklog` and `worktree-build-cache` skills as a Claude
-  plugin directory.
+- The `skills` flake package: the `worklog`, `worktree-build-cache` and `mass-implement` skills
+  as a Claude plugin directory.
 - The home-manager module.
 
 ## Usage
@@ -164,8 +164,8 @@ under `projects."owner/repo"` overrides the `path`, the `workspace` label, or bo
 
 ### The skills
 
-The `skills` package holds `.claude-plugin/plugin.json`, `skills/worklog` and
-`skills/worktree-build-cache`, a skill-only suite member
+The `skills` package holds `.claude-plugin/plugin.json`, `skills/worklog`, and
+`skills/worktree-build-cache` and `skills/mass-implement`, skill-only suite members
 ([ADR 0010](docs/adr/0010-a-suite-member-may-be-skill-only.md)). Home-manager's
 `programs.claude-code.plugins` installs it, passing it to `claude` as `--plugin-dir`:
 
