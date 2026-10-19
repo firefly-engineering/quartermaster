@@ -507,19 +507,23 @@ func TestSession(t *testing.T) {
 			t.Errorf("note:\n%s", f.noteSrc(t))
 		}
 	})
-	t.Run("no available agent", func(t *testing.T) {
+	t.Run("no available agent spawns one", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
 		write(t, filepath.Join(f.bin, "agents"), `{"result":{"agents":[`+
 			`{"agent":"claude","workspace_id":"w1","pane_id":"w1:p1","cwd":"`+f.jjRepo+`","agent_status":"idle"},`+
-			`{"agent":"omp","workspace_id":"w1","pane_id":"w1:p2","cwd":"`+f.jjRepo+`","agent_status":"working"},`+
+			`{"agent":"omp","name":"r-glm","workspace_id":"w1","pane_id":"w1:p2","cwd":"`+f.jjRepo+`","agent_status":"working"},`+
 			`{"agent":"omp","workspace_id":"w1","pane_id":"w1:p3","cwd":"`+f.root+`/o/r/issue-9","agent_status":"idle"}]}}`)
-		_, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Session, "")
-		if err == nil || !strings.Contains(err.Error(), "no available agent of harness glm") {
-			t.Errorf("err %v", err)
+		res, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Session, "")
+		if err != nil || res.Pane != "w1:p7" {
+			t.Fatalf("%+v, %v", res, err)
 		}
-		if strings.Contains(f.calls(t), "[agent][prompt]") || f.noteSrc(t) != testNote {
-			t.Errorf("sent or recorded:\n%s", f.calls(t))
+		if want := "[tab][create][--workspace][w1][--cwd][" + f.jjRepo + "][--label][r-glm-2][--no-focus]\n" +
+			"[agent][start][r-glm-2][--kind][omp][--pane][w1:p7][--][--model][glm-5]\n[agent][prompt][w1:p7]["; !strings.Contains(f.calls(t), want) {
+			t.Errorf("herdr calls:\n%s\nwant:\n%s", f.calls(t), want)
+		}
+		if src := f.noteSrc(t); !strings.Contains(src, "<!-- qm pane=w1:p7 --> ^d11\n") {
+			t.Errorf("note:\n%s", src)
 		}
 	})
 }

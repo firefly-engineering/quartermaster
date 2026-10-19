@@ -220,7 +220,7 @@ func (d Dispatcher) session(ctx context.Context, date string, j job, instruction
 			return Result{}, err
 		}
 		p := send.Prompt{
-			To: to, Checkout: d.Config.Projects.Project(j.repo).Path,
+			To: to, Repo: j.repo, Checkout: d.Config.Projects.Project(j.repo).Path,
 			Text: implement(*ref, instruction), Date: date, Ref: ref.String(),
 		}
 		if it != nil {
@@ -285,7 +285,7 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 	if err != nil {
 		return Result{}, err
 	}
-	agentName := AgentName(repo, j.suffix(), taken)
+	agentName := send.AgentName(repo, j.suffix(), taken)
 	if res.Reused, err = d.workspace(ctx, checkout, ws, wsName); err != nil {
 		return Result{}, err
 	}

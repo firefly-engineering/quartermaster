@@ -326,12 +326,20 @@ exists under the vault, and the vault is the configured one (`vault.repo` and `v
    by whole path components (§9.2). A `working` agent would queue the prompt behind its
    turn, and a `blocked` one shows an approval prompt that typed text could answer, so
    neither is sent to, nor is an `unknown` one. A `fresh` dispatch's agent works in its own
-   checkout, so it is never picked. An agent started by hand counts when it matches. No
-   available agent is an error naming the harness.
-4. Run `herdr agent prompt <pane> <text>` with no shell in between, the text ending with the
+   checkout, so it is never picked. An agent started by hand counts when it matches.
+4. With no available agent, none at all or only busy ones of the kind, spawn one of the
+   harness: `herdr tab create` in the workspace with its cwd at the checkout, labelled with
+   the agent's name and `--no-focus`, then `herdr agent start <name> --kind <kind> --pane
+   <pane> -- <args>`. Only the harness the prompt needs starts. The name is the first of
+   `<repo>-<harness>`, `<repo>-<harness>-2`, `<repo>-<harness>-3`, … that no live agent has,
+   in any workspace, sanitised and fitted to 32 characters as a `fresh` agent's is (§9.2
+   step 4). The tool never closes a session spawn: it is the session from then on, and keeps
+   its warm context. A spawn that fails is an error; a tab created before the agent fails to
+   start is left in place and named.
+5. Run `herdr agent prompt <pane> <text>` with no shell in between, the text ending with the
    closing line the skill relies on (`send.Closing`): update work item `^<id>`, or
    `owner/repo#N` for a prompt no block holds, in the note at its path, and refresh *Next*.
-5. Record the pane on the item, through the engine ([§7]): its `qm` marker becomes
+6. Record the pane on the item, through the engine ([§7]): its `qm` marker becomes
    `<!-- qm pane=<id> -->`, replacing any marker it had. A marker with `ws=` is a `fresh`
    dispatch's (§9.2) and stays as it is: its worker remains the item's agent, and `refresh`
    closes its tab and removes its checkout by that marker, so replacing it would orphan both
@@ -432,8 +440,8 @@ workspace by its label (§9.1).
      owns the rules ([ADR 0005]). `refresh` stays evidence-only: it infers "worker exited" from
      herdr and never reads a worker's text.
 
-herdr 0.9.5 has no single "create a pane running a command" call, so dispatch composes
-`tab create`, `agent start` and `agent prompt`.
+herdr 0.9.5 has no single "create a pane running a command" call, so dispatch, like a
+session's spawn (§9.1), composes `tab create`, `agent start` and `agent prompt`.
 
 ## 10. Packaging
 

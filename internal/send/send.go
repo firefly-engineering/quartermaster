@@ -4,8 +4,8 @@
 // Any web page can open the button's obsidian:// URI, so the only inputs are a date and an
 // item id, both validated. The prompt text comes from the user's own note, and reaches
 // herdr as an argument, never through a shell. The work item's tier picks a harness through
-// config, and the harness's kind picks the agent (ADR 0011). Each send records the agent's
-// pane on the item, through the engine.
+// config, and the harness's kind picks the agent, or one is spawned when none is available
+// (ADR 0011). Each send records the agent's pane on the item, through the engine.
 package send
 
 import (
@@ -50,7 +50,8 @@ type Sent struct {
 func (s Sent) String() string { return fmt.Sprintf("sent %s to %s (%s)", s.ID, s.To, s.Pane) }
 
 // Send sends work item id's prompt from vault/<date>.md to an available agent in the herdr
-// workspace its block names, and records the agent's pane on the item.
+// workspace its block names, spawned when there is none, and records the agent's pane on the
+// item.
 func (s Sender) Send(ctx context.Context, vault, date, id string) (Sent, error) {
 	return s.SendItem(ctx, vault, date, id, "")
 }
@@ -91,7 +92,7 @@ func (s Sender) SendItem(ctx context.Context, vault, date, id, extra string) (Se
 		return Sent{}, err
 	}
 	return s.deliver(ctx, Prompt{
-		To: ws, Checkout: s.Config.Projects.Project(repo).Path, Tier: it.Tier, Text: text, Date: date, Item: id,
+		To: ws, Repo: repo, Checkout: s.Config.Projects.Project(repo).Path, Tier: it.Tier, Text: text, Date: date, Item: id,
 	})
 }
 
@@ -101,6 +102,7 @@ type Workspace = herdr.Workspace
 // Prompt is one prompt to a project's session.
 type Prompt struct {
 	To       Workspace // the project's herdr workspace
+	Repo     string    // the project, owner/repo, which names an agent spawned for it
 	Checkout string    // the project's checkout, which the agent's cwd is in
 	Tier     string    // the work item's tier, which picks the harness; "" for [tiers] default
 	Text     string
@@ -114,8 +116,8 @@ type Prompt struct {
 // p's ref when it has none (Closing). Sent.ID is p's item, or its ref when it has none.
 func (s Sender) Deliver(ctx context.Context, p Prompt) (Sent, error) {
 	p.Text = strings.TrimSpace(p.Text)
-	if p.To.ID == "" || p.Text == "" {
-		return Sent{}, fmt.Errorf("a prompt needs a workspace and a text: to %q, text %q", p.To.ID, p.Text)
+	if p.To.ID == "" || p.Repo == "" || p.Text == "" {
+		return Sent{}, fmt.Errorf("a prompt needs a workspace, a project and a text: to %q, repo %q, text %q", p.To.ID, p.Repo, p.Text)
 	}
 	if p.Item != "" && !note.ValidID(p.Item) {
 		return Sent{}, fmt.Errorf("not an item id: %q", p.Item)
@@ -156,7 +158,7 @@ func (s Sender) deliver(ctx context.Context, p Prompt) (Sent, error) {
 	if h.Kind == "" {
 		return Sent{}, fmt.Errorf("[tiers] routes tier %q to no harness", p.Tier)
 	}
-	a, err := s.agent(ctx, p.To, p.Checkout, name, h)
+	a, err := s.agent(ctx, p, name, h)
 	if err != nil {
 		return Sent{}, err
 	}
@@ -306,21 +308,59 @@ func (s Sender) project(n *note.Note, it *note.Item, label string) (string, erro
 	return "", fmt.Errorf("no project's session is in herdr workspace %q: set projects.\"<owner>/<repo>\".workspace = %q", label, label)
 }
 
-// agent is the agent a prompt for harness name, h, goes to in workspace ws: the first in
-// `agent list` order of h's kind, idle or done, whose cwd is checkout or under it. A fresh
-// dispatch's agent works in a checkout of its own, so it is never picked.
-func (s Sender) agent(ctx context.Context, ws Workspace, checkout, name string, h config.Harness) (herdr.Agent, error) {
+// agent is the agent p goes to for harness name, h: the first in `agent list` order in p's
+// workspace, of h's kind, idle or done, whose cwd is p's checkout or under it. A fresh
+// dispatch's agent works in a checkout of its own, so it is never picked. With none available,
+// busy ones of the kind included, it spawns one.
+func (s Sender) agent(ctx context.Context, p Prompt, name string, h config.Harness) (herdr.Agent, error) {
 	agents, err := s.herdr().AgentList(ctx)
 	if err != nil {
 		return herdr.Agent{}, err
 	}
 	for _, a := range agents {
-		if a.Workspace == ws.ID && a.Kind == h.Kind && slices.Contains(available, a.Status) && Within(checkout, a.Cwd) {
+		if a.Workspace == p.To.ID && a.Kind == h.Kind && slices.Contains(available, a.Status) && Within(p.Checkout, a.Cwd) {
 			return a, nil
 		}
 	}
-	return herdr.Agent{}, fmt.Errorf("no available agent of harness %s in herdr workspace %q: none of kind %s in %s is idle or done",
-		name, ws.Label, h.Kind, checkout)
+	return s.spawn(ctx, p, name, h, agents)
+}
+
+// spawn starts an agent of harness name, h, for p, and returns it: in a new tab of p's
+// workspace at its checkout, without focus. It is named the first free `<repo>-<harness>`
+// among live, all of herdr's agents (AgentName). The tool never closes it: a session keeps its
+// warm context.
+func (s Sender) spawn(ctx context.Context, p Prompt, name string, h config.Harness, live []herdr.Agent) (herdr.Agent, error) {
+	taken := make([]string, len(live))
+	for i, a := range live {
+		taken[i] = a.Name
+	}
+	_, repo, _ := strings.Cut(p.Repo, "/")
+	agent := AgentName(repo, name, taken)
+	pane, err := Start(ctx, s.herdr(), h, p.To.ID, p.Checkout, agent)
+	if err != nil {
+		if pane != "" {
+			err = fmt.Errorf("%w; its herdr tab, pane %s, is left in place", err, pane)
+		}
+		return herdr.Agent{}, err
+	}
+	return herdr.Agent{Name: agent, Kind: h.Kind, Workspace: p.To.ID, Pane: pane, Cwd: p.Checkout}, nil
+}
+
+// herdr 0.9.5 has no call that creates a pane running a command, so an agent starts in two,
+// and is prompted in a third (spec §9.2), each checked against `herdr <cmd> --help`:
+//
+//	herdr tab create --workspace <id> --cwd <path> --label <text> --no-focus
+//	herdr agent start <name> --kind <kind> --pane <id> [-- <agent-args>...]
+//	herdr agent prompt <pane> <text>
+
+// Start starts harness h's agent, named name, in a new tab of herdr workspace ws at cwd,
+// labelled name, without taking focus. pane is the tab's pane once created, even when the
+// agent does not start. A session's spawn and a fresh dispatch both start their agents here.
+func Start(ctx context.Context, c herdr.Client, h config.Harness, ws, cwd, name string) (pane string, err error) {
+	if pane, err = c.TabCreate(ctx, ws, cwd, name); err != nil {
+		return "", err
+	}
+	return pane, c.AgentStart(ctx, name, h.Kind, pane, h.Args)
 }
 
 // Within reports whether dir is root or under it, both absolute, by whole path components once

@@ -66,11 +66,13 @@ func writeHerdr(t *testing.T, path, script string) {
 }
 
 // listing is a herdr stand-in answering `workspace list` and `agent list` with spaces and
-// agents, and recording `agent prompt <pane> <text>` in sentFile.
+// agents, `tab create` with pane new:p1, and recording `agent prompt <pane> <text>` in sentFile.
 func listing(spaces, agents, sentFile string) string {
 	return `case "$1 $2" in
   "workspace list") echo '` + spaces + `' ;;
   "agent list") echo '` + agents + `' ;;
+  "tab create") echo '{"result":{"root_pane":{"pane_id":"new:p1"}}}' ;;
+  "agent start") ;;
   "agent prompt") printf '%s\n%s' "$3" "$4" > '` + sentFile + `' ;;
   *) echo "unexpected: $*" >&2; exit 3 ;;
 esac
@@ -188,7 +190,7 @@ func TestSendItemWithInstruction(t *testing.T) {
 func TestDeliver(t *testing.T) {
 	t.Parallel()
 	vault, s := setup(t, "idle")
-	p := Prompt{To: Workspace{ID: "wX", Label: "IaC"}, Checkout: "/src/iac", Text: "/implement https://github.com/o/r/issues/3",
+	p := Prompt{To: Workspace{ID: "wX", Label: "IaC"}, Repo: "o/iac", Checkout: "/src/iac", Text: "/implement https://github.com/o/r/issues/3",
 		Date: "2026-10-16", Ref: "o/r#3"}
 	got, err := s.Deliver(context.Background(), p)
 	if err != nil {
@@ -205,11 +207,13 @@ func TestDeliver(t *testing.T) {
 		t.Fatalf("sent %q", out)
 	}
 	_, s = setup(t, "blocked")
-	p.To, p.Checkout = Workspace{ID: "wZ", Label: "trunk"}, "/src/trunk"
-	if _, err := s.Deliver(context.Background(), p); err == nil || !strings.Contains(err.Error(), "no available agent of harness claude") {
-		t.Fatalf("a blocked agent: %v", err)
+	p.To, p.Repo, p.Checkout = Workspace{ID: "wZ", Label: "trunk"}, "o/trunk", "/src/trunk"
+	if got, err := s.Deliver(context.Background(), p); err != nil || got.Pane != "new:p1" {
+		t.Fatalf("a blocked agent: %+v, %v, want a spawn's pane", got, err)
 	}
-	for _, bad := range []Prompt{{To: Workspace{Label: "trunk"}, Text: "go"}, {To: p.To, Text: " "}, {To: p.To, Text: "go", Date: "2026-10-16"}} {
+	_, s = setup(t, "idle")
+	for _, bad := range []Prompt{{To: Workspace{Label: "trunk"}, Repo: p.Repo, Text: "go"}, {To: p.To, Repo: p.Repo, Text: " "},
+		{To: p.To, Text: "go"}, {To: p.To, Repo: p.Repo, Text: "go", Date: "2026-10-16"}} {
 		if _, err := s.Deliver(context.Background(), bad); err == nil {
 			t.Errorf("%+v: no error", bad)
 		}
@@ -230,26 +234,20 @@ func TestSendKeepsRelativeIndent(t *testing.T) {
 }
 
 // TestSendAvailableStatuses sends only to an idle or done agent: a working one would queue the
-// prompt, and a blocked one could take it as an answer.
+// prompt, and a blocked one could take it as an answer, so a new agent gets it instead.
 func TestSendAvailableStatuses(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
-		status string
-		ok     bool
-	}{{"idle", true}, {"done", true}, {"working", false}, {"blocked", false}, {"unknown", false}} {
+		status, pane string
+	}{{"idle", "wZ:p6"}, {"done", "wZ:p6"}, {"working", "new:p1"}, {"blocked", "new:p1"}, {"unknown", "new:p1"}} {
 		t.Run(c.status, func(t *testing.T) {
 			t.Parallel()
 			vault, s := setup(t, c.status)
-			_, err := s.Send(context.Background(), vault, "2026-10-16", "batch-c")
-			if c.ok && err != nil {
+			if _, err := s.Send(context.Background(), vault, "2026-10-16", "batch-c"); err != nil {
 				t.Fatal(err)
 			}
-			if !c.ok {
-				want := `no available agent of harness claude in herdr workspace "trunk": none of kind claude in /src/trunk is idle or done`
-				if err == nil || err.Error() != want {
-					t.Fatalf("err %v, want %q", err, want)
-				}
-				assertNothingSent(t, s)
+			if out := sent(t, s); !strings.HasPrefix(out, c.pane+"\n") {
+				t.Fatalf("sent %q, want to %s", out, c.pane)
 			}
 		})
 	}

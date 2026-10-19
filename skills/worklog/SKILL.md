@@ -395,9 +395,9 @@ Point the user at [`buttons-setup.md`](buttons-setup.md) once.
 
 To send a prompt yourself, call `prompt_send` with the item's id. It records the pane it
 sent to on the item, unless the item was dispatched `fresh` (its marker keeps that worker),
-and nothing else: record the send yourself. It fails if herdr is not
-found, if the workspace is missing, or if no agent of the item's harness there is `idle` or
-`done`; leave the item as it was and say why.
+and nothing else: record the send yourself. When no agent of the item's harness there is
+`idle` or `done`, it starts one in a new tab. It fails if herdr is not found or the
+workspace is missing; leave the item as it was and say why.
 
 ## Other repos
 

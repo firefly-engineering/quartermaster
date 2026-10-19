@@ -98,8 +98,8 @@ it checked and left as it was, with why.
 ([spec §9.1](docs/spec.md#91-worklog-send--buttons)): it sends the item's prompt block,
 with its closing line, to the herdr workspace the block names. The item's tier picks the
 harness through `[tiers]`, and the prompt goes to the first `idle` or `done` agent of the
-harness's kind there whose cwd is in the project's checkout; with none, it fails naming the
-harness. It records the agent's pane on the item as `<!-- qm pane=<id> -->`, which `refresh`
+harness's kind there whose cwd is in the project's checkout; with none, it spawns one of the
+harness in a new tab there, which stays as the session. It records the agent's pane on the item as `<!-- qm pane=<id> -->`, which `refresh`
 reads the reply from, unless the item's marker has `ws=`: a `fresh` dispatch's marker stays, its
 worker still the item's agent. It leaves the item's state; recording the send is the skill's.
 

@@ -106,9 +106,11 @@ func TestPromptSendKeepsFreshMarker(t *testing.T) {
 	d.checkNote(t, src)
 }
 
-// TestPromptSendRefuses checks prompt_send keeps send's validation, and prompts no agent and
-// leaves the note as it was when it refuses.
-func TestPromptSendRefuses(t *testing.T) {
+// TestPromptSendSpawns starts an agent of the harness the item's tier routes to when none is
+// available, in a new tab of the workspace at the checkout, without focus, then prompts it and
+// records its pane. It is named the first free <repo>-<harness> among all live agents, in any
+// workspace, and busy agents of the kind never prevent it.
+func TestPromptSendSpawns(t *testing.T) {
 	t.Parallel()
 	busy := []herdr.Agent{
 		herdrAgent("claude", "", "working", "/src/web", 1),
@@ -117,19 +119,71 @@ func TestPromptSendRefuses(t *testing.T) {
 		herdrAgent("claude", "web-14", "idle", "/ws/acme/web/issue-14", 4),
 		herdrAgent("omp", "", "idle", "/src/web", 5),
 	}
-	none := `no available agent of harness claude in herdr workspace "web": none of kind claude in /src/web is idle or done`
+	elsewhere := herdrAgent("claude", "web-claude-2", "idle", "/src/other/web", 2)
+	elsewhere.Workspace, elsewhere.Pane = "w2", "w2:p2"
+	for _, c := range []struct {
+		name, tier string
+		agents     []herdr.Agent
+		start      string // agent start's arguments after its name
+		agent      string // the name it starts
+	}{
+		{"no agent", "", nil, "[--kind][claude][--pane][w1:p9]", "web-claude"},
+		{"only busy agents", "", busy, "[--kind][claude][--pane][w1:p9]", "web-claude"},
+		{"only busy agents of a harness with args", "basic-implementation",
+			[]herdr.Agent{herdrAgent("omp", "web-glm", "working", "/src/web", 1), herdrAgent("claude", "", "idle", "/src/web", 2)},
+			"[--kind][omp][--pane][w1:p9][--][--model][glm-5]", "web-glm-2"},
+		{"a name collision", "", []herdr.Agent{herdrAgent("claude", "web-claude", "working", "/src/web", 1), elsewhere},
+			"[--kind][claude][--pane][w1:p9]", "web-claude-3"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			src := settled(t)
+			if c.tier != "" {
+				src = edited(t, grill, grill+" Tier: `"+c.tier+"`.")
+			}
+			h := newFakeHerdr(t, c.agents...)
+			d := sendDeps(t, src, h)
+			path := filepath.Join(d.Config.Vault.Repo, d.Config.Vault.Dir, fixtureDate+".md")
+			out, err := d.promptSend(t.Context(), PromptSendInput{Item: "session-store"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.Pane != "w1:p9" || out.To != "web" || !out.Committed {
+				t.Errorf("result %+v", out)
+			}
+			want := "[workspace][list]\n[agent][list]\n" +
+				"[tab][create][--workspace][w1][--cwd][/src/web][--label][" + c.agent + "][--no-focus]\n" +
+				"[agent][start][" + c.agent + "]" + c.start + "\n" +
+				"[agent][prompt][w1:p9][/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
+				send.Closing(send.Item("session-store"), path) + "]\n"
+			if got := h.calls(t); got != want {
+				t.Errorf("herdr got\n%s\nwant\n%s", got, want)
+			}
+			const button = "_item=session-store) ^session-store"
+			d.checkNote(t, strings.Replace(src, button, "_item=session-store) <!-- qm pane=w1:p9 --> ^session-store", 1))
+		})
+	}
+}
+
+// TestPromptSendRefuses checks prompt_send keeps send's validation, and prompts no agent and
+// leaves the note as it was when it refuses.
+func TestPromptSendRefuses(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		agents []herdr.Agent
+		fail   string // the herdr call made to fail
 		in     PromptSendInput
 		want   string
 	}{
-		{"no herdr", nil, PromptSendInput{Item: "session-store"}, "herdr not found"},
-		{"a bad date", mixed(), PromptSendInput{Date: "today", Item: "session-store"}, "not a date"},
-		{"a bad id", mixed(), PromptSendInput{Item: "../x"}, "not an item id"},
-		{"no note", mixed(), PromptSendInput{Date: "2026-10-15", Item: "session-store"}, "no note"},
-		{"no prompt", mixed(), PromptSendInput{Item: "nope"}, "no herdr-prompt block"},
-		{"no available agent", busy, PromptSendInput{Item: "session-store"}, none},
+		{"no herdr", nil, "", PromptSendInput{Item: "session-store"}, "herdr not found"},
+		{"a bad date", mixed(), "", PromptSendInput{Date: "today", Item: "session-store"}, "not a date"},
+		{"a bad id", mixed(), "", PromptSendInput{Item: "../x"}, "not an item id"},
+		{"no note", mixed(), "", PromptSendInput{Date: "2026-10-15", Item: "session-store"}, "no note"},
+		{"no prompt", mixed(), "", PromptSendInput{Item: "nope"}, "no herdr-prompt block"},
+		{"a spawn's tab not created", []herdr.Agent{}, "tab create", PromptSendInput{Item: "session-store"}, "tab create failed"},
+		{"a spawn's agent not started", []herdr.Agent{}, "agent start", PromptSendInput{Item: "session-store"},
+			"agent start failed; its herdr tab, pane w1:p9, is left in place"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -137,6 +191,9 @@ func TestPromptSendRefuses(t *testing.T) {
 			d := sendDeps(t, settled(t), h)
 			if c.agents == nil {
 				d.Herdr = ""
+			}
+			if c.fail != "" {
+				h.fail(t, c.fail, "")
 			}
 			if _, err := d.promptSend(t.Context(), c.in); err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("%v, want %q", err, c.want)

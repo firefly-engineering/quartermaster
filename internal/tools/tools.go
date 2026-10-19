@@ -194,8 +194,9 @@ func All(d Deps) []Tool {
 			Description: "Send a work item's prompt block to the herdr workspace its to= names, as `worklog send` does, " +
 				"with the closing line asking it to update the item. The item's tier picks the harness through [tiers] " +
 				"(default when it has none); the prompt goes to the first idle or done agent of the harness's kind there " +
-				"whose cwd is in the project's checkout, and fails naming the harness when none is. Records the pane " +
-				"on the item's marker (pane=) and leaves its state.",
+				"whose cwd is in the project's checkout. With none, it spawns one of the harness in a new tab there, which " +
+				"stays as the session. Records the pane on the item's marker (pane=), unless the marker records a fresh " +
+				"dispatch (ws=), which it keeps, and leaves the item's state.",
 			Run: d.promptSend,
 		},
 		Def[TaskDispatchInput, TaskDispatchOutput]{
