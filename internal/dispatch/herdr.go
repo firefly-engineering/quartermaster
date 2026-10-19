@@ -15,7 +15,7 @@ func (d Dispatcher) agent(ctx context.Context, h config.Harness, id, ws, name, p
 	if pane, err = send.Start(ctx, d.herdr(), h, id, ws, name); err != nil {
 		return pane, err
 	}
-	return pane, d.herdr().AgentPrompt(ctx, pane, prompt)
+	return pane, d.herdr().AgentPrompt(ctx, pane, h.Prompt(prompt))
 }
 
 // agentNames are the names of herdr's live agents. An agent not started or renamed through

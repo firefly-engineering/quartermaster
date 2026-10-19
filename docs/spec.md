@@ -165,7 +165,8 @@ when the item has none.
 
 The tier is the class of the item's work, one of the closed list in the worklog skill's tier
 table ([ADR 0011]). It routes the item's prompts to a harness through config; the note never
-names the harness.
+names the harness. A prompt led by a route's command, `/<name>`, reaches a harness of kind
+`omp` as `/skill:<name>`, the only form omp runs a skill in; any other kind gets it as written.
 
 Item and anchor ids are lowercase letters, digits and `-`, unique within a note. Every
 `[[#^<id>|details]]` link in *Next* names a work item or an anchor. A section the note lacks
