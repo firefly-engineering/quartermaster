@@ -194,7 +194,9 @@ summary must name the evidence: the commit, run or result. `WAITING` may complet
 same terms, when what it waited on is done: an issue closed or a PR merged, named in its
 summary. An item sent to another repo closes this way, with no unblock first. `DONE` and `DROPPED` are
 terminal but for that restatement; reopening is a new item. A transition carries a `summary`
-(PR URL, commit, reason), rendered into the item's line or paragraph.
+(PR URL, commit, reason), rendered into the item's line or paragraph. `refresh` closing a
+terminal item's `fresh` dispatch tab and dropping its `pane=` ([§9.2]) is not a transition: its
+state stays.
 
 ### 4.4 Manual actions
 
@@ -236,7 +238,7 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `next_set` | Replace *Next* with an ordered list of item ids; the server renders each line, button and details link. A work item's line takes the entry's `cost`, else the item's cost, else none; nothing is read back from the line *Next* held. A manual action's or an anchor's line takes its cost from the entry only. The result's `warnings` holds one line for each listed work item that is `TODO`, with a route starting with `/` and no prompt, so no ▶ button; manual actions and anchors never warn. The write goes through all the same. | — |
 | `status_set` | Rewrite the status line. | — |
 | `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. A keep with no title, on a row linking a work item as `[[<prev>#^<id>\|^<id>]]`, takes that item's title from the note the link names, without its ref link, cost, route, tier, sent status and summary, and its ref, cost, route and tier unless given; any other row's text is the title. The row stays as written. | — |
-| `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). | — |
+| `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). On a `DONE` or `DROPPED` item with a `fresh` dispatch marker, it also closes the dispatch's herdr tab once its worker is finished, and drops `pane=` from the marker ([§9.2]). It reports what it closed or dropped as applied, and a close it skipped or that failed as skipped, with why; a failed close fails no other step. | — |
 | `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send`. | — |
 | `task_dispatch` | Start work on a ref ([§9.2]). | `task_dispatch` |
 
@@ -334,6 +336,17 @@ workspace by its label (§9.1).
   6. Record the pane id and workspace path on the work item (an HTML comment
      `<!-- qm pane=<id> ws=<path> -->` on the item's line), and transition it to
      `IN_PROGRESS`.
+  7. Once the item is `DONE` or `DROPPED`, each `refresh` closes the agent's tab
+     (`herdr tab close`, the tab id read from `herdr pane get`) and drops `pane=` from the
+     marker, so tabs do not pile up. `ws=` stays. It closes the tab when both hold:
+     - the agent is `idle` or `done`, or no agent runs in the pane any more;
+     - the agent still bears its dispatch name, `<repo>-<N>` with its counter, as step 4
+       gives it for the marker's `ws=` path.
+
+     A `working` or `blocked` agent, or one in any other status, is left for the next
+     `refresh`. Renaming the agent in herdr keeps its tab, and `pane=` stays: that is how the
+     developer keeps one. A pane already gone just has `pane=` dropped. Only a marker with
+     `ws=` records a `fresh` dispatch, so a session's pane is never closed.
 
 herdr 0.9.5 has no single "create a pane running a command" call, so dispatch composes
 `tab create`, `agent start` and `agent prompt`.
@@ -373,6 +386,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 | Failure | Effect | Handling |
 |---|---|---|
 | Worker crashes | Item stays 🔄 | `refresh` asks herdr for the recorded pane. Gone, or the agent exited, with no transition recorded: move to `WAITING` with "worker exited". Never to `DONE`. |
+| Closing a finished `fresh` dispatch's tab fails | Tab stays, `pane=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. A tab already gone counts as closed ([§9.2]). |
 | Process dies holding the lock | — | The OS frees an `flock` with the descriptor. |
 | Obsidian writes mid-mutation | Lost edit | Hash check and retry ([§7]); jj history for the narrow window left. |
 | Workspace for a ref already exists | `add` fails | Reuse it if it is the ref's; otherwise fail with its path. `git worktree prune` before a git add. |

@@ -134,7 +134,7 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 - ⬜ [#12](https://github.com/o/r/issues/12): closed with no reason ^no-reason
 - ⬜ [#13](https://github.com/o/r/issues/13): gh fails ^gh-fails
 - 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone
-- ✅ [#15](https://github.com/o/r/issues/15): done already <!-- qm pane=w1:p15 ws=/ws/15 --> ^done
+- ✅ [#15](https://github.com/o/r/issues/15): done already, a session send <!-- qm pane=w1:p15 --> ^done
 - 🔄 no ref, nothing to check ^plain
 - 🔄 mentions [#16](https://github.com/o/r/issues/16) after its text ^mention
 
@@ -237,7 +237,7 @@ func TestGatherAndApply(t *testing.T) {
 			t.Errorf("^%s skipped unexpectedly: %q", id, got[id])
 		}
 	}
-	// A terminal item, an item with no ref and one whose ref is not its leading link ask nothing.
+	// A terminal item with no fresh dispatch, an item with no ref and one whose ref is not its leading link ask nothing.
 	for _, c := range append(gh.calls, herdr.calls...) {
 		if c == "o/r#15" || c == "o/r#16" || c == "pane get w1:p15" || c == "pane get w1:p10" || c == "pane get w1:p14" {
 			t.Errorf("asked %q", c)
@@ -326,6 +326,30 @@ func TestApplyRefChanged(t *testing.T) {
 		t.Fatalf("applied %+v, err %v", applied, err)
 	}
 	if len(skipped) != 1 || skipped[0].Reason != "its ref changed from o/r#1 since refresh read it" {
+		t.Errorf("skipped %+v", skipped)
+	}
+}
+
+// TestApplyMarkerChanged keeps a re-dispatched item's new pane: the closed tab was the old one's.
+func TestApplyMarkerChanged(t *testing.T) {
+	t.Parallel()
+	const before = "# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
+		"- ✅ [#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1:p1 ws=/ws/o/r/issue-1 --> ^fix\n"
+	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
+		"pane get w1:p1":  {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p1","tab_id":"w1:t1","agent":null}}}`},
+		"tab close w1:t1": {out: `{"id":"1","result":{"type":"ok"}}`},
+	}}
+	n, err := note.Parse([]byte(before))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n)
+	now := strings.Replace(before, "pane=w1:p1", "pane=w1:p2", 1)
+	out, applied, skipped, err := plan.Apply([]byte(now))
+	if err != nil || string(out) != now || len(applied) != 0 {
+		t.Fatalf("applied %+v, err %v:\n%s", applied, err, out)
+	}
+	if len(skipped) != 1 || skipped[0].Reason != "its marker no longer records pane w1:p1" {
 		t.Errorf("skipped %+v", skipped)
 	}
 }

@@ -96,6 +96,12 @@ func headline(applied []refresh.Applied) string {
 		if a.Status != "" {
 			part += " " + a.Status
 		}
+		switch {
+		case a.Tab != "":
+			part += " tab " + a.Tab + " closed"
+		case a.Pane != "":
+			part += " pane " + a.Pane + " dropped"
+		}
 		parts = append(parts, part)
 	}
 	return strings.Join(parts, ", ")

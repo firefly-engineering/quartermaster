@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,5 +105,134 @@ func TestRefreshRefusesUnparseable(t *testing.T) {
 	d := fixtureDeps(t, settled(t)+"\n##### ⬜ stray\n", false)
 	if _, err := d.refreshWith(t.Context(), RefreshInput{}, refresh.Reconciler{GH: noHerdr(t), Herdr: herdr.Client{Run: noHerdr(t)}}); err == nil || !strings.Contains(err.Error(), "does not parse") {
 		t.Errorf("err %v", err)
+	}
+}
+
+// The fixture's dropped item, as a fresh dispatch leaves it: its agent is web-13, in pane w1:p1
+// of tab w1:t1 (herdrAgent's tab 1).
+const (
+	oldForm      = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 ^old-form"
+	oldFormFresh = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm pane=w1:p1 ws=/ws/acme/web/issue-13 --> ^old-form"
+	oldFormDone  = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm ws=/ws/acme/web/issue-13 --> ^old-form"
+)
+
+// TestRefreshClosesFinishedDispatch closes a DONE or DROPPED item's fresh dispatch tab once its
+// agent is idle or done, or gone, and drops pane= from its marker; it leaves a running agent, a
+// renamed one and a session's pane alone (spec §9.2, §11).
+func TestRefreshClosesFinishedDispatch(t *testing.T) {
+	t.Parallel()
+	const tabClose = "[tab][close][w1:t1]\n"
+	for _, c := range []struct {
+		name   string
+		marked string                      // the item's line before
+		setup  func(*testing.T, fakeHerdr) // herdr's state
+		want   string                      // the item's line after
+		close  bool                        // tab close is called
+		apply  *refresh.Applied            // what refresh reports applied; nil for nothing
+		skip   string                      // what it reports skipped, "" for nothing
+	}{
+		{name: "idle", marked: oldFormFresh, want: oldFormDone, close: true,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13", "idle", "/ws/acme/web/issue-13", 1))
+			},
+			apply: &refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DROPPED", To: "DROPPED", Pane: "w1:p1", Tab: "w1:t1"}},
+		{name: "done, its name counted", marked: oldFormFresh, want: oldFormDone, close: true,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13-2", "done", "/ws/acme/web/issue-13", 1))
+			},
+			apply: &refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DROPPED", To: "DROPPED", Pane: "w1:p1", Tab: "w1:t1"}},
+		{name: "a DONE item", marked: strings.Replace(oldFormFresh, "❌", "✅", 1), want: strings.Replace(oldFormDone, "❌", "✅", 1), close: true,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13", "idle", "/ws/acme/web/issue-13", 1))
+			},
+			apply: &refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DONE", To: "DONE", Pane: "w1:p1", Tab: "w1:t1"}},
+		{name: "its agent exited", marked: oldFormFresh, want: oldFormDone, close: true,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t)
+				h.panes(t, herdr.Pane{ID: "w1:p1", Workspace: "w1", Tab: "w1:t1", Cwd: "/ws/acme/web/issue-13", Status: "unknown"})
+			},
+			apply: &refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DROPPED", To: "DROPPED", Pane: "w1:p1", Tab: "w1:t1"}},
+		{name: "its pane gone", marked: oldFormFresh, want: oldFormDone,
+			setup: func(t *testing.T, h fakeHerdr) { h.agents(t) },
+			apply: &refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DROPPED", To: "DROPPED", Pane: "w1:p1"}},
+		{name: "its tab gone as it closes", marked: oldFormFresh, want: oldFormDone, close: true,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13", "idle", "/ws/acme/web/issue-13", 1))
+				h.fail(t, "tab close", `{"error":{"code":"tab_not_found","message":"tab w1:t1 not found"}}`)
+			},
+			apply: &refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DROPPED", To: "DROPPED", Pane: "w1:p1"}},
+		{name: "working", marked: oldFormFresh, want: oldFormFresh,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13", "working", "/ws/acme/web/issue-13", 1))
+			},
+			skip: "its worker web-13 in pane w1:p1 is working: its tab closes once it is idle or done"},
+		{name: "blocked", marked: oldFormFresh, want: oldFormFresh,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13", "blocked", "/ws/acme/web/issue-13", 1))
+			},
+			skip: "its worker web-13 in pane w1:p1 is blocked: its tab closes once it is idle or done"},
+		{name: "renamed", marked: oldFormFresh, want: oldFormFresh,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "mine", "idle", "/ws/acme/web/issue-13", 1))
+			},
+			skip: `its worker in pane w1:p1 is named "mine", not as its dispatch named it, so it keeps its tab`},
+		{name: "a session's agent", marked: oldFormFresh, want: oldFormFresh,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("claude", "web-claude", "idle", "/src/web", 1))
+			},
+			skip: `its worker in pane w1:p1 is named "web-claude", not as its dispatch named it, so it keeps its tab`},
+		{name: "a session send's pane", marked: strings.Replace(oldFormFresh, " ws=/ws/acme/web/issue-13", "", 1),
+			want:  strings.Replace(oldFormFresh, " ws=/ws/acme/web/issue-13", "", 1),
+			setup: func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "web-13", "idle", "/src/web", 1)) }},
+		{name: "the close fails", marked: oldFormFresh, want: oldFormFresh, close: true,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13", "idle", "/ws/acme/web/issue-13", 1))
+				h.fail(t, "tab close", "")
+			},
+			skip: "closing tab w1:t1 of pane w1:p1: herdr tab close: tab close failed; retried next refresh"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			h := newFakeHerdr(t)
+			c.setup(t, h)
+			d := fixtureDeps(t, edited(t, oldForm, c.marked), true)
+			rec := refresh.Reconciler{GH: ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": openPR}), Herdr: herdr.New(h.Bin, nil)}
+			out, err := d.refreshWith(t.Context(), RefreshInput{}, rec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d.checkNote(t, edited(t, oldForm, c.want))
+			if closed := strings.Contains(h.calls(t), tabClose); closed != c.close {
+				t.Errorf("tab closed: %v, want %v; calls:\n%s", closed, c.close, h.calls(t))
+			}
+			var applied []refresh.Applied
+			if c.apply != nil {
+				applied = []refresh.Applied{*c.apply}
+			}
+			if !slices.EqualFunc(out.Applied, applied, func(a, b refresh.Applied) bool {
+				return a.Item == b.Item && a.Ref == b.Ref && a.From == b.From && a.To == b.To && a.Pane == b.Pane && a.Tab == b.Tab
+			}) {
+				t.Errorf("applied %+v, want %+v", out.Applied, applied)
+			}
+			var skip string
+			for _, s := range out.SkippedItems {
+				if s.Item == "old-form" {
+					skip = s.Reason
+				}
+			}
+			if skip != c.skip {
+				t.Errorf("skipped %q, want %q", skip, c.skip)
+			}
+			if c.apply != nil {
+				headline := "^old-form pane w1:p1 dropped"
+				if c.apply.Tab != "" {
+					headline = "^old-form tab w1:t1 closed"
+				}
+				if log := d.jj(t, "log", "--no-graph", "-r", "@-", "-T", "description"); !strings.HasPrefix(log,
+					"worklog(2026-10-16): refresh: "+headline+"\n") {
+					t.Errorf("commit %q", log)
+				}
+			}
+		})
 	}
 }

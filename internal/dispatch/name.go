@@ -1,10 +1,14 @@
 package dispatch
 
 import (
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 )
+
+// wsPrefix starts the name of a fresh dispatch's workspace for issue N: issue-<N>.
+const wsPrefix = "issue-"
 
 // maxName is the longest name herdr gives an agent: it takes [a-z][a-z0-9_-]{0,31}.
 const maxName = 32
@@ -20,21 +24,43 @@ const maxName = 32
 // session's will be its harness. A suffix too long to leave the repo a character is not cut,
 // so herdr refuses the name.
 func AgentName(repo, suffix string, taken []string) string {
+	for k := 1; ; k++ {
+		if name := agentName(repo, suffix, k); !slices.Contains(taken, name) {
+			return name
+		}
+	}
+}
+
+// IsFreshAgent reports whether name is one a fresh dispatch gives the agent it starts in
+// workspace ws, `<workspace_root>/<owner>/<repo>/issue-<N>`: `<repo>-<N>`, whatever its counter.
+// An agent renamed since, or a session's, is not.
+func IsFreshAgent(name, ws string) bool {
+	n, ok := strings.CutPrefix(filepath.Base(ws), wsPrefix)
+	return ok && isAgentName(name, filepath.Base(filepath.Dir(ws)), n)
+}
+
+// isAgentName reports whether name is one AgentName gives repo and suffix, whatever the
+// counter.
+func isAgentName(name, repo, suffix string) bool {
+	if name == agentName(repo, suffix, 1) {
+		return true
+	}
+	i := strings.LastIndexByte(name, '-')
+	k, err := strconv.Atoi(name[i+1:])
+	return i >= 0 && err == nil && k > 1 && name == agentName(repo, suffix, k)
+}
+
+// agentName is AgentName's k-th candidate: `<repo>-<suffix>`, then with `-<k>` for k > 1.
+func agentName(repo, suffix string, k int) string {
 	repo = sanitize(repo)
 	if repo == "" || repo[0] < 'a' || repo[0] > 'z' {
 		repo = "a" + repo
 	}
-	tail := "-" + sanitize(suffix)
-	for k := 1; ; k++ {
-		t := tail
-		if k > 1 {
-			t += "-" + strconv.Itoa(k)
-		}
-		name := repo[:max(1, min(len(repo), maxName-len(t)))] + t
-		if !slices.Contains(taken, name) {
-			return name
-		}
+	t := "-" + sanitize(suffix)
+	if k > 1 {
+		t += "-" + strconv.Itoa(k)
 	}
+	return repo[:max(1, min(len(repo), maxName-len(t)))] + t
 }
 
 // sanitize lowercases s and maps every character outside [a-z0-9_-] to `-`.

@@ -1,6 +1,7 @@
 package note
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -9,7 +10,8 @@ import (
 // Dispatch is where task_dispatch started a fresh agent on a work item (spec §9.2): its herdr
 // pane and its workspace. The item records it as an HTML comment, `<!-- qm pane=<id> ws=<path> -->`,
 // just before its `^<id>`, in a list item's line or a ##### item's paragraph; Obsidian does not
-// show it.
+// show it. Either part may be absent, as the pane once refresh closes a finished dispatch's tab,
+// but not both.
 type Dispatch struct {
 	Pane, Workspace string
 }
@@ -21,19 +23,30 @@ const (
 	markerWord  = "qm"
 )
 
-// DispatchMarker renders d as its HTML comment, `<!-- qm pane=<id> ws=<path> -->`.
+// DispatchMarker renders d as its HTML comment, `<!-- qm pane=<id> ws=<path> -->`, leaving out
+// a part d has not.
 func (r Renderer) DispatchMarker(d Dispatch) string {
-	return markerOpen + " " + markerWord + " pane=" + d.Pane + " ws=" + d.Workspace + " " + markerClose
+	m := markerOpen + " " + markerWord
+	if d.Pane != "" {
+		m += " pane=" + d.Pane
+	}
+	if d.Workspace != "" {
+		m += " ws=" + d.Workspace
+	}
+	return m + " " + markerClose
 }
 
 // Check reports why d cannot be written as a marker that parses back to d.
 func (d Dispatch) Check() error {
+	if d.Pane == "" && d.Workspace == "" {
+		return errors.New("dispatch: want a pane, a ws or both")
+	}
 	for _, f := range []struct{ name, v string }{{"pane", d.Pane}, {"ws", d.Workspace}} {
-		if f.v == "" || strings.ContainsFunc(f.v, isSpace) || strings.Contains(f.v, "--") || strings.Contains(f.v, ">") {
-			return fmt.Errorf("dispatch %s %q: want a non-empty value with no whitespace, -- or >", f.name, f.v)
+		if f.v != "" && (strings.ContainsFunc(f.v, isSpace) || strings.Contains(f.v, "--") || strings.Contains(f.v, ">")) {
+			return fmt.Errorf("dispatch %s %q: want a value with no whitespace, -- or >", f.name, f.v)
 		}
 	}
-	if !filepath.IsAbs(d.Workspace) {
+	if d.Workspace != "" && !filepath.IsAbs(d.Workspace) {
 		return fmt.Errorf("dispatch ws %q: want an absolute path", d.Workspace)
 	}
 	return nil
@@ -50,12 +63,14 @@ func parseMarker(raw string) (d Dispatch, ok bool) {
 		return Dispatch{}, false
 	}
 	f := strings.Fields(body)
-	if len(f) != 3 || f[0] != markerWord {
+	if len(f) < 2 || len(f) > 3 || f[0] != markerWord {
 		return Dispatch{}, false
 	}
 	for _, kv := range f[1:] {
 		k, v, _ := strings.Cut(kv, "=")
 		switch {
+		case v == "":
+			return Dispatch{}, false
 		case k == "pane" && d.Pane == "":
 			d.Pane = v
 		case k == "ws" && d.Workspace == "":
@@ -64,7 +79,7 @@ func parseMarker(raw string) (d Dispatch, ok bool) {
 			return Dispatch{}, false
 		}
 	}
-	return d, d.Pane != "" && d.Workspace != ""
+	return d, true
 }
 
 // SetDispatch records d on work item id of n, parsed from src, and returns the new source: it

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/firefly-engineering/quartermaster/internal/dispatch"
 	"github.com/firefly-engineering/quartermaster/internal/herdr"
 )
 
@@ -22,6 +23,44 @@ func (g *gatherer) worker(ctx context.Context, pane string) (waiting, reason str
 		return "worker exited: no agent in pane " + pane, ""
 	}
 	return "", fmt.Sprintf("its worker %s in pane %s is %s", p.Kind, pane, p.Status)
+}
+
+// closeTab closes the herdr tab of pane, where a fresh dispatch in workspace ws started its
+// agent, once the agent is idle or done and still bears the name the dispatch gave it, or once
+// no agent runs in the pane. It returns the tab it closed, "" when the pane or its tab was gone
+// already; or why the pane stays, for this refresh, or for good when its agent was renamed.
+func (g *gatherer) closeTab(ctx context.Context, pane, ws string) (tab, reason string) {
+	p, err := g.Herdr.PaneGet(ctx, pane)
+	switch {
+	case herdr.Code(err) == herdr.PaneNotFound:
+		return "", ""
+	case err != nil:
+		return "", "herdr: " + err.Error()
+	}
+	if p.Kind != "" {
+		agents, err := g.agents(ctx)
+		if err != nil {
+			return "", "herdr: " + err.Error()
+		}
+		var name string
+		if i := slices.IndexFunc(agents, func(a agent) bool { return a.Pane == pane }); i >= 0 {
+			name = agents[i].Name
+		}
+		if !dispatch.IsFreshAgent(name, ws) {
+			return "", fmt.Sprintf("its worker in pane %s is named %q, not as its dispatch named it, so it keeps its tab", pane, name)
+		}
+		if p.Status != "idle" && p.Status != "done" {
+			return "", fmt.Sprintf("its worker %s in pane %s is %s: its tab closes once it is idle or done", name, pane, p.Status)
+		}
+	}
+	err = g.Herdr.TabClose(ctx, p.Tab)
+	switch {
+	case herdr.Code(err) == herdr.TabNotFound:
+		return "", ""
+	case err != nil:
+		return "", fmt.Sprintf("closing tab %s of pane %s: %v; retried next refresh", p.Tab, pane, err)
+	}
+	return p.Tab, ""
 }
 
 type agent = herdr.Agent

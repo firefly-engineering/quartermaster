@@ -164,7 +164,7 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 	case d.Herdr == "":
 		return Result{}, errors.New("herdr not found on PATH")
 	}
-	wsName := "issue-" + strconv.Itoa(ref.N)
+	wsName := wsPrefix + strconv.Itoa(ref.N)
 	owner, repo, _ := strings.Cut(ref.Repo, "/")
 	ws := filepath.Join(d.Config.Dispatch.WorkspaceRoot, owner, repo, wsName)
 	// The marker must be writable before anything is made that it would record.

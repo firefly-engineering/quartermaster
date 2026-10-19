@@ -24,6 +24,13 @@
 //     state stays: only GitHub proves the work done, and when it does, the item's status
 //     becomes **done** along with its state.
 //
+// One step writes outside the note, on a DONE or DROPPED item whose marker records a fresh
+// dispatch (`pane=` and `ws=`): when its pane's agent is idle or done and still bears the name
+// the dispatch gave it, or no agent runs in the pane, Gather closes the pane's herdr tab, and
+// Apply drops `pane=` from the marker; `ws=` stays. A pane already gone just loses `pane=`. A
+// running agent is left for the next refresh, and a renamed one keeps its tab: renaming it is
+// how the developer keeps one. A session send's pane, with no `ws=`, is never closed.
+//
 // Like every package but main, this one reads neither the environment nor the cwd: gh and
 // herdr come in as a Runner and a herdr.Client.
 package refresh
@@ -53,6 +60,8 @@ type Applied struct {
 	Summary string   `json:"summary,omitempty" jsonschema:"the evidence, written as its summary"`
 	Status  string   `json:"status,omitempty" jsonschema:"an item sent to another repo: the status its reply set"`
 	Links   []string `json:"links,omitempty" jsonschema:"an item sent to another repo: the links from its reply added to its line"`
+	Pane    string   `json:"pane,omitempty" jsonschema:"a finished fresh dispatch: the pane dropped from its marker"`
+	Tab     string   `json:"tab,omitempty" jsonschema:"a finished fresh dispatch: the herdr tab closed with it; absent when it was gone already"`
 }
 
 // Skipped is a work item refresh checked and left as it was.
@@ -70,7 +79,7 @@ type Plan struct {
 }
 
 // move is one proven change: a transition, a sent status (Applied.Status), or both. A reply
-// is a status with no transition: state is from.
+// is a status with no transition: state is from. So is a closed dispatch tab (Applied.Pane).
 type move struct {
 	Applied
 	from      note.State
@@ -90,7 +99,8 @@ type gatherer struct {
 }
 
 // Gather asks GitHub and herdr about every work item of n that is not DONE or DROPPED, in note
-// order, and returns what the answers prove.
+// order, and returns what the answers prove. A DONE or DROPPED item's finished fresh dispatch
+// has its tab closed here, and its pane dropped by Apply.
 func (r Reconciler) Gather(ctx context.Context, n *note.Note) Plan {
 	g := &gatherer{Reconciler: r, refs: map[note.Ref]evidence{}}
 	var p Plan
@@ -117,6 +127,7 @@ func (r Reconciler) Gather(ctx context.Context, n *note.Note) Plan {
 func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) {
 	from, _ := note.StateOf(it.Icon)
 	if from == note.Done || from == note.Dropped {
+		g.finished(ctx, p, it, from)
 		return
 	}
 	head, _ := note.SplitSummary(it.Title)
@@ -140,7 +151,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 		}
 		reasons = append(reasons, e.reason)
 	}
-	if it.Dispatch != nil && from == note.InProgress {
+	if it.Dispatch != nil && it.Dispatch.Pane != "" && from == note.InProgress {
 		checked = true
 		waiting, reason := g.worker(ctx, it.Dispatch.Pane)
 		if waiting != "" {
@@ -154,7 +165,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 		switch l.status {
 		case statusSent, statusAcked:
 			pane, label := "", l.label
-			if it.Dispatch != nil {
+			if it.Dispatch != nil && it.Dispatch.Pane != "" {
 				pane = it.Dispatch.Pane
 			} else if it.Prompt != nil {
 				label = it.Prompt.To
@@ -178,6 +189,27 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 	if checked {
 		p.skipped = append(p.skipped, Skipped{Item: it.ID, Ref: m.Ref, Reason: strings.Join(reasons, "; ")})
 	}
+}
+
+// finished closes the herdr tab of a DONE or DROPPED item's fresh dispatch, when its worker is
+// done with it, and plans dropping its pane from the item's marker. A marker with no ws is not a
+// fresh dispatch's, so its pane is never closed.
+func (g *gatherer) finished(ctx context.Context, p *Plan, it *note.Item, from note.State) {
+	d := it.Dispatch
+	if d == nil || d.Pane == "" || d.Workspace == "" {
+		return
+	}
+	m := move{Applied: Applied{Item: it.ID, From: from.String(), To: from.String(), Pane: d.Pane}, from: from, state: from}
+	if l := parseLine(it); l.ref != (note.Ref{}) {
+		m.Ref = l.ref.String()
+	}
+	tab, reason := g.closeTab(ctx, d.Pane, d.Workspace)
+	if reason != "" {
+		p.skipped = append(p.skipped, Skipped{Item: it.ID, Ref: m.Ref, Reason: reason})
+		return
+	}
+	m.Tab = tab
+	p.moves = append(p.moves, m)
 }
 
 // transition is m as a transition to state s with summary.
@@ -224,6 +256,14 @@ func (m move) apply(src []byte) ([]byte, error) {
 	}
 	if m.Status != "" && l.status != m.wasStatus {
 		return nil, fmt.Errorf("its status changed from %s to %s since refresh read it", m.wasStatus, l.status)
+	}
+	if m.Pane != "" {
+		if it.Dispatch == nil || it.Dispatch.Pane != m.Pane {
+			return nil, fmt.Errorf("its marker no longer records pane %s", m.Pane)
+		}
+		d := *it.Dispatch
+		d.Pane = ""
+		return note.SetDispatch(n, src, m.Item, d)
 	}
 	if m.state != m.from {
 		if src, err = note.TransitionItem(n, src, m.Item, m.state, m.Summary); err != nil {
