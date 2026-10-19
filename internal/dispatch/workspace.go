@@ -1,15 +1,15 @@
 package dispatch
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/firefly-engineering/quartermaster/internal/command"
 )
 
 // workspace makes ws, named name, the ref's workspace of project: with `jj workspace add`
@@ -132,24 +132,12 @@ func (d Dispatcher) run(ctx context.Context, what, bin, dir string, args ...stri
 	if bin == "" {
 		return "", fmt.Errorf("%s not found on PATH", what)
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = dir
-	cmd.Env = d.Env
-	if cmd.Env == nil {
-		cmd.Env = []string{} // nil would hand the child this process's environment
-	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = strings.TrimSpace(stdout.String())
-		}
-		return "", fmt.Errorf("%s %s: %s", what, strings.Join(args[:min(len(args), 4)], " "), msg)
+	out, err := command.Run(ctx, bin, dir, d.Env, args)
+	if exit := (*command.ExitError)(nil); errors.As(err, &exit) {
+		return "", fmt.Errorf("%s %s: %s", what, strings.Join(args[:min(len(args), 4)], " "), exit.Message())
 	}
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", what, err)
 	}
-	return stdout.String(), nil
+	return string(out), nil
 }
