@@ -18,10 +18,10 @@ func (g *gatherer) worker(ctx context.Context, pane string) (waiting, reason str
 		return "worker exited: pane " + pane + " is gone", ""
 	case err != nil:
 		return "", "herdr: " + err.Error()
-	case p.Agent == "":
+	case p.Kind == "":
 		return "worker exited: no agent in pane " + pane, ""
 	}
-	return "", fmt.Sprintf("its worker %s in pane %s is %s", p.Agent, pane, p.Status)
+	return "", fmt.Sprintf("its worker %s in pane %s is %s", p.Kind, pane, p.Status)
 }
 
 type agent = herdr.Agent

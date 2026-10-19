@@ -21,9 +21,15 @@ const paneList = `{"id":"cli:pane:list","result":{"panes":[` +
 
 const paneGet = `{"id":"cli:pane:get","result":{"pane":{"agent":"claude","agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"ae617c9b"},"agent_status":"working","cwd":"/src/trunk","focused":false,"foreground_cwd":"/src/trunk","pane_id":"wZ:pJ","revision":7,"tab_id":"wZ:t1","terminal_id":"term_65e0","workspace_id":"wZ"},"type":"pane_info"}}`
 
+const workspaceCreate = `{"id":"cli:workspace:create","result":{"root_pane":{"agent_status":"unknown","cwd":"/private/tmp","focused":false,"foreground_cwd":"/private/tmp","pane_id":"w1T:p1","revision":0,"scroll":{"max_offset_from_bottom":0,"offset_from_bottom":0,"viewport_rows":165},"tab_id":"w1T:t1","terminal_id":"term_65e3","workspace_id":"w1T"},` +
+	`"tab":{"agent_status":"unknown","focused":false,"label":"1","number":1,"pane_count":1,"tab_id":"w1T:t1","workspace_id":"w1T"},"type":"workspace_created",` +
+	`"workspace":{"active_tab_id":"w1T:t1","agent_status":"unknown","focused":false,"label":"probe","number":9,"pane_count":1,"tab_count":1,"workspace_id":"w1T"}}}`
+
 const tabCreate = `{"id":"cli:tab:create","result":{"tab":{"tab_id":"w1:t5"},"root_pane":{"pane_id":"w1:p7"}}}`
 
 const paneNotFound = `{"error":{"code":"pane_not_found","message":"pane nosuch:p1 not found"},"id":"cli:pane:get"}`
+
+const tabNotFound = `{"error":{"code":"tab_not_found","message":"tab w1T:t9 not found"},"id":"cli:tab:close"}`
 
 // answer is a Client whose herdr answers out, and records the args it was called with.
 func answer(out string, calls *[]string) Client {
@@ -38,8 +44,8 @@ func TestAgentList(t *testing.T) {
 	var calls []string
 	got, err := answer(agentList, &calls).AgentList(t.Context())
 	want := []Agent{
-		{Workspace: "wZ", Pane: "wZ:pJ", Status: "working"},
-		{Name: "r-5", Workspace: "w1", Pane: "w1:p7", Status: "idle"},
+		{Kind: "claude", Workspace: "wZ", Tab: "wZ:t1", Pane: "wZ:pJ", Cwd: "/src/trunk", Status: "working"},
+		{Kind: "omp", Name: "r-5", Workspace: "w1", Tab: "w1:t5", Pane: "w1:p7", Cwd: "/ws/o/r/issue-5", Status: "idle"},
 	}
 	if err != nil || !slices.Equal(got, want) || !slices.Equal(calls, []string{"agent list"}) {
 		t.Errorf("AgentList = %+v, %v after %q; want %+v", got, err, calls, want)
@@ -59,7 +65,7 @@ func TestPaneList(t *testing.T) {
 	t.Parallel()
 	var calls []string
 	got, err := answer(paneList, &calls).PaneList(t.Context())
-	want := []Pane{{ID: "wX:p9", Workspace: "wX", Cwd: "/src/IaC", Status: "unknown"}}
+	want := []Pane{{ID: "wX:p9", Workspace: "wX", Tab: "wX:t1", Cwd: "/src/IaC", Status: "unknown"}}
 	if err != nil || !slices.Equal(got, want) || !slices.Equal(calls, []string{"pane list"}) {
 		t.Errorf("PaneList = %+v, %v after %q; want %+v", got, err, calls, want)
 	}
@@ -69,14 +75,28 @@ func TestPaneGet(t *testing.T) {
 	t.Parallel()
 	var calls []string
 	got, err := answer(paneGet, &calls).PaneGet(t.Context(), "wZ:pJ")
-	want := Pane{ID: "wZ:pJ", Workspace: "wZ", Cwd: "/src/trunk", Agent: "claude", Status: "working"}
+	want := Pane{ID: "wZ:pJ", Workspace: "wZ", Tab: "wZ:t1", Cwd: "/src/trunk", Kind: "claude", Status: "working"}
 	if err != nil || got != want || !slices.Equal(calls, []string{"pane get wZ:pJ"}) {
 		t.Errorf("PaneGet = %+v, %v after %q; want %+v", got, err, calls, want)
 	}
 	// A pane no agent occupies has no agent, or a null one.
 	got, err = answer(`{"result":{"pane":{"agent":null,"pane_id":"wZ:pJ"}}}`, &calls).PaneGet(t.Context(), "wZ:pJ")
-	if err != nil || got.Agent != "" {
+	if err != nil || got.Kind != "" {
 		t.Errorf("PaneGet with a null agent = %+v, %v", got, err)
+	}
+}
+
+func TestWorkspaceCreate(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	got, err := answer(workspaceCreate, &calls).WorkspaceCreate(t.Context(), "/tmp", "probe")
+	want := Pane{ID: "w1T:p1", Workspace: "w1T", Tab: "w1T:t1", Cwd: "/private/tmp", Status: "unknown"}
+	if err != nil || got != want || !slices.Equal(calls, []string{"workspace create --cwd /tmp --label probe --no-focus"}) {
+		t.Errorf("WorkspaceCreate = %+v, %v after %q; want %+v", got, err, calls, want)
+	}
+	if _, err := answer(`{"result":{"workspace":{"workspace_id":"w1T"}}}`, &calls).WorkspaceCreate(t.Context(), "/tmp", "probe"); err == nil ||
+		err.Error() != "herdr workspace create: no root pane in its answer" {
+		t.Errorf("WorkspaceCreate with no root pane: %v", err)
 	}
 }
 
@@ -113,11 +133,15 @@ func TestCalls(t *testing.T) {
 	if err := c.AgentPrompt(ctx, "w1:p7", "/implement it"); err != nil {
 		t.Error(err)
 	}
+	if err := c.TabClose(ctx, "w1:t5"); err != nil {
+		t.Error(err)
+	}
 	want := []string{
 		"agent read w1:p7 --source recent-unwrapped --lines 400 --format text",
 		"agent start r-5 --kind omp --pane w1:p7 -- --model glm-5",
 		"agent start r-5 --kind claude --pane w1:p7",
 		"agent prompt w1:p7 /implement it",
+		"tab close w1:t5",
 	}
 	if !slices.Equal(calls, want) {
 		t.Errorf("calls:\n%s\nwant:\n%s", strings.Join(calls, "\n"), strings.Join(want, "\n"))
@@ -143,6 +167,12 @@ func TestErrors(t *testing.T) {
 	_, err := gone.PaneGet(ctx, "nosuch:p1")
 	if Code(err) != PaneNotFound || err.Error() != "herdr pane get: "+paneNotFound {
 		t.Errorf("a pane not found: %v, code %q", err, Code(err))
+	}
+	closed := Client{Run: func(_ context.Context, args ...string) ([]byte, error) {
+		return nil, &ExitError{Args: args, Stderr: []byte(tabNotFound + "\n")}
+	}}
+	if err := closed.TabClose(ctx, "w1T:t9"); Code(err) != TabNotFound {
+		t.Errorf("a tab not found: %v, code %q", err, Code(err))
 	}
 	if Code(&ExitError{Args: []string{"agent", "list"}, Stdout: []byte("oops")}) != "" {
 		t.Error("an exit with no JSON error has a code")

@@ -5,43 +5,22 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
-// fakeHerdr writes a herdr stand-in with one workspace, web, holding one agent of status, and
-// returns its path and the file it records `agent prompt <pane> <text>` in.
-func fakeHerdr(t *testing.T, status string) (bin, sent string) {
-	t.Helper()
-	dir := t.TempDir()
-	bin, sent = filepath.Join(dir, "herdr"), filepath.Join(dir, "sent")
-	script := `#!/bin/sh
-case "$1 $2" in
-  "workspace list") echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"web"}]}}' ;;
-  "agent list") echo '{"result":{"agents":[{"workspace_id":"w1","pane_id":"p1","agent_status":"` + status + `"}]}}' ;;
-  "agent prompt") printf '%s\n%s' "$3" "$4" > '` + sent + `' ;;
-  *) echo "unexpected: $*" >&2; exit 3 ;;
-esac
-`
-	// Hold ForkLock so no parallel fork inherits the write fd: golang/go#22315 (ETXTBSY).
-	syscall.ForkLock.RLock()
-	err := os.WriteFile(bin, []byte(script), 0o755)
-	syscall.ForkLock.RUnlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return bin, sent
-}
+// webAgent is web's one agent, of status.
+func webAgent(status string) herdr.Agent { return herdrAgent("claude", "", status, "/src/web", 1) }
 
 // TestPromptSend sends a work item's prompt through a fake herdr, as a verb, and leaves the
 // note as it was.
 func TestPromptSend(t *testing.T) {
 	t.Parallel()
 	d := fixtureDeps(t, settled(t), false)
-	var sent string
-	d.Herdr, sent = fakeHerdr(t, "idle")
+	h := newFakeHerdr(t, webAgent("idle"))
+	d.Herdr = h.Bin
 	path := filepath.Join(d.Config.Vault.Repo, d.Config.Vault.Dir, fixtureDate+".md")
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -52,18 +31,14 @@ func TestPromptSend(t *testing.T) {
 	if err := RunVerb(t.Context(), All(d), "send", []byte(`{"item":"session-store"}`), &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"item": "session-store"`, `"to": "web"`, `"pane": "p1"`, `"path": "` + path + `"`} {
+	for _, want := range []string{`"item": "session-store"`, `"to": "web"`, `"pane": "w1:p1"`, `"path": "` + path + `"`} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %s:\n%s", want, out.String())
 		}
 	}
-	got, err := os.ReadFile(sent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "p1\n/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
-		send.Closing(send.Item("session-store"), path); string(got) != want {
-		t.Errorf("herdr got\n%s\nwant\n%s", got, want)
+	if want := "[workspace][list]\n[agent][list]\n[agent][prompt][w1:p1][/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
+		send.Closing(send.Item("session-store"), path) + "]\n"; h.calls(t) != want {
+		t.Errorf("herdr got\n%s\nwant\n%s", h.calls(t), want)
 	}
 	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(after, before) {
 		t.Errorf("the note changed: %v", err)
@@ -89,16 +64,15 @@ func TestPromptSendRefuses(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			d := fixtureDeps(t, settled(t), false)
-			var sent string
-			d.Herdr, sent = fakeHerdr(t, c.status)
-			if c.status == "" {
+			h := newFakeHerdr(t, webAgent(c.status))
+			if d.Herdr = h.Bin; c.status == "" {
 				d.Herdr = ""
 			}
 			if _, err := d.promptSend(t.Context(), c.in); err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("%v, want %q", err, c.want)
 			}
-			if _, err := os.Stat(sent); !os.IsNotExist(err) {
-				t.Errorf("herdr was prompted: %v", err)
+			if calls := h.calls(t); strings.Contains(calls, "[agent][prompt]") {
+				t.Errorf("herdr was prompted:\n%s", calls)
 			}
 		})
 	}

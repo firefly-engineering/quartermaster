@@ -55,8 +55,11 @@ func (e *ExitError) Error() string { return "herdr " + verb(e.Args) + ": " + e.M
 // Message is what herdr wrote to standard error, else to standard output, trimmed.
 func (e *ExitError) Message() string { return (*command.ExitError)(e).Message() }
 
-// PaneNotFound is the error code of a call on a pane that does not exist.
-const PaneNotFound = "pane_not_found"
+// The error codes of a call on a pane, or a tab, that does not exist.
+const (
+	PaneNotFound = "pane_not_found"
+	TabNotFound  = "tab_not_found"
+)
 
 // Code is herdr's error code in err, as PaneNotFound; "" when err is not one of herdr's.
 func Code(err error) string {
@@ -77,9 +80,12 @@ func Code(err error) string {
 
 // Agent is one of `agent list`'s .result.agents.
 type Agent struct {
-	Name      string `json:"name"` // absent for an agent not started or renamed through herdr
+	Kind      string `json:"agent"` // as claude or omp
+	Name      string `json:"name"`  // absent for an agent not started or renamed through herdr
 	Workspace string `json:"workspace_id"`
+	Tab       string `json:"tab_id"`
 	Pane      string `json:"pane_id"`
+	Cwd       string `json:"cwd"`
 	Status    string `json:"agent_status"`
 }
 
@@ -89,12 +95,14 @@ type Workspace struct {
 	Label string `json:"label"`
 }
 
-// Pane is one of `pane list`'s .result.panes, or `pane get`'s .result.pane.
+// Pane is one of `pane list`'s .result.panes, `pane get`'s .result.pane, or `workspace
+// create`'s .result.root_pane.
 type Pane struct {
 	ID        string `json:"pane_id"`
 	Workspace string `json:"workspace_id"`
+	Tab       string `json:"tab_id"`
 	Cwd       string `json:"cwd"`
-	Agent     string `json:"agent"` // the agent kind in the pane; absent or null for none
+	Kind      string `json:"agent"` // the kind of the agent in the pane; absent or null for none
 	Status    string `json:"agent_status"`
 }
 
@@ -142,6 +150,23 @@ func (c Client) PaneGet(ctx context.Context, id string) (Pane, error) {
 	return r.Result.Pane, err
 }
 
+// WorkspaceCreate is `herdr workspace create`, unfocused, at cwd, labelled label. It returns
+// the new workspace's first pane, .result.root_pane, which names the workspace and its tab.
+func (c Client) WorkspaceCreate(ctx context.Context, cwd, label string) (Pane, error) {
+	var r struct {
+		Result struct {
+			RootPane Pane `json:"root_pane"`
+		} `json:"result"`
+	}
+	if err := c.json(ctx, &r, "workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"); err != nil {
+		return Pane{}, err
+	}
+	if r.Result.RootPane.ID == "" {
+		return Pane{}, errors.New("herdr workspace create: no root pane in its answer")
+	}
+	return r.Result.RootPane, nil
+}
+
 // TabCreate is `herdr tab create`, unfocused, in workspace at cwd, labelled label. It returns
 // the new tab's pane: .result.root_pane.pane_id.
 func (c Client) TabCreate(ctx context.Context, workspace, cwd, label string) (pane string, err error) {
@@ -159,6 +184,13 @@ func (c Client) TabCreate(ctx context.Context, workspace, cwd, label string) (pa
 		return "", errors.New("herdr tab create: no root pane in its answer")
 	}
 	return r.Result.RootPane.ID, nil
+}
+
+// TabClose is `herdr tab close <id>`: it closes the tab and every pane in it. A tab already
+// gone is an error whose Code is TabNotFound.
+func (c Client) TabClose(ctx context.Context, id string) error {
+	_, err := c.run(ctx, "tab", "close", id)
+	return err
 }
 
 // AgentStart is `herdr agent start`: an agent of kind, named name, in pane, with args after
