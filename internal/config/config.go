@@ -130,9 +130,8 @@ func Defaults() Config {
 		Dispatch: Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
 		Harness: map[string]Harness{
 			"claude": {Kind: "claude"},
-			"glm":    {Kind: "omp", Args: []string{"--model", "glm-5"}},
 		},
-		Tiers:    map[string]string{DefaultTier: "claude", "basic-implementation": "glm", "refactoring": "glm"},
+		Tiers:    map[string]string{DefaultTier: "claude"},
 		Projects: Projects{Root: "~/src/github.com", Repos: map[string]Project{}},
 	}
 }

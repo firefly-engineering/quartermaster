@@ -40,9 +40,8 @@ worklog note [--config <file>] [--vault <repo>] <verb> [<json input>]
 The config file defaults to `$XDG_CONFIG_HOME/quartermaster/worklog.toml`, else
 `~/.config/quartermaster/worklog.toml`; a missing default file is not an error. `--vault`
 overrides `vault.repo`, the repo that holds the vault. `[harness.<name>]` names the agents
-work runs on and `[tiers]` maps each work item's tier to one; by default `basic-implementation`
-and `refactoring` go to omp on GLM, everything else to claude
-([spec §3](docs/spec.md#3-configuration)).
+work runs on and `[tiers]` maps each work item's tier to one; by default every tier goes
+to the built-in `claude` harness ([spec §3](docs/spec.md#3-configuration)).
 
 Each `note` verb runs the MCP tool of the same operation. It takes the tool's input as one
 JSON object argument, `{}` when left out, and prints the tool's output as JSON:

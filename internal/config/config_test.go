@@ -28,9 +28,8 @@ func wantDefaults() Config {
 		Dispatch: Dispatch{WorkspaceRoot: "/home/u/.local/share/quartermaster/worklog/workspaces"},
 		Harness: map[string]Harness{
 			"claude": {Kind: "claude"},
-			"glm":    {Kind: "omp", Args: []string{"--model", "glm-5"}},
 		},
-		Tiers:    map[string]string{"default": "claude", "basic-implementation": "glm", "refactoring": "glm"},
+		Tiers:    map[string]string{"default": "claude"},
 		Projects: Projects{Root: "/home/u/src/github.com", Repos: map[string]Project{}},
 	}
 }
@@ -125,9 +124,12 @@ workspace = "IaC"
 			},
 		},
 		{
-			name:        "a user tiers table replaces the built-in tiers whole",
-			defaultFile: "[tiers]\ndefault = \"glm\"\ndesign = \"claude\"\n",
-			want:        func(c *Config) { c.Tiers = map[string]string{"default": "glm", "design": "claude"} },
+			name:        "user tables replace the built-in harness set and default tier whole",
+			defaultFile: "[harness.glm]\nkind = \"omp\"\n[tiers]\ndefault = \"glm\"\n",
+			want: func(c *Config) {
+				c.Harness = map[string]Harness{"glm": {Kind: "omp"}}
+				c.Tiers = map[string]string{"default": "glm"}
+			},
 		},
 		{
 			name:        "keys the user file omits keep their defaults",
@@ -343,8 +345,8 @@ func TestLoadErrors(t *testing.T) {
 		},
 		{
 			name: "built-in tiers naming a harness the user's set dropped",
-			file: "[harness.claude]\nkind = \"claude\"\n",
-			want: []string{"tiers.basic-implementation", `"glm"`, "not defined"},
+			file: "[harness.glm]\nkind = \"omp\"\n",
+			want: []string{"tiers.default", `"claude"`, "not defined"},
 		},
 		{
 			name: "two harnesses of one kind",
