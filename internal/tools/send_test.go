@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/firefly-engineering/quartermaster/internal/send"
@@ -24,7 +25,11 @@ case "$1 $2" in
   *) echo "unexpected: $*" >&2; exit 3 ;;
 esac
 `
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+	// Hold ForkLock so no parallel fork inherits the write fd: golang/go#22315 (ETXTBSY).
+	syscall.ForkLock.RLock()
+	err := os.WriteFile(bin, []byte(script), 0o755)
+	syscall.ForkLock.RUnlock()
+	if err != nil {
 		t.Fatal(err)
 	}
 	return bin, sent
