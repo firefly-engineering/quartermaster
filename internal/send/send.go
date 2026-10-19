@@ -26,7 +26,7 @@ import (
 // available are the agent statuses a prompt may be typed into. A working agent would queue
 // it behind its turn, and a blocked one shows an approval or question UI that typed text
 // could answer.
-var available = []string{"idle", "done"}
+var available = []string{herdr.Idle, herdr.Done}
 
 // tool names the recording of a send's pane in the note's commit message.
 const tool = "send"
@@ -88,7 +88,7 @@ func (s Sender) SendItem(ctx context.Context, vault, date, id, extra string) (Se
 	// to=owner/repo names the project, whose workspace deliver resolves, creating it if need
 	// be. A bare label names a workspace, only looked up.
 	if p.Repo = it.Prompt.To; !note.ValidRepo(p.Repo) {
-		if p.To, err = s.labelled(ctx, it.Prompt.To); err != nil {
+		if p.To, err = s.workspace(ctx, it.Prompt.To); err != nil {
 			return Sent{}, err
 		}
 		if p.Repo, err = s.project(n, it, it.Prompt.To); err != nil {
@@ -261,22 +261,17 @@ func dedent(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// labelled is the one herdr workspace labelled label.
-func (s Sender) labelled(ctx context.Context, label string) (Workspace, error) {
+// workspace is the one herdr workspace labelled label, among those herdr lists (labelled).
+func (s Sender) workspace(ctx context.Context, label string) (Workspace, error) {
 	spaces, err := s.herdr().WorkspaceList(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
-	var ids []string
-	for _, w := range spaces {
-		if w.Label == label && !slices.Contains(ids, w.ID) {
-			ids = append(ids, w.ID)
-		}
+	ws, n := labelled(spaces, label)
+	if n != 1 {
+		return Workspace{}, fmt.Errorf("%d herdr workspaces labelled %q", n, label)
 	}
-	if len(ids) != 1 {
-		return Workspace{}, fmt.Errorf("%d herdr workspaces labelled %q", len(ids), label)
-	}
-	return Workspace{ID: ids[0], Label: label}, nil
+	return ws, nil
 }
 
 // project is the owner/repo whose session is in the herdr workspace label names, for item it

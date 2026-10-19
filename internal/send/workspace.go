@@ -30,21 +30,8 @@ func ProjectWorkspace(ctx context.Context, c herdr.Client, projects config.Proje
 	if err != nil {
 		return Workspace{}, "", err
 	}
-	labelled := func(label string) (Workspace, int) {
-		var ids []string
-		for _, w := range spaces {
-			if w.Label == label && !slices.Contains(ids, w.ID) {
-				ids = append(ids, w.ID)
-			}
-		}
-		if len(ids) != 1 {
-			return Workspace{}, len(ids)
-		}
-		return Workspace{ID: ids[0], Label: label}, 1
-	}
-
 	if p.Workspace != "" {
-		switch ws, n := labelled(p.Workspace); n {
+		switch ws, n := labelled(spaces, p.Workspace); n {
 		case 0:
 			return create(ctx, c, repo, p.Path, p.Workspace)
 		case 1:
@@ -85,7 +72,7 @@ func ProjectWorkspace(ctx context.Context, c herdr.Client, projects config.Proje
 	}
 
 	_, name, _ := strings.Cut(repo, "/")
-	switch ws, n := labelled(name); n {
+	switch ws, n := labelled(spaces, name); n {
 	case 0:
 		return create(ctx, c, repo, p.Path, name)
 	case 1:
@@ -93,6 +80,21 @@ func ProjectWorkspace(ctx context.Context, c herdr.Client, projects config.Proje
 	default:
 		return Workspace{}, "", fmt.Errorf("%d herdr workspaces labelled %q: set projects.%q.workspace to the project's", n, name, repo)
 	}
+}
+
+// labelled is the one workspace of spaces labelled label, and how many distinct workspaces
+// are: the workspace is zero unless that is 1.
+func labelled(spaces []Workspace, label string) (Workspace, int) {
+	var ids []string
+	for _, w := range spaces {
+		if w.Label == label && !slices.Contains(ids, w.ID) {
+			ids = append(ids, w.ID)
+		}
+	}
+	if len(ids) != 1 {
+		return Workspace{}, len(ids)
+	}
+	return Workspace{ID: ids[0], Label: label}, 1
 }
 
 // create is §9.2's step 4: a herdr workspace for repo, labelled label, at its checkout, which

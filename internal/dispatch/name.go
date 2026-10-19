@@ -16,6 +16,20 @@ const wsPrefix = "issue-"
 // or a batch's `<repo>-<item-id>` in `<workspace_root>/<owner>/<repo>/<item-id>`. An agent
 // renamed since, or a session's, is not.
 func IsFreshAgent(name, ws string) bool {
-	suffix := strings.TrimPrefix(filepath.Base(ws), wsPrefix)
-	return send.IsAgentName(name, filepath.Base(filepath.Dir(ws)), suffix)
+	_, repo, wsName := SplitCheckout(ws)
+	return send.IsAgentName(name, repo, strings.TrimPrefix(wsName, wsPrefix))
+}
+
+// checkoutPath is the path of a fresh dispatch's checkout named name, of repo, owner/repo:
+// `<root>/<owner>/<repo>/<name>`. SplitCheckout takes it apart.
+func checkoutPath(root, repo, name string) string {
+	owner, repo, _ := strings.Cut(repo, "/")
+	return filepath.Join(root, owner, repo, name)
+}
+
+// SplitCheckout is the owner, repo and name of ws, a fresh dispatch's checkout,
+// `<workspace_root>/<owner>/<repo>/<name>`.
+func SplitCheckout(ws string) (owner, repo, name string) {
+	dir := filepath.Dir(ws)
+	return filepath.Base(filepath.Dir(dir)), filepath.Base(dir), filepath.Base(ws)
 }

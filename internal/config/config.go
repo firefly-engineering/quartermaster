@@ -18,6 +18,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/skills"
 )
 
@@ -250,9 +251,7 @@ func validateHarnesses(cfg Config) error {
 
 // validHarnessName reports whether name matches [a-z][a-z0-9_-]*, so it fits a herdr agent name.
 func validHarnessName(name string) bool {
-	return name != "" && name[0] >= 'a' && name[0] <= 'z' && !strings.ContainsFunc(name, func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '-'
-	})
+	return name != "" && herdr.NameStart(rune(name[0])) && !strings.ContainsFunc(name, func(r rune) bool { return !herdr.NameChar(r) })
 }
 
 func expandPaths(cfg *Config, home string) error {
