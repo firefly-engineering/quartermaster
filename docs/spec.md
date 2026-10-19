@@ -339,7 +339,7 @@ The flake exports:
 | Output | Content |
 |---|---|
 | `packages.<system>.worklog` (default) | the static `worklog` binary (`CGO_ENABLED=0`) |
-| `packages.<system>.skills` | a Claude plugin directory holding `skills/worklog` and `skills/worktree-build-cache` ([ADR 0010]), for `programs.agentSkills.plugins` or `programs.claude-code.plugins` |
+| `packages.<system>.skills` | a Claude plugin directory holding `skills/worklog`, `skills/worktree-build-cache` and `skills/mass-implement` ([ADR 0010]), for `programs.agentSkills.plugins` or `programs.claude-code.plugins` |
 | `homeManagerModules.default` | `programs.quartermaster.worklog` ([§10.1]) |
 | `overlays.default` | `worklog` |
 | `checks` | the package build with its tests, the skill bundle against its manifest, and the module evaluated on home-manager |
