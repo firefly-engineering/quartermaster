@@ -2,96 +2,35 @@ package refresh
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
-	"strings"
+
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 )
-
-// herdr's JSON, as herdr 0.9.5's API schema has it: every answer but `agent read`'s, which is
-// the pane's plain text, is `{"id", "result"}`, and an error is `{"id", "error": {"code",
-// "message"}}` on standard error, with exit status 1.
-
-type herdrError struct {
-	Error struct {
-		Code string `json:"code"`
-	} `json:"error"`
-}
-
-// errorCode is herdr's error code in err, "" when err is not one of herdr's.
-func errorCode(err error) string {
-	var exit *ExitError
-	if !errors.As(err, &exit) {
-		return ""
-	}
-	var e herdrError
-	if json.Unmarshal(exit.Stderr, &e) != nil {
-		return ""
-	}
-	return e.Error.Code
-}
-
-// herdrText runs herdr with args and returns its standard output as is.
-func (g *gatherer) herdrText(ctx context.Context, args ...string) ([]byte, error) {
-	if g.Herdr == nil {
-		return nil, errors.New("herdr: not available")
-	}
-	return g.Herdr(ctx, args...)
-}
-
-// herdr runs herdr with args and decodes its JSON answer into v.
-func (g *gatherer) herdr(ctx context.Context, v any, args ...string) error {
-	out, err := g.herdrText(ctx, args...)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(out, v); err != nil {
-		return fmt.Errorf("herdr %s: %w", strings.Join(args[:min(2, len(args))], " "), err)
-	}
-	return nil
-}
 
 // worker asks herdr about the pane a dispatched item's agent was started in. A pane that is
 // gone, or that no agent occupies any more, is a worker that exited: it returns the WAITING
 // summary. Otherwise it returns why the item stays as it is.
 func (g *gatherer) worker(ctx context.Context, pane string) (waiting, reason string) {
-	var r struct {
-		Result struct {
-			Pane struct {
-				Agent  *string `json:"agent"`
-				Status string  `json:"agent_status"`
-			} `json:"pane"`
-		} `json:"result"`
-	}
-	err := g.herdr(ctx, &r, "pane", "get", pane)
+	p, err := g.Herdr.PaneGet(ctx, pane)
 	switch {
-	case errorCode(err) == "pane_not_found":
+	case herdr.Code(err) == herdr.PaneNotFound:
 		return "worker exited: pane " + pane + " is gone", ""
 	case err != nil:
 		return "", "herdr: " + err.Error()
-	case r.Result.Pane.Agent == nil || *r.Result.Pane.Agent == "":
+	case p.Agent == "":
 		return "worker exited: no agent in pane " + pane, ""
 	}
-	return "", fmt.Sprintf("its worker %s in pane %s is %s", *r.Result.Pane.Agent, pane, r.Result.Pane.Status)
+	return "", fmt.Sprintf("its worker %s in pane %s is %s", p.Agent, pane, p.Status)
 }
 
-type agent struct {
-	Workspace string `json:"workspace_id"`
-	Pane      string `json:"pane_id"`
-	Status    string `json:"agent_status"`
-}
+type agent = herdr.Agent
 
 // agents lists herdr's agents, once per refresh.
 func (g *gatherer) agents(ctx context.Context) ([]agent, error) {
 	if !g.agentsRead {
-		var r struct {
-			Result struct {
-				Agents []agent `json:"agents"`
-			} `json:"result"`
-		}
-		g.agentsErr = g.herdr(ctx, &r, "agent", "list")
-		g.agentList, g.agentsRead = r.Result.Agents, true
+		g.agentList, g.agentsErr = g.Herdr.AgentList(ctx)
+		g.agentsRead = true
 	}
 	return g.agentList, g.agentsErr
 }
@@ -99,17 +38,10 @@ func (g *gatherer) agents(ctx context.Context) ([]agent, error) {
 // workspaces lists the ids of herdr's workspaces by label, once per refresh.
 func (g *gatherer) workspaces(ctx context.Context) (map[string][]string, error) {
 	if g.spaces == nil && g.spacesErr == nil {
-		var r struct {
-			Result struct {
-				Workspaces []struct {
-					ID    string `json:"workspace_id"`
-					Label string `json:"label"`
-				} `json:"workspaces"`
-			} `json:"result"`
-		}
-		if g.spacesErr = g.herdr(ctx, &r, "workspace", "list"); g.spacesErr == nil {
+		var ws []herdr.Workspace
+		if ws, g.spacesErr = g.Herdr.WorkspaceList(ctx); g.spacesErr == nil {
 			g.spaces = map[string][]string{}
-			for _, w := range r.Result.Workspaces {
+			for _, w := range ws {
 				g.spaces[w.Label] = append(g.spaces[w.Label], w.ID)
 			}
 		}
@@ -151,7 +83,7 @@ func (g *gatherer) replier(ctx context.Context, pane, label string) (agent, erro
 }
 
 // readLines is how much of an agent's recent output refresh reads for a reply.
-const readLines = "400"
+const readLines = 400
 
 // reply reads the agent item id was sent to, by its pane or its workspace label, for its reply
 // to the item's prompt. It returns the reply's GitHub links not in the item's line already, or
@@ -171,8 +103,7 @@ func (g *gatherer) reply(ctx context.Context, id, pane, label, title string) (li
 	if a.Status != "idle" && a.Status != "done" {
 		return nil, fmt.Sprintf("the agent in %s is %s", who, a.Status)
 	}
-	// agent read prints the pane's text, not JSON: --format takes only text and ansi.
-	text, err := g.herdrText(ctx, "agent", "read", a.Pane, "--source", "recent-unwrapped", "--lines", readLines, "--format", "text")
+	text, err := g.Herdr.AgentRead(ctx, a.Pane, readLines)
 	if err != nil {
 		return nil, "herdr: " + err.Error()
 	}

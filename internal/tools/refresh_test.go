@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/refresh"
 )
 
@@ -34,7 +35,7 @@ func ghFake(t *testing.T, answers map[string]string) refresh.Runner {
 }
 
 // noHerdr fails the test if herdr is run.
-func noHerdr(t *testing.T) refresh.Runner {
+func noHerdr(t *testing.T) func(context.Context, ...string) ([]byte, error) {
 	return func(_ context.Context, args ...string) ([]byte, error) {
 		t.Errorf("herdr %v", args)
 		return nil, errors.New("unexpected")
@@ -53,7 +54,7 @@ func TestRefreshSettles(t *testing.T) {
 	t.Parallel()
 	const nextLine = "1. [ ] Rotate the staging token · 5 min · [[#^rotate-token|details]]"
 	d := fixtureDeps(t, strings.Replace(string(readFixture(t)), nextLine, strings.Replace(nextLine, "[ ]", "[x]", 1), 1), true)
-	rec := refresh.Reconciler{GH: ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": openPR}), Herdr: noHerdr(t)}
+	rec := refresh.Reconciler{GH: ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": openPR}), Herdr: herdr.Client{Run: noHerdr(t)}}
 	out, err := d.refreshWith(t.Context(), RefreshInput{}, rec)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +77,7 @@ func TestRefreshSettles(t *testing.T) {
 func TestRefreshMoves(t *testing.T) {
 	t.Parallel()
 	d := fixtureDeps(t, settled(t), true)
-	rec := refresh.Reconciler{GH: ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": mergedPR}), Herdr: noHerdr(t)}
+	rec := refresh.Reconciler{GH: ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": mergedPR}), Herdr: herdr.Client{Run: noHerdr(t)}}
 	out, err := d.refreshWith(t.Context(), RefreshInput{Date: fixtureDate}, rec)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +102,7 @@ func TestRefreshMoves(t *testing.T) {
 func TestRefreshRefusesUnparseable(t *testing.T) {
 	t.Parallel()
 	d := fixtureDeps(t, settled(t)+"\n##### ⬜ stray\n", false)
-	if _, err := d.refreshWith(t.Context(), RefreshInput{}, refresh.Reconciler{GH: noHerdr(t), Herdr: noHerdr(t)}); err == nil || !strings.Contains(err.Error(), "does not parse") {
+	if _, err := d.refreshWith(t.Context(), RefreshInput{}, refresh.Reconciler{GH: noHerdr(t), Herdr: herdr.Client{Run: noHerdr(t)}}); err == nil || !strings.Contains(err.Error(), "does not parse") {
 		t.Errorf("err %v", err)
 	}
 }

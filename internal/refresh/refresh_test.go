@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	qmherdr "github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 	"github.com/firefly-engineering/quartermaster/internal/send"
 )
@@ -172,7 +173,7 @@ func TestGatherAndApply(t *testing.T) {
 		"o/infra#43": {out: issue("CLOSED", "COMPLETED", byCommit)},
 	}}
 	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
-		"pane get w1:p7": {err: &ExitError{Name: "herdr", Args: []string{"pane", "get", "w1:p7"},
+		"pane get w1:p7": {err: &qmherdr.ExitError{Args: []string{"pane", "get", "w1:p7"},
 			Stderr: []byte(`{"id":"1","error":{"code":"pane_not_found","message":"pane w1:p7 not found"}}`)}},
 		"pane get w1:p8": {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p8","agent":null,"agent_status":"unknown"}}}`},
 		"pane get w1:p9": {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p9","agent":"claude","agent_status":"working"}}}`},
@@ -190,7 +191,7 @@ func TestGatherAndApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Reconciler{GH: gh.run, Herdr: herdr.run}.Gather(t.Context(), n)
+	plan := Reconciler{GH: gh.run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n)
 	out, applied, skipped, err := plan.Apply(src)
 	if err != nil {
 		t.Fatal(err)
@@ -294,7 +295,7 @@ func TestApplyChangedSinceRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Reconciler{GH: gh.run, Herdr: (&fake{t: t, keyOf: herdrKey}).run}.Gather(t.Context(), n)
+	plan := Reconciler{GH: gh.run, Herdr: qmherdr.Client{Run: (&fake{t: t, keyOf: herdrKey}).run}}.Gather(t.Context(), n)
 	now := strings.Replace(before, "🔄 [#1]", "⏳ [#1]", 1)
 	out, applied, skipped, err := plan.Apply([]byte(now))
 	if err != nil {
@@ -318,7 +319,7 @@ func TestApplyRefChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Reconciler{GH: gh.run, Herdr: (&fake{t: t, keyOf: herdrKey}).run}.Gather(t.Context(), n)
+	plan := Reconciler{GH: gh.run, Herdr: qmherdr.Client{Run: (&fake{t: t, keyOf: herdrKey}).run}}.Gather(t.Context(), n)
 	now := strings.Replace(before, "[#1](https://github.com/o/r/issues/1)", "[#2](https://github.com/o/r/issues/2)", 1)
 	out, applied, skipped, err := plan.Apply([]byte(now))
 	if err != nil || string(out) != now || len(applied) != 0 {
@@ -338,7 +339,7 @@ func TestNoRunners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, applied, skipped, err := Reconciler{GH: Command("gh", "", nil), Herdr: Command("herdr", "", nil)}.
+	out, applied, skipped, err := Reconciler{GH: Command("gh", "", nil), Herdr: qmherdr.New("", nil)}.
 		Gather(t.Context(), n).Apply([]byte(src))
 	if err != nil || string(out) != src || len(applied) != 0 {
 		t.Fatalf("applied %+v, err %v", applied, err)
@@ -413,7 +414,7 @@ func TestCommand(t *testing.T) {
 	if !errors.As(err, &exit) || string(exit.Stderr) != "{\"error\":{\"code\":\"pane_not_found\"}}\n" {
 		t.Fatalf("err %v", err)
 	}
-	if err.Error() != "sh -c "+script+`: {"error":{"code":"pane_not_found"}}` || errorCode(err) != "pane_not_found" {
+	if err.Error() != "sh -c "+script+`: {"error":{"code":"pane_not_found"}}` {
 		t.Errorf("message %q", err)
 	}
 }
@@ -439,7 +440,7 @@ func TestReplyRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: herdr.run}.Gather(t.Context(), n).Apply([]byte(src))
+	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n).Apply([]byte(src))
 	if err != nil || len(skipped) != 0 || len(applied) != 2 {
 		t.Fatalf("applied %+v skipped %+v err %v", applied, skipped, err)
 	}
@@ -461,14 +462,14 @@ func TestReplyReadFails(t *testing.T) {
 	args := []string{"agent", "read", "w9:p2", "--source", "recent-unwrapped", "--lines", "400", "--format", "text"}
 	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
 		"agent list": {out: `{"result":{"agents":[{"workspace_id":"w9","pane_id":"w9:p2","agent_status":"idle"}]}}`},
-		strings.Join(args, " "): {err: &ExitError{Name: "herdr", Args: args,
+		strings.Join(args, " "): {err: &qmherdr.ExitError{Args: args,
 			Stderr: []byte(`{"id":"1","error":{"code":"pane_not_found","message":"pane w9:p2 not found"}}`)}},
 	}}
 	n, err := note.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: herdr.run}.Gather(t.Context(), n).Apply([]byte(src))
+	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n).Apply([]byte(src))
 	if err != nil || string(out) != src || len(applied) != 0 {
 		t.Fatalf("applied %+v, err %v", applied, err)
 	}

@@ -414,7 +414,7 @@ func TestFreshHerdrFails(t *testing.T) {
 	write(t, filepath.Join(f.bin, "fail-start"), "")
 	ws := filepath.Join(f.root, "o", "r", "issue-11")
 	_, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "")
-	if err == nil || !strings.Contains(err.Error(), "start failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1:p7") {
+	if err == nil || !strings.Contains(err.Error(), "herdr agent start r-11 --kind: start failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1:p7") {
 		t.Fatalf("err %v, want herdr's reason, the workspace and the pane", err)
 	}
 	if _, err := os.Stat(ws); err != nil {

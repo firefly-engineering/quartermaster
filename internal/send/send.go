@@ -7,18 +7,15 @@
 package send
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 )
 
@@ -79,12 +76,8 @@ func (s Sender) SendItem(ctx context.Context, vault, date, id, extra string) (Se
 	return sent, err
 }
 
-// Workspace is one herdr workspace, as `herdr workspace list` has it: its id, and the label
-// messages and Sent.To name it by.
-type Workspace struct {
-	ID    string `json:"workspace_id"`
-	Label string `json:"label"`
-}
+// Workspace is one herdr workspace: its id, and the label messages and Sent.To name it by.
+type Workspace = herdr.Workspace
 
 // Deliver sends text to the one agent in herdr workspace to, closed with the line asking it to
 // update what (Closing), in the note at path. Sent.ID is what. It is for a prompt no
@@ -120,7 +113,7 @@ func (s Sender) deliver(ctx context.Context, to Workspace, text, what, path stri
 		return Sent{}, fmt.Errorf("%s agent is %s; answer it first", to.Label, status)
 	}
 	text += "\n\n" + Closing(what, path)
-	if _, err := s.herdr(ctx, "agent", "prompt", pane, text); err != nil {
+	if err := s.herdr().AgentPrompt(ctx, pane, text); err != nil {
 		return Sent{}, err
 	}
 	return Sent{ID: what, To: to.Label, Pane: pane, Path: path}, nil
@@ -182,16 +175,12 @@ func dedent(s string) string {
 
 // labelled is the one herdr workspace labelled label (one session per project).
 func (s Sender) labelled(ctx context.Context, label string) (Workspace, error) {
-	var spaces struct {
-		Result struct {
-			Workspaces []Workspace `json:"workspaces"`
-		} `json:"result"`
-	}
-	if err := s.herdrJSON(ctx, &spaces, "workspace", "list"); err != nil {
+	spaces, err := s.herdr().WorkspaceList(ctx)
+	if err != nil {
 		return Workspace{}, err
 	}
 	var ids []string
-	for _, w := range spaces.Result.Workspaces {
+	for _, w := range spaces {
 		if w.Label == label && !slices.Contains(ids, w.ID) {
 			ids = append(ids, w.ID)
 		}
@@ -204,20 +193,12 @@ func (s Sender) labelled(ctx context.Context, label string) (Workspace, error) {
 
 // agent is the one agent pane in workspace ws, and its status.
 func (s Sender) agent(ctx context.Context, ws Workspace) (pane, status string, err error) {
-	var agents struct {
-		Result struct {
-			Agents []struct {
-				Workspace string `json:"workspace_id"`
-				Pane      string `json:"pane_id"`
-				Status    string `json:"agent_status"`
-			} `json:"agents"`
-		} `json:"result"`
-	}
-	if err := s.herdrJSON(ctx, &agents, "agent", "list"); err != nil {
+	agents, err := s.herdr().AgentList(ctx)
+	if err != nil {
 		return "", "", err
 	}
 	var in []int
-	for i, a := range agents.Result.Agents {
+	for i, a := range agents {
 		if a.Workspace == ws.ID {
 			in = append(in, i)
 		}
@@ -225,44 +206,8 @@ func (s Sender) agent(ctx context.Context, ws Workspace) (pane, status string, e
 	if len(in) != 1 {
 		return "", "", fmt.Errorf("%d agents in workspace %q; expected one", len(in), ws.Label)
 	}
-	a := agents.Result.Agents[in[0]]
+	a := agents[in[0]]
 	return a.Pane, a.Status, nil
 }
 
-func (s Sender) herdrJSON(ctx context.Context, v any, args ...string) error {
-	out, err := s.herdr(ctx, args...)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(out, v); err != nil {
-		return fmt.Errorf("herdr %s: %w", strings.Join(args[:2], " "), err)
-	}
-	return nil
-}
-
-// herdr runs herdr with args, directly, with no shell.
-func (s Sender) herdr(ctx context.Context, args ...string) ([]byte, error) {
-	if s.Herdr == "" {
-		return nil, errors.New("herdr not found on PATH")
-	}
-	cmd := exec.CommandContext(ctx, s.Herdr, args...)
-	cmd.Env = s.Env
-	if cmd.Env == nil {
-		cmd.Env = []string{} // nil would hand herdr this process's environment
-	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = strings.TrimSpace(stdout.String())
-		}
-		return nil, fmt.Errorf("herdr %s: %s", strings.Join(args[:2], " "), msg)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("herdr: %w", err)
-	}
-	return stdout.Bytes(), nil
-}
+func (s Sender) herdr() herdr.Client { return herdr.New(s.Herdr, s.Env) }

@@ -25,7 +25,7 @@
 //     becomes **done** along with its state.
 //
 // Like every package but main, this one reads neither the environment nor the cwd: gh and
-// herdr come in as Runners.
+// herdr come in as a Runner and a herdr.Client.
 package refresh
 
 import (
@@ -34,13 +34,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 )
 
 // Reconciler gathers the evidence for a refresh.
 type Reconciler struct {
-	GH    Runner // runs gh
-	Herdr Runner // runs herdr
+	GH    Runner       // runs gh
+	Herdr herdr.Client // calls herdr
 }
 
 // Applied is one change refresh made to the note.
