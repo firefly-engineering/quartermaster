@@ -68,6 +68,9 @@ TOML, loaded in this order, later wins: built-in defaults, then the user file, t
 `$XDG_CONFIG_HOME/quartermaster/worklog.toml`, resolved once in `main` and passed down: no
 package reads the environment or cwd.
 
+A user's file may name several harnesses and route tiers between them; this one sends
+well-specified implementation to a cheaper harness:
+
 ```toml
 [vault]
 repo = "~/src/github.com/sigma/worklog"   # jj repo holding the vault
@@ -100,9 +103,11 @@ root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<re
 
 A **harness** is `[harness.<name>]`: a herdr agent `kind` and its `args`. `[tiers]` maps a
 work item's tier to a harness name; a tier it does not list, and an item with no tier, go
-to `default` ([ADR 0011]). The defaults are the harnesses and tiers above. A user file's
-`[harness.*]` replaces the whole built-in harness set, and its `[tiers]` the built-in tiers;
-fields never merge inside a table. After merging, each of these is a load error:
+to `default` ([ADR 0011]). The built-in defaults are one harness, `claude` (kind
+`claude`, no args), and `[tiers]` naming only `default = "claude"`: with no user
+harness or tiers table, every tier routes to claude. A user file's `[harness.*]`
+replaces the whole built-in harness set, and its `[tiers]` the built-in tiers; fields
+never merge inside a table. After merging, each of these is a load error:
 
 - `[tiers]` has no `default`;
 - a `[tiers]` key is neither `default` nor a tier of the list cut from the worklog skill's

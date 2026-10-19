@@ -334,17 +334,17 @@ When you read a worker's report, act on it once:
 
 - `question:` goes to *Decisions for you* with `item_upsert`, the question as its title.
   Its tier stays: a missing decision is not a capability gap.
-- `stuck:` from a tier the developer's config does not route to claude, by default
-  `basic-implementation` or `refactoring` (`[tiers]` in `worklog.toml`), is **escalated**:
+- `stuck:` from a tier the developer's `[tiers]` in `worklog.toml` does not route to
+  claude is **escalated**:
   1. `item_upsert` raises its tier to `complex-implementation`, and gives it a prompt to
      the session agent that dispatches it fresh again: call `task_dispatch` with its ref (a
      batch's item id as `item`), mode `fresh`, and as `instruction` the note on the reused checkout, "A
-     `basic-implementation` worker stopped here: <reason>. Its work is in `<ws>`; continue
+     `<tier>` worker stopped here: <reason>. Its work is in `<ws>`; continue
      from it." The marker's `ws=` is the checkout. The prompt also says to leave the item
      to its new worker: `task_dispatch` moves it to `IN_PROGRESS`, and the session must not
      mark it done. The button label names the run, as `re-dispatch in trunk`.
   2. `item_transition` keeps it `WAITING`, the old tier and the reason as its summary:
-     `escalated from basic-implementation; stuck: <reason>`.
+     `escalated from <tier>; stuck: <reason>`.
   3. `next_set` puts it in *Next*, with its ▶ button.
 
   The user starts it: nothing re-dispatches on its own. Asked to dispatch it, call
