@@ -142,8 +142,8 @@ func (d Dispatcher) session(ctx context.Context, date string, ref note.Ref, it *
 	return res, nil
 }
 
-// fresh creates or reuses the ref's workspace, starts an agent in it, and records both on the
-// item.
+// fresh creates or reuses the ref's workspace, starts an agent of the harness the item's tier
+// routes to in it, and records both on the item.
 func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *note.Item, instruction string, res Result) (Result, error) {
 	if it == nil {
 		return Result{}, fmt.Errorf("no work item for %s in %s: a fresh dispatch records its agent on one, so item_upsert it first", ref, res.Path)
@@ -154,11 +154,12 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 		}
 	}
 	checkout := d.Config.Projects.Project(ref.Repo).Path
+	_, harness := d.Config.HarnessFor(it.Tier)
 	switch {
 	case checkout == "":
 		return Result{}, fmt.Errorf("neither projects.root nor projects.%q.path is set: a fresh dispatch needs the checkout", ref.Repo)
-	case d.Config.Harness.Worker.Kind == "":
-		return Result{}, errors.New("harness.worker.kind is not set: a fresh dispatch needs the herdr agent kind to start")
+	case harness.Kind == "":
+		return Result{}, fmt.Errorf("[tiers] routes ^%s to no harness: a fresh dispatch needs the herdr agent kind to start", it.ID)
 	case d.Config.Dispatch.WorkspaceRoot == "":
 		return Result{}, errors.New("dispatch.workspace_root is not set")
 	case d.Herdr == "":
@@ -192,7 +193,7 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 	res.Workspace = ws
 
 	prompt := implement(ref, instruction) + "\n\n" + send.Closing(send.Item(it.ID), res.Path)
-	pane, err := d.agent(ctx, herdrWS.ID, ws, agentName, prompt)
+	pane, err := d.agent(ctx, harness, herdrWS.ID, ws, agentName, prompt)
 	if err != nil {
 		left := "workspace " + ws + " is left in place"
 		if pane != "" {

@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 
+	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/herdr"
 )
 
@@ -13,18 +14,17 @@ import (
 //	herdr agent start <name> --kind <kind> --pane <id> [-- <agent-args>...]
 //	herdr agent prompt <pane> <text>
 
-// agent starts the configured worker, named name, in a new tab of herdr workspace id, at ws,
+// agent starts harness h, named name, in a new tab of herdr workspace id, at ws,
 // and prompts it. pane is the tab's pane once created, even when a later step fails.
-func (d Dispatcher) agent(ctx context.Context, id, ws, name, prompt string) (pane string, err error) {
-	h := d.herdr()
-	if pane, err = h.TabCreate(ctx, id, ws, name); err != nil {
+func (d Dispatcher) agent(ctx context.Context, h config.Harness, id, ws, name, prompt string) (pane string, err error) {
+	c := d.herdr()
+	if pane, err = c.TabCreate(ctx, id, ws, name); err != nil {
 		return "", err
 	}
-	w := d.Config.Harness.Worker
-	if err := h.AgentStart(ctx, name, w.Kind, pane, w.Args); err != nil {
+	if err := c.AgentStart(ctx, name, h.Kind, pane, h.Args); err != nil {
 		return pane, err
 	}
-	if err := h.AgentPrompt(ctx, pane, prompt); err != nil {
+	if err := c.AgentPrompt(ctx, pane, prompt); err != nil {
 		return pane, err
 	}
 	return pane, nil

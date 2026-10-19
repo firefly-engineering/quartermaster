@@ -77,9 +77,17 @@ name = "worklog"                          # Obsidian vault name, for obsidian://
 [dispatch]
 workspace_root = "~/.local/share/quartermaster/worklog/workspaces"  # <root>/<owner>/<repo>/issue-<n>
 
-[harness.worker]                # default harness for task_dispatch mode=fresh
-kind = "omp"                    # a herdr agent kind
+[harness.claude]                # a named harness: a herdr agent kind and its arguments
+kind = "claude"
+
+[harness.glm]
+kind = "omp"
 args = ["--model", "glm-5"]
+
+[tiers]                         # a work item's tier to a harness name
+default = "claude"              # every tier not listed, and every item with no tier
+basic-implementation = "glm"
+refactoring = "glm"
 
 [projects]
 root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<repo>
@@ -89,6 +97,23 @@ root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<re
 # path = "~/work/IaC"           # its checkout, instead of <root>/<owner>/<repo>
 # workspace = "infra"           # its herdr workspace label, instead of finding it (§9.2)
 ```
+
+A **harness** is `[harness.<name>]`: a herdr agent `kind` and its `args`. `[tiers]` maps a
+work item's tier to a harness name; a tier it does not list, and an item with no tier, go
+to `default` ([ADR 0011]). The defaults are the harnesses and tiers above. A user file's
+`[harness.*]` replaces the whole built-in harness set, and its `[tiers]` the built-in tiers;
+fields never merge inside a table. After merging, each of these is a load error:
+
+- `[tiers]` has no `default`;
+- a `[tiers]` key is neither `default` nor a tier of the list cut from the worklog skill's
+  `## Tiers` table ([ADR 0005]); the error lists the valid ones;
+- a `[tiers]` value names a harness that is not defined;
+- a harness has no `kind`, or two harnesses share one (the error names both);
+- a harness name does not match `[a-z][a-z0-9_-]*`;
+- `[harness.worker]`: "`[harness.worker]` is gone: name your harnesses and map tiers to
+  them in `[tiers]`". `worker` is a reserved name.
+
+A harness no tier names is allowed.
 
 A **project** is keyed by `owner/repo`. Every ref the server handles is `owner/repo#N`
 ([ADR 0007]); a bare `#N` is accepted only where a project is already in scope.
@@ -322,7 +347,9 @@ workspace by its label (§9.1).
      ([ADR 0004]). An existing workspace for the ref is reused, never clobbered.
   3. `herdr tab create` in the project's herdr workspace, cwd at the new workspace, labelled
      with the agent's name (step 4).
-  4. `herdr agent start <name> --kind <harness.kind> --pane <pane> -- <args>`. herdr agent
+  4. `herdr agent start <name> --kind <kind> --pane <pane> -- <args>`, the `kind` and `args`
+     of the harness `[tiers]` maps the item's tier to, or of `default` when the item has no
+     tier (§3). herdr agent
      names are unique among all live agents and match `[a-z][a-z0-9_-]{0,31}`, so the name is
      the first of `<repo>-<N>`, `<repo>-<N>-2`, `<repo>-<N>-3`, … that no live agent has in
      `herdr agent list` (its `name` field), read with step 2's read-only checks. `<repo>` is

@@ -9,20 +9,25 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/firefly-engineering/quartermaster/skills"
 )
 
 // Config is the resolved configuration. Every path in it has had `~` expanded.
 type Config struct {
-	Vault    Vault    `toml:"vault"`
-	Dispatch Dispatch `toml:"dispatch"`
-	Harness  Harness  `toml:"harness"`
-	Projects Projects `toml:"-"` // decodeFile reads the projects table key by key: see Projects
+	Vault    Vault              `toml:"vault"`
+	Dispatch Dispatch           `toml:"dispatch"`
+	Harness  map[string]Harness `toml:"harness"` // keyed by the harness's name
+	Tiers    map[string]string  `toml:"tiers"`   // tier, or default, to a harness's name
+	Projects Projects           `toml:"-"`       // decodeFile reads the projects table key by key: see Projects
 }
 
 // Vault locates the worklog vault.
@@ -37,15 +42,30 @@ type Dispatch struct {
 	WorkspaceRoot string `toml:"workspace_root"` // <root>/<owner>/<repo>/issue-<n>
 }
 
-// Harness names the agent harnesses dispatch starts.
+// Harness is an agent program and how herdr starts it: its herdr agent kind and its arguments
+// (ADR 0011). Config holds at most one harness per kind.
 type Harness struct {
-	Worker Worker `toml:"worker"` // default harness for task_dispatch mode=fresh
-}
-
-// Worker is a herdr agent kind and its arguments.
-type Worker struct {
 	Kind string   `toml:"kind"`
 	Args []string `toml:"args"`
+}
+
+// DefaultTier is the [tiers] key every tier it does not list, and every item with no tier,
+// goes to.
+const DefaultTier = "default"
+
+// HarnessFor resolves tier, "" for an item with none, to its harness through [tiers], falling
+// back to [tiers] default. name is "" when Tiers names no harness for it, as in a Config not
+// built by Load.
+func (c Config) HarnessFor(tier string) (name string, h Harness) {
+	name, ok := c.Tiers[tier]
+	if !ok {
+		name = c.Tiers[DefaultTier]
+	}
+	h, ok = c.Harness[name]
+	if !ok {
+		return "", Harness{}
+	}
+	return name, h
 }
 
 // Projects locates every GitHub repo's checkout by convention, at <Root>/<owner>/<repo>; an
@@ -88,6 +108,11 @@ func Defaults() Config {
 	return Config{
 		Vault:    Vault{Dir: "worklog", Name: "worklog"},
 		Dispatch: Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
+		Harness: map[string]Harness{
+			"claude": {Kind: "claude"},
+			"glm":    {Kind: "omp", Args: []string{"--model", "glm-5"}},
+		},
+		Tiers:    map[string]string{DefaultTier: "claude", "basic-implementation": "glm", "refactoring": "glm"},
 		Projects: Projects{Root: "~/src/github.com", Repos: map[string]Project{}},
 	}
 }
@@ -117,6 +142,9 @@ func Load(opts Options) (Config, error) {
 		cfg.Vault.Repo = repo
 	}
 
+	if err := validateHarnesses(cfg); err != nil {
+		return Config{}, err
+	}
 	if err := expandPaths(&cfg, opts.Home); err != nil {
 		return Config{}, err
 	}
@@ -132,16 +160,24 @@ func decodeFile(path string, required bool, cfg *Config) error {
 		return err
 	}
 	// The projects table holds the root string beside owner/repo tables, so it is decoded key
-	// by key. The other tables decode into cfg in place, keeping the defaults the file omits.
+	// by key. vault and dispatch decode into cfg in place, keeping the defaults the file omits;
+	// harness and tiers, when the file has them, replace the built-in tables whole.
 	file := struct {
 		Vault    *Vault                    `toml:"vault"`
 		Dispatch *Dispatch                 `toml:"dispatch"`
-		Harness  *Harness                  `toml:"harness"`
+		Harness  map[string]Harness        `toml:"harness"`
+		Tiers    map[string]string         `toml:"tiers"`
 		Projects map[string]toml.Primitive `toml:"projects"`
-	}{Vault: &cfg.Vault, Dispatch: &cfg.Dispatch, Harness: &cfg.Harness}
+	}{Vault: &cfg.Vault, Dispatch: &cfg.Dispatch}
 	md, err := toml.Decode(string(b), &file)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
+	}
+	if md.IsDefined("harness") {
+		cfg.Harness = file.Harness
+	}
+	if md.IsDefined("tiers") {
+		cfg.Tiers = file.Tiers
 	}
 	for key, v := range file.Projects {
 		if key == "root" {
@@ -167,6 +203,56 @@ func decodeFile(path string, required bool, cfg *Config) error {
 		return fmt.Errorf("%s: unknown key %s", path, strings.Join(names, ", "))
 	}
 	return nil
+}
+
+// reservedHarness is the name of the one harness config had before tiers.
+const reservedHarness = "worker"
+
+// validateHarnesses checks the merged harness and tiers tables (ADR 0011): every harness well
+// named and of its own kind, and every tier, default included, routed to one of them. A
+// harness no tier names is allowed.
+func validateHarnesses(cfg Config) error {
+	if _, ok := cfg.Harness[reservedHarness]; ok {
+		return errors.New("[harness.worker] is gone: name your harnesses and map tiers to them in [tiers]")
+	}
+	byKind := map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(cfg.Harness)) {
+		if !validHarnessName(name) {
+			return fmt.Errorf("harness.%s: a harness name must match [a-z][a-z0-9_-]*", strconv.Quote(name))
+		}
+		kind := cfg.Harness[name].Kind
+		if kind == "" {
+			return fmt.Errorf("harness.%s.kind is not set: name the herdr agent kind it starts", name)
+		}
+		if other, ok := byKind[kind]; ok {
+			return fmt.Errorf("harnesses %q and %q are both of kind %q: keep one harness per kind", other, name, kind)
+		}
+		byKind[kind] = name
+	}
+	if _, ok := cfg.Tiers[DefaultTier]; !ok {
+		return errors.New("[tiers] has no default: every tier it does not list goes there")
+	}
+	tiers, err := skills.Tiers()
+	if err != nil {
+		return err
+	}
+	for _, tier := range slices.Sorted(maps.Keys(cfg.Tiers)) {
+		if tier != DefaultTier && !slices.Contains(tiers, tier) {
+			return fmt.Errorf("tiers.%s: not a tier; want one of %s", strconv.Quote(tier),
+				strings.Join(append([]string{DefaultTier}, tiers...), ", "))
+		}
+		if _, ok := cfg.Harness[cfg.Tiers[tier]]; !ok {
+			return fmt.Errorf("tiers.%s: harness %q is not defined", tier, cfg.Tiers[tier])
+		}
+	}
+	return nil
+}
+
+// validHarnessName reports whether name matches [a-z][a-z0-9_-]*, so it fits a herdr agent name.
+func validHarnessName(name string) bool {
+	return name != "" && name[0] >= 'a' && name[0] <= 'z' && !strings.ContainsFunc(name, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '-'
+	})
 }
 
 func expandPaths(cfg *Config, home string) error {

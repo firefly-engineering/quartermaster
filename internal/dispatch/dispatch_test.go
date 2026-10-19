@@ -112,7 +112,8 @@ func newFixture(t *testing.T) *fixture {
 	f.d = Dispatcher{
 		Config: config.Config{
 			Dispatch: config.Dispatch{WorkspaceRoot: f.root},
-			Harness:  config.Harness{Worker: config.Worker{Kind: "omp", Args: []string{"--model", "glm-5"}}},
+			Harness:  map[string]config.Harness{"glm": {Kind: "omp", Args: []string{"--model", "glm-5"}}},
+			Tiers:    map[string]string{config.DefaultTier: "glm"},
 			// o/r's workspace is found by its label, r; o/g's is set.
 			Projects: config.Projects{Repos: map[string]config.Project{
 				"o/r": {Path: f.jjRepo},
@@ -518,8 +519,8 @@ func TestRefuses(t *testing.T) {
 		t.Errorf("no note: %v", err)
 	}
 	g := f.d
-	g.Config.Harness.Worker.Kind = ""
-	if _, err := g.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, ""); err == nil || !strings.Contains(err.Error(), "harness.worker.kind") {
+	g.Config.Tiers = nil
+	if _, err := g.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, ""); err == nil || !strings.Contains(err.Error(), "no harness") {
 		t.Errorf("no harness: %v", err)
 	}
 	// A workspace the marker cannot record is refused before it is made.

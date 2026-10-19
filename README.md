@@ -39,7 +39,10 @@ worklog note [--config <file>] [--vault <repo>] <verb> [<json input>]
 
 The config file defaults to `$XDG_CONFIG_HOME/quartermaster/worklog.toml`, else
 `~/.config/quartermaster/worklog.toml`; a missing default file is not an error. `--vault`
-overrides `vault.repo`, the repo that holds the vault.
+overrides `vault.repo`, the repo that holds the vault. `[harness.<name>]` names the agents
+work runs on and `[tiers]` maps each work item's tier to one; by default `basic-implementation`
+and `refactoring` go to omp on GLM, everything else to claude
+([spec §3](docs/spec.md#3-configuration)).
 
 Each `note` verb runs the MCP tool of the same operation. It takes the tool's input as one
 JSON object argument, `{}` when left out, and prints the tool's output as JSON:
@@ -104,9 +107,9 @@ and leaves the note alone. Mode `fresh` creates the ref's workspace at
 `<dispatch.workspace_root>/<owner>/<repo>/issue-<N>` with `jj workspace add`, or with
 `git worktree add -b issue-<N>` when the project has no `.jj`
 ([ADR 0004](docs/adr/0004-dispatch-isolates-in-a-jj-workspace.md)), and reuses one that exists
-for the ref. It then starts `harness.worker` in a new tab of the project's herdr workspace,
-prompts it, and records `<!-- qm pane=<id> ws=<path> -->` on the item, which it moves to
-`IN_PROGRESS`. If herdr fails, the workspace stays and the item does not move; if the note
+for the ref. It then starts the harness `[tiers]` maps the item's tier to (`default` when it
+has none) in a new tab of the project's herdr workspace, prompts it, and records
+`<!-- qm pane=<id> ws=<path> -->` on the item, which it moves to `IN_PROGRESS`. If herdr fails, the workspace stays and the item does not move; if the note
 cannot be written, the error names the agent's pane.
 
 ## Install
