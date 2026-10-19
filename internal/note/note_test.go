@@ -634,6 +634,7 @@ func filledTemplate(t *testing.T) []byte {
 		"question":        "is the parser strict?",
 		"…":               "#3",
 		"skill":           "/grill-with-docs",
+		"tier":            "design",
 		"why that route":  "It touches ADR 0002",
 		"workspace label": "quartermaster",
 		"self-contained prompt, e.g. /grill-with-docs https://github.com/<o>/<r>/issues/N — the question and its context": "/grill-with-docs https://github.com/firefly-engineering/quartermaster/issues/2",

@@ -118,7 +118,7 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Project section | `## <icon> <owner/repo>` |
 | Part | `### <icon> Part N — <kind>: <title>`, where the kind is `Human session`, `Agent batch` or `Land`, and nothing else |
 | Bucket | `#### <icon> <bucket name>` under `### <icon> What remains` |
-| Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>`. Its ref, cost and route are read as the renderer writes them, below |
+| Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>`. Its ref, cost, route and tier are read as the renderer writes them, below |
 | Anchor | a paragraph in a Part or bucket ending with `^<id>`: a link target, with no state |
 | Prompt block | a ```` ```herdr-prompt id=<item-id> to=<label> ```` fence, inside a `> [!prompt]-` callout |
 | Manual action | a task list item `- [ ]` / `- [x]`, or an ordered one `1. [ ]` in *Next* |
@@ -126,14 +126,20 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Process | the list under `## Process` |
 
 A work item's ref is the link opening its title, before the title text: `[#N](<url>): <title>`,
-read as `owner/repo#N` from its GitHub issue or PR URL. A list item writes its cost and route
-on its line, `` <title> · <cost> · Route: `<route>` ``, then its sent status and summary; they
-are read from the end of its title before those: the route is the code span ending it, after
-` · Route: `, and the cost what lies between the first ` · ` and the route. So a list item's
+read as `owner/repo#N` from its GitHub issue or PR URL. A list item writes its cost, route and
+tier on its line, `` <title> · <cost> · Route: `<route>` · Tier: `<tier>` ``, then its sent
+status and summary; they are read from the end of its title before those: the tier is the code
+span ending it, after ` · Tier: `, the route the code span ending what is left, after
+` · Route: `, and the cost what lies between the first ` · ` and those. So a list item's
 title holds no ` · `, and the renderer refuses one that does. A `#####` item ends its body,
-before its button, with the sentences `` Cost: <cost>. Route: `<route>`. ``. A body ending with
-a bare `<cost>.`, as written before the `Cost:` marker, reads as prose: the item has no cost
-until it is rewritten. Each is absent when the item has none.
+before its button, with the sentences `` Cost: <cost>. Route: `<route>`. Tier: `<tier>`. ``,
+read from the end the same way. A body ending with a bare `<cost>.`, as written before the
+`Cost:` marker, reads as prose: the item has no cost until it is rewritten. Each is absent
+when the item has none.
+
+The tier is the class of the item's work, one of the closed list in the worklog skill's tier
+table ([ADR 0011]). It routes the item's prompts to a harness through config; the note never
+names the harness.
 
 Item and anchor ids are lowercase letters, digits and `-`, unique within a note. Every
 `[[#^<id>|details]]` link in *Next* names a work item or an anchor. A section the note lacks
@@ -222,14 +228,14 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `day_open` | Create today's note from the template, with every open item of the previous note as a carry-over row. Its front matter lists the projects of the rows it carries. A note prepared ahead, one that exists and is not empty, is kept: it gains a carry-over row for each open item of the previous note it does not carry yet, its status line is rewritten as `open`, and its front matter's projects list gains the carried projects; nothing else is written. It already carries an item with an `^<id>` when it holds that id anywhere (a work item, a manual action, or a carry-over row linking `^<id>`), and one without an id when a carry-over row's item is that item's row as rendered. Only the previous note is collected. A prepared note that does not parse is refused, naming its errors. | `session_init_plan` |
 | `day_read` | Return the note as structured data: status, objectives, Next, items by project and bucket, states. Read-only. | — |
 | `objective_set` | Add, refine (stamping `(refined HH:MM UTC: <reason>)`) or settle an objective. | `session_init_plan` |
-| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status, ref, cost and route, and the parser reads them back ([§4.1]); nothing else parses the title. An update keeps a ref, cost or route left out or `""`, as it keeps the repo, bucket and sent status; an explicit `null` clears one, dropping the ref's link from the title or that part of the item. On create, and in `carryover_verdict`'s keep, a `null` is absent. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. An update rewrites the item whole, so it refuses to drop a prompt left out; an explicit `"prompt": null` drops the prompt and its ▶ button, in its bucket and on its *Next* line, and the item stays a `#####` item only when the update gives a body. When the item as written is `TODO`, its route starts with `/` and it has no prompt, it has no ▶ button to send that command: the result's `warnings` names the item and its route. The write goes through all the same. | — |
+| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, tier, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status, ref, cost, route and tier, and the parser reads them back ([§4.1]); nothing else parses the title. A tier outside the list the binary cuts from the embedded skill's tier table ([ADR 0005], [ADR 0011]) is refused, naming the valid ones. An update keeps a ref, cost, route or tier left out or `""`, as it keeps the repo, bucket and sent status; an explicit `null` clears one, dropping the ref's link from the title or that part of the item. On create, and in `carryover_verdict`'s keep, a `null` is absent. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. An update rewrites the item whole, so it refuses to drop a prompt left out; an explicit `"prompt": null` drops the prompt and its ▶ button, in its bucket and on its *Next* line, and the item stays a `#####` item only when the update gives a body. When the item as written is `TODO`, its route starts with `/` and it has no prompt, it has no ▶ button to send that command: the result's `warnings` names the item and its route. The write goes through all the same. | — |
 | `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. A move to the item's own state, in any state, rewrites only its summary and needs one. With `part: N`, a move to its own `DONE` or `DROPPED` state files the item into Part N as above, and keeps its last summary when none is given. | `task_update_state` |
 | `part_write` | Create or rewrite one Part whole: number, kind, title, icon (🔄, 🔍 or ✅, written, never derived) and body. The body may carry anchors. | — |
 | `action_upsert` | Create, reword or move a manual action, a checkbox with an id. Ticking it is `item_transition`; nothing unticks it ([§4.4]). | — |
 | `process_set` | Add, reword or settle a *Process* entry. | — |
 | `next_set` | Replace *Next* with an ordered list of item ids; the server renders each line, button and details link. A work item's line takes the entry's `cost`, else the item's cost, else none; nothing is read back from the line *Next* held. A manual action's or an anchor's line takes its cost from the entry only. The result's `warnings` holds one line for each listed work item that is `TODO`, with a route starting with `/` and no prompt, so no ▶ button; manual actions and anchors never warn. The write goes through all the same. | — |
 | `status_set` | Rewrite the status line. | — |
-| `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. A keep with no title, on a row linking a work item as `[[<prev>#^<id>\|^<id>]]`, takes that item's title from the note the link names, without its ref link, cost, route, sent status and summary, and its ref, cost and route unless given; any other row's text is the title. The row stays as written. | — |
+| `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. A keep with no title, on a row linking a work item as `[[<prev>#^<id>\|^<id>]]`, takes that item's title from the note the link names, without its ref link, cost, route, tier, sent status and summary, and its ref, cost, route and tier unless given; any other row's text is the title. The row stays as written. | — |
 | `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). | — |
 | `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send`. | — |
 | `task_dispatch` | Start work on a ref ([§9.2]). | `task_dispatch` |
@@ -393,6 +399,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [ADR 0007]: adr/0007-refs-are-owner-repo-number.md
 [ADR 0008]: adr/0008-mutating-tools-do-not-refresh.md
 [ADR 0010]: adr/0010-a-suite-member-may-be-skill-only.md
+[ADR 0011]: adr/0011-a-work-items-tier-routes-it-to-a-harness.md
 [§4]: #4-the-note
 [§4.1]: #41-addressable-units
 [§4.3]: #43-transitions

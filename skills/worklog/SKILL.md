@@ -31,7 +31,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `day_open` | create today's note, with the previous note's open items as carry-over rows |
 | `day_read` | read a note: status, objectives, *Next*, items by project and bucket, states, parse errors |
 | `objective_set` | add, refine, progress or settle an objective |
-| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status; a rewrite keeps a ref, cost or route left out, and `null` clears one |
+| `item_upsert` | create or rewrite a work item: title, ref, cost, route, tier, body, prompt and button label, and in *Sent to other repos* its `sent` status; a rewrite keeps a ref, cost, route or tier left out, and `null` clears one |
 | `item_transition` | move a work item to a new state with a summary, or to its own state to rewrite only the summary, or tick a manual action; with `part`, file a done or dropped item into that Part, by a move there or to its own state |
 | `part_write` | create or rewrite one Part whole: number, kind, title, icon and body |
 | `action_upsert` | create, reword or move a manual action: a checkbox with an id |
@@ -165,9 +165,9 @@ A human session that turns open questions into agent-ready work.
 1. Build the **decision list**: every HITL item in scope (`ready-for-human`,
    `needs-triage`, `needs-info`, open questions in tickets). Order it by what each
    decision unblocks. Write each with `item_upsert` in *Decisions for you*: a one-line
-   question, a rough cost, and its [route](#routes). One that goes through a button gets
-   a prompt. Open the session's *Part N — Human session* with `part_write`, 🔄, at the
-   project's next free N.
+   question, a rough cost, its [route](#routes) and its [tier](#tiers). One that goes
+   through a button gets a prompt. Open the session's *Part N — Human session* with
+   `part_write`, 🔄, at the project's next free N.
 2. Work through the list with the user, one decision at a time. A quick one is settled
    inline; a larger one goes to its route's skill, through a button. Record each decision
    where it belongs: a ticket comment, an ADR or spec PR, or a relabel to
@@ -179,21 +179,25 @@ A human session that turns open questions into agent-ready work.
    now `ready-for-agent`, move it into *Agent queue* with `item_upsert` instead.
 3. Close the Part with `part_write`, ✅: one line and a link per decision, the filed
    lines included (`day_read` returns its `body`). Rebuild the
-   **Agent queue** with `item_upsert`: the `ready-for-agent` tickets, their dependency
-   order, and the batch as one work item whose prompt carries the batch's global context.
+   **Agent queue** with `item_upsert`: the `ready-for-agent` tickets, each with its tier,
+   their dependency order, and for several tickets the **batch** as one work item whose
+   prompt carries its global context.
 
 Done when every decision taken is recorded outside the note, and *Next* leads with the
-batch's ▶ button.
+agent work's ▶ button.
 
 ### AFK
 
-A batch runs through `/implement` for one ticket, or `/mass-implement` for several.
-Both are user-invoked, so the batch starts from the ▶ button in *Next*, which sends the
-command to the project's session. For example:
+Agent work runs through `/implement` for one ticket, or through `/mass-implement` for
+several, as a **batch**. Both are user-invoked, so the work starts from the ▶ button in
+*Next*, which sends the command to the project's session. For example:
 `/mass-implement arbora-partners/trunk #883 #871 — global context: <epic URL>`. When the
 user asks you to start it, send it yourself (see [Buttons](#buttons)). For one ticket,
-`task_dispatch` also works: mode `session` sends its prompt to the project's session, and
-mode `fresh` gives it its own workspace and agent, and moves it to `IN_PROGRESS`.
+`task_dispatch` also works: pass it the item's tier's default mode from
+[Tiers](#tiers). Mode `session` sends its prompt to the project's session, and mode
+`fresh` gives it its own workspace and agent, and moves it to `IN_PROGRESS`. An item whose
+tier defaults to `fresh` keeps its ▶ button: the button runs it in the session, which the
+user may choose.
 
 A batch takes every ticket it can reach, not only the ones unblocked today: each
 `ready-for-agent` ticket whose blockers are all merged or in the same batch.
@@ -201,7 +205,7 @@ A batch takes every ticket it can reach, not only the ones unblocked today: each
 it instead of waiting for the next one. Leave a ticket out only when it also waits on a
 human decision, another repo or a date.
 
-Move each ticket in the batch to `IN_PROGRESS`, and record a *Part N — Agent batch* with
+Move each ticket of the run to `IN_PROGRESS`, and record a *Part N — Agent batch* with
 `part_write`, 🔄, its title marked **running**. When it reports back, rewrite the Part with
 `part_write` as a table with one row per ticket: PR, then outcome (`built`, **part only**,
 or back to HITL with the reason), and its icon 🔍 while the PRs wait on review. Then:
@@ -270,7 +274,7 @@ that skill's command. Write it as the item's `route`.
 | Shape | Route |
 |---|---|
 | Fog: a new idea or requirement too big for one session | `/wayfinder`. Its decision tickets join the decision list, and the objective links the map |
-| One plan or design to stress-test | `/grill-with-docs` when the outcome should land as an ADR or glossary term, otherwise `/grill-me` |
+| One plan or design to stress-test | `/grill-with-docs` when the outcome should land as an ADR or glossary term, otherwise `/grilling` |
 | A raw or under-specified ticket | `/triage` |
 | A settled discussion with no tickets yet | `/to-spec`, then `/to-tickets` |
 | A question only someone outside the session can answer | `/to-questionnaire`, then *Outside input: chase* |
@@ -280,7 +284,36 @@ that skill's command. Write it as the item's `route`.
 | Work another repo owns | [Other repos](#other-repos) |
 
 A route changes as the item moves. A grilled ticket becomes `ready-for-agent`. An
-implemented one goes back to `/grill-me` when the batch finds a gap.
+implemented one goes back to `/grilling` when its run finds a gap.
+
+## Tiers
+
+Every open item with a route also carries a **tier**: the class of its work, which picks
+the harness that runs its prompts
+([ADR 0011](https://github.com/firefly-engineering/quartermaster/blob/main/docs/adr/0011-a-work-items-tier-routes-it-to-a-harness.md)).
+The developer's config maps each tier to a harness; the note never names one. Write it as
+the item's `tier`, from this table only.
+
+| Tier | Means | Default mode | Default for |
+|---|---|---|---|
+| `research` | gather facts from primary sources and write them up | `session` | `/research` |
+| `architecture` | shape modules, seams and interfaces across a system | `session` | — |
+| `design` | settle a decision, a plan or a ticket's shape with the user | `session` | `/grill-with-docs`, `/grilling`, `/triage` |
+| `complex-implementation` | implement a ticket that leaves a call open or spans modules | `fresh` | — |
+| `basic-implementation` | implement a well-specified ticket within one module | `fresh` | `/implement` |
+| `refactoring` | restructure code without changing what it does | `fresh` | — |
+| `troubleshooting` | find the cause of a bug or a regression | `session` | `/diagnose` |
+| `quality-review` | review a change for correctness and the repo's standards | `session` | `/code-review` |
+| `security-review` | review a change for security holes | `session` | `/security-review` |
+
+Give an item its route's default tier. Raise an `/implement` item to
+`complex-implementation` when its ticket leaves a call open or spans modules. A route the
+table does not list gets the tier that best fits its work. A batch takes any one of its
+tickets' tiers. When the user overrides a tier, by asking or by editing the note, keep
+theirs.
+
+The default mode is what to pass `task_dispatch` as `mode`. The tier and the mode are
+independent: the tier picks who does the work, the mode where it happens.
 
 ## Buttons
 

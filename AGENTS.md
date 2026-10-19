@@ -24,6 +24,7 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | `skills/worktree-build-cache/` | the worktree-build-cache skill: do fresh workspaces reuse the shared caches; skill-only (ADR 0010) |
 | `skills/mass-implement/` | the mass-implement skill: implement a DAG of tickets, then ship a clean PR stack; skill-only (ADR 0010) |
 | `skills/embed.go` | embeds the worklog skill into the binary |
+| `skills/tiers.go` | cuts the tier list from the embedded skill's tier table, for config and `item_upsert` (ADR 0011) |
 | `.claude-plugin/plugin.json` | the skill bundle's manifest |
 | `nix/` | package, skill bundle, home-manager module, checks |
 

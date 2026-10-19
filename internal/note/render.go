@@ -55,10 +55,10 @@ type NextUnit struct {
 // list entry, as `- ⬜ [#M](url): a decision with no prompt yet`.
 //
 // Its title line reads `<icon> <ref link>: <title> — <summary>`. The list form adds
-// ` · <cost> · Route: <route>` before the summary, the route in a code span, and ` ^<id>` after
-// it, so its title holds no ` · `; the `#####` form ends its body with
-// `Cost: <cost>. Route: <route>.` instead. A sent status comes before the summary:
-// ` → <to>, **<status>**`. The parser reads the ref, cost and route back (Item).
+// ` · <cost> · Route: <route> · Tier: <tier>` before the summary, the route and the tier in code
+// spans, and ` ^<id>` after it, so its title holds no ` · `; the `#####` form ends its body with
+// `Cost: <cost>. Route: <route>. Tier: <tier>.` instead. A sent status comes before the summary:
+// ` → <to>, **<status>**`. The parser reads the ref, cost, route and tier back (Item).
 type ItemUnit struct {
 	ID      string
 	Icon    Icon
@@ -67,12 +67,13 @@ type ItemUnit struct {
 	Repo    string      // the project it is in, where Ref renders as a bare #N; "" for none
 	Cost    string      // as `20 min`; "" for none
 	Route   string      // the next skill, as `/implement`; "" for none
+	Tier    string      // the class of its work, as `design`; "" for none. The renderer takes any word: item_upsert checks it is a tier
 	Summary string      // its last transition's summary (spec §4.3), after SummarySep; "" for none
 	Heading bool        // the `#####` form; required with a Prompt
 	Body    string      // the `#####` form's prose before its button; no blank line
 	Button  string      // the ▶ label, as `grill in trunk`; needs a Prompt
 	Prompt  *PromptUnit // the collapsed `> [!prompt]-` callout
-	Sent    *SentUnit   // in *Sent to other repos*, its sent status, after the title, cost and route; nil for none
+	Sent    *SentUnit   // in *Sent to other repos*, its sent status, after the title, cost, route and tier; nil for none
 
 	// Dispatch is the dispatch marker written just before its ` ^<id>`: on its title line in
 	// the list form, ending its paragraph in the ##### one.
@@ -86,7 +87,7 @@ const SummarySep = " — "
 // NothingLine is the list line of a bucket or Process with nothing in it.
 const NothingLine = "- " + string(IconNone) + "\n"
 
-// fieldSep parts a list item's title from its cost and route, and a *Next* line's fields.
+// fieldSep parts a list item's title from its cost, route and tier, and a *Next* line's fields.
 const fieldSep = " · "
 
 // DefaultButton is the ▶ label of a prompt sent to the workspace labelled to, when no other
@@ -94,7 +95,7 @@ const fieldSep = " · "
 func DefaultButton(to string) string { return "send to " + to }
 
 // Action is a parsed work item's title (Item.Title) as the action of its *Next* line: without
-// its summary, or the cost and route the list form puts after ` · `.
+// its summary, or the cost, route and tier the list form puts after ` · `.
 func Action(title string) string {
 	head, _ := SplitSummary(title)
 	head, _, _ = strings.Cut(head, fieldSep)
@@ -432,12 +433,15 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 			return nil, fmt.Errorf("%s: a blank line in the body would end its paragraph", what)
 		}
 	}
-	var tail []string // the body's last sentence: cost and route
+	var tail []string // the body's last sentences: cost, route and tier
 	if u.Cost != "" {
 		tail = append(tail, costMark+u.Cost+".")
 	}
 	if u.Route != "" {
 		tail = append(tail, routeMark+"`"+u.Route+"`.")
+	}
+	if u.Tier != "" {
+		tail = append(tail, tierMark+"`"+u.Tier+"`.")
 	}
 	switch {
 	case len(tail) == 0:
@@ -511,14 +515,14 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 			return "", "", fmt.Errorf("%s: the title already ends with a sent status; give it as the sent status alone", what)
 		}
 	}
-	if err := oneLine(what+" title", u.Title+u.Cost+u.Route+u.Summary+sent); err != nil {
+	if err := oneLine(what+" title", u.Title+u.Cost+u.Route+u.Tier+u.Summary+sent); err != nil {
 		return "", "", err
 	}
 	if w := strings.Fields(u.Title); strings.HasPrefix(w[len(w)-1], "^") {
 		return "", "", fmt.Errorf("%s: the title ends in a block id; set ID instead", what)
 	}
-	if strings.Contains(u.Title+u.Cost+u.Route+sent, SummarySep) {
-		return "", "", fmt.Errorf("%s: %q starts the summary, so the title, cost and route may not hold it", what, SummarySep)
+	if strings.Contains(u.Title+u.Cost+u.Route+u.Tier+sent, SummarySep) {
+		return "", "", fmt.Errorf("%s: %q starts the summary, so the title, cost, route and tier may not hold it", what, SummarySep)
 	}
 	if u.Dispatch != nil {
 		if err := u.Dispatch.Check(); err != nil {
@@ -529,10 +533,13 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 		}
 	}
 	if !u.Heading && strings.Contains(u.Title, fieldSep) {
-		return "", "", fmt.Errorf("%s: %q parts a one-line title from its cost and route, so the title may not hold it", what, fieldSep)
+		return "", "", fmt.Errorf("%s: %q parts a one-line title from its cost, route and tier, so the title may not hold it", what, fieldSep)
 	}
 	if strings.Contains(u.Route, "`") {
 		return "", "", fmt.Errorf("%s: route %q: no backticks, it renders in a code span", what, u.Route)
+	}
+	if strings.Contains(u.Tier, "`") {
+		return "", "", fmt.Errorf("%s: tier %q: no backticks, it renders in a code span", what, u.Tier)
 	}
 	title = string(u.Icon) + " "
 	if u.Ref != (Ref{}) {
@@ -549,6 +556,9 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 		}
 		if u.Route != "" {
 			title += fieldSep + routeMark + "`" + u.Route + "`"
+		}
+		if u.Tier != "" {
+			title += fieldSep + tierMark + "`" + u.Tier + "`"
 		}
 	}
 	title += sent
