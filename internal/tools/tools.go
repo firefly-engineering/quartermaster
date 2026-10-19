@@ -202,7 +202,9 @@ func All(d Deps) []Tool {
 				"or /implement <url>, to the project's herdr session, and leaves the note alone. Mode fresh creates or " +
 				"reuses the ref's workspace (jj workspace, else git worktree, under dispatch.workspace_root), starts " +
 				"the harness [tiers] maps the item's tier to (default when it has none) in a new herdr tab there and " +
-				"prompts it, then records the pane and workspace on the ref's work item and moves it to IN_PROGRESS.",
+				"prompts it, then records the pane and workspace on the ref's work item and moves it to IN_PROGRESS. " +
+				"Dispatched fresh again, it first closes its previous worker's tab, and refuses while that worker is " +
+				"working or blocked.",
 			Run: d.taskDispatch,
 		},
 	}

@@ -345,6 +345,14 @@ workspace by its label (§9.1).
      `<workspace_root>/<owner>/<repo>/issue-<N>` from the project's checkout:
      `jj workspace add` when the checkout has `.jj`, else `git worktree add -b issue-<N>`
      ([ADR 0004]). An existing workspace for the ref is reused, never clobbered.
+
+     A dispatch again, as after an escalation (step 9), reuses that checkout, so the new agent
+     starts on the last one's work. Before creating anything, when the item's marker records
+     `pane=` and `ws=`, it closes the previous agent's tab under step 7's guards, which also
+     frees its name. It refuses, "its worker is still running", while that agent is
+     `working` or `blocked`, so two agents never write in one checkout. It refuses as well
+     when the tab stays for any other reason, as a renamed agent, or the close fails. A pane
+     already gone, or a marker with no `ws=`, closes nothing.
   3. `herdr tab create` in the project's herdr workspace, cwd at the new workspace, labelled
      with the agent's name (step 4).
   4. `herdr agent start <name> --kind <kind> --pane <pane> -- <args>`, the `kind` and `args`
@@ -383,6 +391,14 @@ workspace by its label (§9.1).
      tree, a permission error, a failed forget) keeps `ws=`, and the next `refresh` retries.
      The `issue-<N>` branch is never deleted, merged or not: committed work stays
      recoverable.
+  9. A worker that can't finish moves its item to `WAITING` with its summary
+     `question: …` (only a human can answer) or `stuck: …` (the work is beyond it). The
+     claude agent reading the note escalates a `stuck:` item from a non-claude tier: it raises
+     the tier to `complex-implementation` and queues a ▶ whose prompt asks the session agent
+     to dispatch it `fresh` again, here, with an instruction naming the reused checkout. A
+     human always starts that dispatch; nothing re-dispatches on its own. The worklog skill
+     owns the rules ([ADR 0005]). `refresh` stays evidence-only: it infers "worker exited" from
+     herdr and never reads a worker's text.
 
 herdr 0.9.5 has no single "create a pane running a command" call, so dispatch composes
 `tab create`, `agent start` and `agent prompt`.
@@ -424,6 +440,8 @@ own way; the README shows the snippets for `programs.agentSkills`,
 | Worker crashes | Item stays 🔄 | `refresh` asks herdr for the recorded pane. Gone, or the agent exited, with no transition recorded: move to `WAITING` with "worker exited". Never to `DONE`. |
 | Closing a finished `fresh` dispatch's tab fails | Tab stays, `pane=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. A tab already gone counts as closed ([§9.2]). |
 | Removing a finished `fresh` dispatch's checkout fails (dirty git tree, permission error, failed forget) | Checkout stays, `ws=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. It never forces a removal. A checkout already gone counts as removed ([§9.2]). |
+| `fresh` dispatch again while the previous worker runs | Two agents would write in one checkout | Refused, "its worker is still running", while the marker's agent is `working` or `blocked`; nothing is created and the item stays. Dispatch again once it is `idle` or `done` ([§9.2]). |
+| Worker can't finish | Item moves to `WAITING`, `question: …` or `stuck: …` | `question:` goes to the developer. `stuck:` from a non-claude tier is escalated once to `complex-implementation`, re-dispatched by a human; `stuck:` at a claude tier goes to the developer ([§9.2]). |
 | Process dies holding the lock | — | The OS frees an `flock` with the descriptor. |
 | Obsidian writes mid-mutation | Lost edit | Hash check and retry ([§7]); jj history for the narrow window left. |
 | Workspace for a ref already exists | `add` fails | Reuse it if it is the ref's; otherwise fail with its path. `git worktree prune` before a git add. |

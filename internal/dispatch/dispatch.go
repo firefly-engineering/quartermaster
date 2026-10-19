@@ -3,7 +3,10 @@
 // Mode session prompts the project's herdr session through package send, the path of
 // `worklog send`, and leaves the note alone. Mode fresh gives the ref a workspace of its
 // own (ADR 0004), starts an agent there under herdr, then records the agent's pane and
-// workspace on the ref's work item and moves it to IN_PROGRESS, through the engine.
+// workspace on the ref's work item and moves it to IN_PROGRESS, through the engine. Dispatched
+// fresh again, as after an escalation, it reuses the workspace, and first closes its previous
+// agent's tab under the guards refresh closes a finished one's with (CloseTab), or refuses
+// while that agent runs.
 //
 // The order is the failure contract: workspace, then agent, then note. A herdr failure leaves
 // the workspace in place and the item as it was; a note failure after the agent started
@@ -58,6 +61,7 @@ type Result struct {
 	Pane      string // the herdr pane prompted
 	Workspace string // fresh: the ref's workspace
 	Reused    bool   // fresh: the workspace existed already
+	Closed    string // fresh: the herdr tab of the item's previous worker, closed first; "" for none
 	Note      engine.Result
 }
 
@@ -180,8 +184,13 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 	if err != nil {
 		return Result{}, err
 	}
-	// So does naming the agent. Another agent may take the name before it starts: herdr then
-	// refuses it, as any other herdr failure.
+	// A dispatch again starts its worker where the last one stopped: that one's tab goes first,
+	// so two agents never write in one checkout, and its name is free again.
+	if res.Closed, err = d.closePrevious(ctx, it); err != nil {
+		return Result{}, err
+	}
+	// Naming the agent only reads, after the close that frees the name. Another agent may take
+	// the name before it starts: herdr then refuses it, as any other herdr failure.
 	taken, err := d.agentNames(ctx)
 	if err != nil {
 		return Result{}, err
@@ -214,6 +223,28 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 			pane, ws, it.ID, err)
 	}
 	return res, nil
+}
+
+// closePrevious closes the herdr tab of the worker a fresh dispatch of it started before, under
+// CloseTab's guards, and returns the tab it closed. A marker with no ws= records a session
+// send's pane, never closed. It refuses while that worker is working or blocked, and while its
+// tab stays for any other reason.
+func (d Dispatcher) closePrevious(ctx context.Context, it *note.Item) (string, error) {
+	prev := it.Dispatch
+	if prev == nil || prev.Pane == "" || prev.Workspace == "" {
+		return "", nil
+	}
+	h := d.herdr()
+	tab, err := CloseTab(ctx, h, h.AgentList, prev.Pane, prev.Workspace)
+	var kept *Kept
+	switch {
+	case errors.As(err, &kept) && kept.Running():
+		return "", fmt.Errorf("^%s: its worker is still running: %s in pane %s is %s; dispatch it again once it is idle or done",
+			it.ID, kept.Name, kept.Pane, kept.Status)
+	case err != nil:
+		return "", fmt.Errorf("^%s: not dispatched again: %w", it.ID, err)
+	}
+	return tab, nil
 }
 
 // record writes d on work item id and moves it to IN_PROGRESS, unless it is there already.

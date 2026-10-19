@@ -213,6 +213,8 @@ or back to HITL with the reason), and its icon 🔍 while the PRs wait on review
 - Move each built ticket to `IN_REVIEW`, its PR as the summary.
 - Move each ticket that went back to HITL into *Decisions for you* with `item_upsert`,
   and to `WAITING` with the question it blocks on.
+- A worker that stopped on its own item, `WAITING` with `question:` or `stuck:`, follows
+  [Escalation](#escalation).
 - Write each new ticket into its bucket.
 - List each review finding left as a judgement call in the Part's body.
 
@@ -314,6 +316,47 @@ theirs.
 
 The default mode is what to pass `task_dispatch` as `mode`. The tier and the mode are
 independent: the tier picks who does the work, the mode where it happens.
+
+## Escalation
+
+A worker is an agent a prompt started on a work item: its prompt ends with the closing line
+naming the item. A worker that can't finish moves its item to `WAITING` with
+`item_transition`, and its summary says why, in one of two forms:
+
+- `question: <the question>` when only a human can answer it: a decision, an access or a
+  fact the ticket does not give.
+- `stuck: <what it tried, and where it stopped>` when the work is beyond it.
+
+A `worker exited` summary is `refresh`'s, not the worker's: it only knows the agent is gone.
+Read what the worker left before you treat it as either.
+
+When you read a worker's report, act on it once:
+
+- `question:` goes to *Decisions for you* with `item_upsert`, the question as its title.
+  Its tier stays: a missing decision is not a capability gap.
+- `stuck:` from a tier the developer's config does not route to claude, by default
+  `basic-implementation` or `refactoring` (`[tiers]` in `worklog.toml`), is **escalated**:
+  1. `item_upsert` raises its tier to `complex-implementation`, and gives it a prompt to
+     the session agent that dispatches it fresh again: call `task_dispatch` with its ref,
+     mode `fresh`, and as `instruction` the note on the reused checkout, "A
+     `basic-implementation` worker stopped here: <reason>. Its work is in `<ws>`; continue
+     from it." The marker's `ws=` is the checkout. The prompt also says to leave the item
+     to its new worker: `task_dispatch` moves it to `IN_PROGRESS`, and the session must not
+     mark it done. The button label names the run, as `re-dispatch in trunk`.
+  2. `item_transition` keeps it `WAITING`, the old tier and the reason as its summary:
+     `escalated from basic-implementation; stuck: <reason>`.
+  3. `next_set` puts it in *Next*, with its ▶ button.
+
+  The user starts it: nothing re-dispatches on its own. Asked to dispatch it, call
+  `task_dispatch` as that prompt says. It reuses the checkout, closes the last worker's
+  tab first, and refuses ("its worker is still running") while that worker is `working`
+  or `blocked`.
+- `stuck:` at a claude tier, `complex-implementation` included, goes to the user: to
+  *Decisions for you* with `item_upsert`, its route `/grill-with-docs` when the answer
+  should land as an ADR or glossary term, otherwise `/triage`.
+
+An item escalates once. Its next `stuck:` is at `complex-implementation`, a claude tier, so
+it goes to the user; escalation never loops.
 
 ## Buttons
 

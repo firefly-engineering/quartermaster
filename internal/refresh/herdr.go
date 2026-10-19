@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -26,41 +27,19 @@ func (g *gatherer) worker(ctx context.Context, pane string) (waiting, reason str
 }
 
 // closeTab closes the herdr tab of pane, where a fresh dispatch in workspace ws started its
-// agent, once the agent is idle or done and still bears the name the dispatch gave it, or once
-// no agent runs in the pane. It returns the tab it closed, "" when the pane or its tab was gone
-// already; or why the pane stays, for this refresh, or for good when its agent was renamed.
+// agent, under dispatch.CloseTab's guards. It returns the tab it closed, "" when the pane or its
+// tab was gone already; or why the pane stays, for this refresh, or for good when its agent was
+// renamed.
 func (g *gatherer) closeTab(ctx context.Context, pane, ws string) (tab, reason string) {
-	p, err := g.Herdr.PaneGet(ctx, pane)
+	tab, err := dispatch.CloseTab(ctx, g.Herdr, g.agents, pane, ws)
+	var kept *dispatch.Kept
 	switch {
-	case herdr.Code(err) == herdr.PaneNotFound:
-		return "", ""
+	case errors.As(err, &kept):
+		return "", err.Error()
 	case err != nil:
-		return "", "herdr: " + err.Error()
+		return "", err.Error() + "; retried next refresh"
 	}
-	if p.Kind != "" {
-		agents, err := g.agents(ctx)
-		if err != nil {
-			return "", "herdr: " + err.Error()
-		}
-		var name string
-		if i := slices.IndexFunc(agents, func(a agent) bool { return a.Pane == pane }); i >= 0 {
-			name = agents[i].Name
-		}
-		if !dispatch.IsFreshAgent(name, ws) {
-			return "", fmt.Sprintf("its worker in pane %s is named %q, not as its dispatch named it, so it keeps its tab", pane, name)
-		}
-		if p.Status != "idle" && p.Status != "done" {
-			return "", fmt.Sprintf("its worker %s in pane %s is %s: its tab closes once it is idle or done", name, pane, p.Status)
-		}
-	}
-	err = g.Herdr.TabClose(ctx, p.Tab)
-	switch {
-	case herdr.Code(err) == herdr.TabNotFound:
-		return "", ""
-	case err != nil:
-		return "", fmt.Sprintf("closing tab %s of pane %s: %v; retried next refresh", p.Tab, pane, err)
-	}
-	return p.Tab, ""
+	return tab, ""
 }
 
 type agent = herdr.Agent

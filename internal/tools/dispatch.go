@@ -26,6 +26,7 @@ type TaskDispatchOutput struct {
 	Pane      string `json:"pane" jsonschema:"the herdr pane prompted: fresh records it on the item"`
 	Workspace string `json:"workspace,omitempty" jsonschema:"fresh: the ref's workspace, <workspace_root>/<owner>/<repo>/issue-<N>"`
 	Reused    bool   `json:"reused,omitempty" jsonschema:"fresh: the workspace existed and was reused"`
+	Closed    string `json:"closed,omitempty" jsonschema:"fresh: the herdr tab of the item's previous worker, closed before this one started"`
 }
 
 // taskDispatch starts work on a ref (spec §9.2) through package dispatch.
@@ -51,6 +52,6 @@ func (d Deps) taskDispatch(ctx context.Context, in TaskDispatchInput) (TaskDispa
 	return TaskDispatchOutput{
 		Written: Written{Path: res.Path, Changed: n.Changed, Committed: n.Committed, Skipped: n.Skipped},
 		Ref:     res.Ref, Mode: res.Mode, Item: res.Item, To: res.To, Pane: res.Pane,
-		Workspace: res.Workspace, Reused: res.Reused,
+		Workspace: res.Workspace, Reused: res.Reused, Closed: res.Closed,
 	}, nil
 }

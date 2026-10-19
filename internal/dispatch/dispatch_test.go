@@ -48,7 +48,8 @@ const testNote = "# Worklog — " + date + "\n" + `
 // `[arg]` runs, one call per line. A file named fail-<verb> in its directory makes that call
 // fail; a file named clobber makes `agent start` overwrite the note whose path it holds. Files
 // named workspaces, panes and agents, when present, are the answers of `workspace list`,
-// `pane list` and `agent list`.
+// `pane list` and `agent list`. Every pane `pane get` asks about is gone: a dispatch again
+// finds its previous worker exited.
 const fakeHerdr = `#!/bin/sh
 dir=$(dirname "$0")
 for a in "$@"; do printf '[%s]' "$a" >> "$dir/calls"; done
@@ -60,6 +61,7 @@ case "$1 $2" in
   "pane list") if [ -e "$dir/panes" ]; then cat "$dir/panes"; else echo '{"result":{"panes":[]}}'; fi ;;
   "agent list") if [ -e "$dir/agents" ]; then cat "$dir/agents"; else
     echo '{"result":{"agents":[{"workspace_id":"w1","pane_id":"w1:p1","agent_status":"idle"},{"workspace_id":"w2","pane_id":"w2:p1","agent_status":"idle"}]}}'; fi ;;
+  "pane get") echo '{"error":{"code":"pane_not_found","message":"pane not found"}}' >&2; exit 1 ;;
   "tab create") echo '{"result":{"tab":{"tab_id":"w1:t5"},"root_pane":{"pane_id":"w1:p7"}}}' ;;
   "agent start") if [ -e "$dir/clobber" ]; then read -r p < "$dir/clobber"; printf '# Worklog — 2026-10-18\n' > "$p"; fi ;;
   "agent prompt") ;;
