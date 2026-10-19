@@ -47,8 +47,8 @@ const testNote = "# Worklog — " + date + "\n" + `
 // fakeHerdr answers the herdr calls dispatch makes, logging each call's arguments as
 // `[arg]` runs, one call per line. A file named fail-<verb> in its directory makes that call
 // fail; a file named clobber makes `agent start` overwrite the note whose path it holds. Files
-// named workspaces and panes, when present, are the answers of `workspace list` and
-// `pane list`.
+// named workspaces, panes and agents, when present, are the answers of `workspace list`,
+// `pane list` and `agent list`.
 const fakeHerdr = `#!/bin/sh
 dir=$(dirname "$0")
 for a in "$@"; do printf '[%s]' "$a" >> "$dir/calls"; done
@@ -58,7 +58,8 @@ case "$1 $2" in
   "workspace list") if [ -e "$dir/workspaces" ]; then cat "$dir/workspaces"; else
     echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"r"},{"workspace_id":"w2","label":"iac"}]}}'; fi ;;
   "pane list") if [ -e "$dir/panes" ]; then cat "$dir/panes"; else echo '{"result":{"panes":[]}}'; fi ;;
-  "agent list") echo '{"result":{"agents":[{"workspace_id":"w1","pane_id":"w1:p1","agent_status":"idle"},{"workspace_id":"w2","pane_id":"w2:p1","agent_status":"idle"}]}}' ;;
+  "agent list") if [ -e "$dir/agents" ]; then cat "$dir/agents"; else
+    echo '{"result":{"agents":[{"workspace_id":"w1","pane_id":"w1:p1","agent_status":"idle"},{"workspace_id":"w2","pane_id":"w2:p1","agent_status":"idle"}]}}'; fi ;;
   "tab create") echo '{"result":{"tab":{"tab_id":"w1:t5"},"root_pane":{"pane_id":"w1:p7"}}}' ;;
   "agent start") if [ -e "$dir/clobber" ]; then read -r p < "$dir/clobber"; printf '# Worklog — 2026-10-18\n' > "$p"; fi ;;
   "agent prompt") ;;
@@ -225,11 +226,11 @@ func same(t *testing.T, a, b string) bool {
 	return ra == rb
 }
 
-// freshCalls are the herdr calls of a fresh dispatch of o/r#11 into ws, then its prompt.
+// freshCalls are the herdr calls of a fresh dispatch of o/r#n into ws, then its prompt.
 func freshCalls(ws string, n int, prompt string) string {
-	return "[workspace][list]\n[pane][list]\n" +
-		"[tab][create][--workspace][w1][--cwd][" + ws + "][--label][issue-" + strconv.Itoa(n) + "][--no-focus]\n" +
-		"[agent][start][issue-" + strconv.Itoa(n) + "][--kind][omp][--pane][w1:p7][--][--model][glm-5]\n" +
+	return "[workspace][list]\n[pane][list]\n[agent][list]\n" +
+		"[tab][create][--workspace][w1][--cwd][" + ws + "][--label][r-" + strconv.Itoa(n) + "][--no-focus]\n" +
+		"[agent][start][r-" + strconv.Itoa(n) + "][--kind][omp][--pane][w1:p7][--][--model][glm-5]\n" +
 		"[agent][prompt][w1:p7][" + prompt + "]\n"
 }
 
@@ -374,6 +375,32 @@ func TestFreshGit(t *testing.T) {
 	}
 	if res, err = f.d.Dispatch(context.Background(), date, ref(t, "o/g#5"), Fresh, ""); err != nil || res.Reused {
 		t.Fatalf("after removal: %+v %v", res, err)
+	}
+	if b := strings.TrimSpace(f.run(t, f.gitBin, "-C", ws, "branch", "--show-current")); b != "issue-5" {
+		t.Errorf("branch %q", b)
+	}
+}
+
+// TestFreshNameTaken names the agent and its tab the first name no live agent has, while the
+// workspace's directory and branch keep issue-<N>.
+func TestFreshNameTaken(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	write(t, filepath.Join(f.bin, "agents"), `{"result":{"agents":[`+
+		`{"name":"g-5","workspace_id":"w1","pane_id":"w1:p1","agent_status":"idle"},`+
+		`{"name":"r-5-2","workspace_id":"w1","pane_id":"w1:p2","agent_status":"idle"},`+
+		`{"workspace_id":"w2","pane_id":"w2:p1","agent_status":"idle"}]}}`)
+	ws := filepath.Join(f.root, "o", "g", "issue-5")
+	res, err := f.d.Dispatch(context.Background(), date, ref(t, "o/g#5"), Fresh, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Workspace != ws {
+		t.Errorf("result %+v", res)
+	}
+	calls := f.calls(t)
+	if !strings.Contains(calls, "[--label][g-5-2][--no-focus]\n") || !strings.Contains(calls, "[agent][start][g-5-2][--kind]") {
+		t.Errorf("herdr calls:\n%s\nwant the tab and the agent named g-5-2", calls)
 	}
 	if b := strings.TrimSpace(f.run(t, f.gitBin, "-C", ws, "branch", "--show-current")); b != "issue-5" {
 		t.Errorf("branch %q", b)

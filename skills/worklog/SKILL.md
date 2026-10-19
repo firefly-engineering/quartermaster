@@ -32,7 +32,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `day_read` | read a note: status, objectives, *Next*, items by project and bucket, states, parse errors |
 | `objective_set` | add, refine, progress or settle an objective |
 | `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status; a rewrite keeps a ref, cost or route left out, and `null` clears one |
-| `item_transition` | move a work item to a new state with a summary, or to its own state to rewrite only the summary, or tick a manual action; with `part`, file a done or dropped item into that Part |
+| `item_transition` | move a work item to a new state with a summary, or to its own state to rewrite only the summary, or tick a manual action; with `part`, file a done or dropped item into that Part, by a move there or to its own state |
 | `part_write` | create or rewrite one Part whole: number, kind, title, icon and body |
 | `action_upsert` | create, reword or move a manual action: a checkbox with an id |
 | `process_set` | add, reword or settle a *Process* entry |
@@ -215,9 +215,10 @@ or back to HITL with the reason), and its icon 🔍 while the PRs wait on review
 ### Land
 
 The user reviews and merges. `refresh` moves each merged PR and each issue closed as
-completed to `DONE`. Move a ticket closed by hand yourself, with its commit and `part: N`
-to file it into the Land Part. Record a *Part N — Land* with `part_write`, ✅ once it is
-done:
+completed to `DONE`, and leaves it in its bucket. Record a *Part N — Land* with
+`part_write`, then file each item `refresh` moved to `DONE` into it with `item_transition`
+to `DONE` and `part: N`; with no summary it keeps its PR or commit. Move a ticket closed by
+hand yourself, with its commit and `part: N`. Mark the Part ✅ once it is done. It records:
 
 - the merge (stack and merge commit);
 - the tickets closed, by commit or by hand;
@@ -249,7 +250,8 @@ Make tomorrow's open trivial.
 
 1. Call `refresh`, then chase what it left and why: replies with no links, and items it
    could not prove.
-2. Compact each finished Part with `part_write`, ✅.
+2. Compact each finished Part with `part_write`, ✅. Sweep each ✅ or ❌ item still in a
+   bucket into its Part: `item_transition` to its own state with `part: N`.
 3. Rewrite the status line as the day's outcome with `status_set`, label `close`:
    objectives met and missed, and the next step with what gates it. Leave a missed
    objective open, its progress saying why, so tomorrow's `day_open` carries it.

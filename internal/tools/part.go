@@ -128,7 +128,8 @@ func checkPart(out []byte, repo string, number int, unit []byte) error {
 // fileItem moves work item id of n to DONE or DROPPED and files it into Part number of its
 // project (spec §6): in one write it leaves its bucket and its *Next* lines, and becomes a plain
 // line at the end of the Part, `- <icon> <title> — <summary>`, without its id, cost, route,
-// sent status, prose, button or prompt.
+// sent status, prose, button or prompt. An item already DONE or DROPPED keeps its last
+// summary when summary is empty.
 func fileItem(n *note.Note, src []byte, r note.Renderer, id string, to note.State, summary string, number int) ([]byte, error) {
 	if to != note.Done && to != note.Dropped {
 		return nil, fmt.Errorf("^%s: only a move to DONE or DROPPED files an item into a Part, not to %s", id, to)
@@ -152,12 +153,12 @@ func fileItem(n *note.Note, src []byte, r note.Renderer, id string, to note.Stat
 		return nil, fmt.Errorf("^%s: summary %q: want one line", id, summary)
 	}
 	summary = strings.TrimSpace(summary)
-	from, _ := note.StateOf(it.Icon)
-	if from == to {
-		return nil, fmt.Errorf("^%s: %w: %s to %s rewrites only its summary, so give no part", id, note.ErrIllegalTransition, from, to)
-	}
-	if err := note.Transition(from, to, summary); err != nil {
-		return nil, fmt.Errorf("^%s: %w", id, err)
+	// A move to its own state files an item already DONE or DROPPED: no transition, so no
+	// summary is needed.
+	if from, _ := note.StateOf(it.Icon); from != to {
+		if err := note.Transition(from, to, summary); err != nil {
+			return nil, fmt.Errorf("^%s: %w", id, err)
+		}
 	}
 	if _, was := note.SplitSummary(it.Title); summary == "" {
 		summary = was

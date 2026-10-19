@@ -152,6 +152,45 @@ func TestItemTransitionIntoPart(t *testing.T) {
 	})
 }
 
+// TestItemTransitionFilesFinished files an item already DONE or DROPPED into a Part with a
+// move to its own state (spec §6): it keeps its last summary unless given one.
+func TestItemTransitionFilesFinished(t *testing.T) {
+	t.Parallel()
+	const title = "[#12](https://github.com/acme/web/pull/12) login stack, in review"
+	for _, c := range []struct {
+		name, to, icon, last, summary, want string
+	}{
+		{"DONE, its last summary kept", "DONE", "✅", "merged in abc123", "", "merged in abc123"},
+		{"DROPPED, its last summary kept", "DROPPED", "❌", "superseded by #18", "", "superseded by #18"},
+		{"DONE, a summary given", "DONE", "✅", "merged in abc123", "landed in main", "landed in main"},
+		{"DROPPED, a summary given", "DROPPED", "❌", "superseded by #18", "folded into #18", "folded into #18"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			d := fixtureDeps(t, settled(t), true)
+			if _, err := d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: c.to, Summary: c.last}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := d.partWrite(t.Context(), PartWriteInput{Repo: "acme/web", N: 2, Kind: "Land", Icon: "✅"}); err != nil {
+				t.Fatal(err)
+			}
+			before := len(d.commits(t))
+			out, err := d.itemTransition(t.Context(), ItemTransitionInput{Item: "login-stack", To: c.to, Summary: c.summary, Part: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c := d.commits(t); len(c)-before != 1 || !strings.HasSuffix(c[0], ", into Part 2") {
+				t.Errorf("commits %q, %d before", c, before)
+			}
+			d.checkNote(t, edited(t, nextLogin, "", loginStack, "", queue, "#### ✅ Agent queue\n",
+				part1End, part1End+"\n### ✅ Part 2 — Land\n\n- "+c.icon+" "+title+" — "+c.want+"\n"))
+			if out.From != c.to || out.To != c.to || out.Item != nil || out.Part == nil || out.Part.Part.N != 2 {
+				t.Errorf("out %+v", out)
+			}
+		})
+	}
+}
+
 func TestItemTransitionIntoPartRefuses(t *testing.T) {
 	t.Parallel()
 	d := fixtureDeps(t, settled(t), false)
@@ -163,6 +202,7 @@ func TestItemTransitionIntoPartRefuses(t *testing.T) {
 		{ItemTransitionInput{Item: "login-stack", To: "DONE", Part: 9}, ErrNoPart, "part_write"},
 		{ItemTransitionInput{Item: "vendor-cred", To: "DONE", Summary: "x", Part: 1}, ErrNoPart, "acme/infra has no Part 1"},
 		{ItemTransitionInput{Item: "login-stack", To: "IN_PROGRESS", Part: 1}, nil, "DONE or DROPPED"},
+		{ItemTransitionInput{Item: "login-stack", To: "IN_REVIEW", Summary: "x", Part: 1}, nil, "DONE or DROPPED"},
 		{ItemTransitionInput{Item: "rotate-token", To: "DONE", Part: 1}, nil, "manual action"},
 		{ItemTransitionInput{Item: "nope", To: "DONE", Part: 1}, note.ErrNoItem, ""},
 		{ItemTransitionInput{Item: "old-form", To: "DONE", Part: 1}, note.ErrIllegalTransition, ""},

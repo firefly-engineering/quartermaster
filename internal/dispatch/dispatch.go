@@ -164,9 +164,9 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 	case d.Herdr == "":
 		return Result{}, errors.New("herdr not found on PATH")
 	}
-	name := "issue-" + strconv.Itoa(ref.N)
+	wsName := "issue-" + strconv.Itoa(ref.N)
 	owner, repo, _ := strings.Cut(ref.Repo, "/")
-	ws := filepath.Join(d.Config.Dispatch.WorkspaceRoot, owner, repo, name)
+	ws := filepath.Join(d.Config.Dispatch.WorkspaceRoot, owner, repo, wsName)
 	// The marker must be writable before anything is made that it would record.
 	if err := (note.Dispatch{Pane: "-", Workspace: ws}).Check(); err != nil {
 		return Result{}, fmt.Errorf("dispatch.workspace_root: %w", err)
@@ -179,13 +179,20 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 	if err != nil {
 		return Result{}, err
 	}
-	if res.Reused, err = d.workspace(ctx, checkout, ws, name); err != nil {
+	// So does naming the agent. Another agent may take the name before it starts: herdr then
+	// refuses it, as any other herdr failure.
+	taken, err := d.agentNames(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	agentName := AgentName(repo, strconv.Itoa(ref.N), taken)
+	if res.Reused, err = d.workspace(ctx, checkout, ws, wsName); err != nil {
 		return Result{}, err
 	}
 	res.Workspace = ws
 
 	prompt := implement(ref, instruction) + "\n\n" + send.Closing(send.Item(it.ID), res.Path)
-	pane, err := d.agent(ctx, herdrWS.ID, ws, name, prompt)
+	pane, err := d.agent(ctx, herdrWS.ID, ws, agentName, prompt)
 	if err != nil {
 		left := "workspace " + ws + " is left in place"
 		if pane != "" {
