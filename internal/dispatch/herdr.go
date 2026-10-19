@@ -2,9 +2,6 @@ package dispatch
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/firefly-engineering/quartermaster/internal/herdr"
 )
@@ -49,15 +46,6 @@ func (d Dispatcher) agentNames(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// herdr is the client dispatch calls herdr through. A failed call names up to four of its
-// arguments, as every command dispatch runs does (run).
-func (d Dispatcher) herdr() herdr.Client {
-	run := herdr.New(d.Herdr, d.Env).Run
-	return herdr.Client{Run: func(ctx context.Context, args ...string) ([]byte, error) {
-		out, err := run(ctx, args...)
-		if exit := (*herdr.ExitError)(nil); errors.As(err, &exit) {
-			return nil, fmt.Errorf("herdr %s: %s", strings.Join(args[:min(len(args), 4)], " "), exit.Message())
-		}
-		return out, err
-	}}
-}
+// herdr is the client dispatch calls herdr through. Its errors are herdr.ExitError's, as send's
+// and refresh's are.
+func (d Dispatcher) herdr() herdr.Client { return herdr.New(d.Herdr, d.Env) }

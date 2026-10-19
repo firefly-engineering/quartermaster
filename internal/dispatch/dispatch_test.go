@@ -414,7 +414,7 @@ func TestFreshHerdrFails(t *testing.T) {
 	write(t, filepath.Join(f.bin, "fail-start"), "")
 	ws := filepath.Join(f.root, "o", "r", "issue-11")
 	_, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "")
-	if err == nil || !strings.Contains(err.Error(), "herdr agent start r-11 --kind: start failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1:p7") {
+	if err == nil || !strings.Contains(err.Error(), "herdr agent start: start failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1:p7") {
 		t.Fatalf("err %v, want herdr's reason, the workspace and the pane", err)
 	}
 	if _, err := os.Stat(ws); err != nil {
@@ -422,6 +422,21 @@ func TestFreshHerdrFails(t *testing.T) {
 	}
 	if f.noteSrc(t) != testNote {
 		t.Errorf("the note changed:\n%s", f.noteSrc(t))
+	}
+}
+
+// TestFreshPromptFails names the failed `agent prompt` by herdr's verb, not by the prompt.
+func TestFreshPromptFails(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	write(t, filepath.Join(f.bin, "fail-prompt"), "")
+	ws := filepath.Join(f.root, "o", "r", "issue-11")
+	_, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "Today.")
+	if err == nil || !strings.Contains(err.Error(), "herdr agent prompt: prompt failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1:p7") {
+		t.Fatalf("err %v, want herdr's reason, the workspace and the pane", err)
+	}
+	if strings.Contains(err.Error(), "Today.") {
+		t.Errorf("err %v holds the prompt", err)
 	}
 }
 
