@@ -198,13 +198,14 @@ func All(d Deps) []Tool {
 		},
 		Def[TaskDispatchInput, TaskDispatchOutput]{
 			Name: "task_dispatch", Verb: "dispatch",
-			Description: "Start work on a ref, owner/repo#N. Mode session (the default) sends its work item's prompt, " +
-				"or /implement <url>, to the project's herdr session, and leaves the note alone. Mode fresh creates or " +
-				"reuses the ref's workspace (jj workspace, else git worktree, under dispatch.workspace_root), starts " +
-				"the harness [tiers] maps the item's tier to (default when it has none) in a new herdr tab there and " +
-				"prompts it, then records the pane and workspace on the ref's work item and moves it to IN_PROGRESS. " +
-				"Dispatched fresh again, it first closes its previous worker's tab, and refuses while that worker is " +
-				"working or blocked.",
+			Description: "Start work on a ref, owner/repo#N, or a work item by id: a batch, which has no ref, or an " +
+				"item dispatched as its ref. Mode session (the default) sends the work item's prompt, or /implement <url>, " +
+				"to the project's herdr session, and leaves the note alone. Mode fresh creates or reuses the ref's " +
+				"workspace, or the batch's, named after its item id (jj workspace, else git worktree, under " +
+				"dispatch.workspace_root), starts the harness [tiers] maps the item's tier to (default when it has none) " +
+				"in a new herdr tab there and prompts it, with /implement <url> or the batch's prompt, then records the " +
+				"pane and workspace on the work item and moves it to IN_PROGRESS. Dispatched fresh again, it first " +
+				"closes its previous worker's tab, and refuses while that worker is working or blocked.",
 			Run: d.taskDispatch,
 		},
 	}

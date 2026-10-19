@@ -39,7 +39,7 @@ type Vault struct {
 
 // Dispatch configures task dispatch.
 type Dispatch struct {
-	WorkspaceRoot string `toml:"workspace_root"` // <root>/<owner>/<repo>/issue-<n>
+	WorkspaceRoot string `toml:"workspace_root"` // <root>/<owner>/<repo>/issue-<n>, or <item-id> for a batch
 }
 
 // Harness is an agent program and how herdr starts it: its herdr agent kind and its arguments

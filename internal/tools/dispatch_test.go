@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -194,4 +195,155 @@ func TestTaskDispatchAgain(t *testing.T) {
 			}
 		})
 	}
+}
+
+// batch is a batch work item in the fixture's Agent queue, after its list: it has no ref, and
+// its prompt runs /mass-implement on two tickets.
+const batch = "- Wave 2 after the stack lands.\n\n" +
+	"##### ⬜ Wave 2: the form and the store\n\n" +
+	"Tier: `basic-implementation`. ^wave-2\n\n" +
+	"> [!prompt]- Prompt sent to web\n" +
+	"> ```herdr-prompt id=wave-2 to=web\n" +
+	"> /mass-implement acme/web #20 #21\n" +
+	"> ```\n"
+
+// TestTaskDispatchItemRefuses checks the item input: exactly one of ref and item, and a batch
+// that can be started.
+func TestTaskDispatchItemRefuses(t *testing.T) {
+	t.Parallel()
+	d := fixtureDeps(t, edited(t, "- Wave 2 after the stack lands.\n", batch+
+		"\n##### ⬜ Wave 3: no prompt yet\n\nTo plan. ^wave-3\n"+
+		"\n##### ⬜ A batch named like a ref's checkout\n\nTo rename. ^issue-7\n\n"+
+		"> [!prompt]- Prompt sent to web\n> ```herdr-prompt id=issue-7 to=web\n> /mass-implement acme/web #22\n> ```\n"), false)
+	for _, c := range []struct {
+		in   TaskDispatchInput
+		want string
+	}{
+		{TaskDispatchInput{}, "give ref or item, not both"},
+		{TaskDispatchInput{Ref: "acme/web#12", Item: "wave-2"}, "give ref or item, not both"},
+		{TaskDispatchInput{Item: "Wave 2"}, "not an item id"},
+		{TaskDispatchInput{Item: "wave-9", Date: fixtureDate}, "no work item ^wave-9"},
+		{TaskDispatchInput{Item: "old-form", Date: fixtureDate}, "^old-form is DROPPED"},
+		{TaskDispatchInput{Item: "wave-3", Date: fixtureDate}, "^wave-3 has no ref and no prompt"},
+		{TaskDispatchInput{Item: "issue-7", Date: fixtureDate, Mode: "fresh"}, "cannot start with - or issue-"},
+	} {
+		if _, err := d.taskDispatch(t.Context(), c.in); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%+v: %v, want %q", c.in, err, c.want)
+		}
+	}
+}
+
+// TestTaskDispatchBatchSession sends a batch's prompt to its project's session, as any item's.
+func TestTaskDispatchBatchSession(t *testing.T) {
+	t.Parallel()
+	d := fixtureDeps(t, edited(t, "- Wave 2 after the stack lands.\n", batch), true)
+	h := newFakeHerdr(t, herdrAgent("claude", "web-claude", "idle", "/src/web", 1))
+	d.Herdr = h.Bin
+	before := d.note(t, fixtureDate)
+
+	var out bytes.Buffer
+	in := `{"item":"wave-2","date":"` + fixtureDate + `"}`
+	if err := RunVerb(t.Context(), All(d), "dispatch", []byte(in), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); strings.Contains(got, `"ref"`) || !strings.Contains(got, `"item": "wave-2"`) ||
+		!strings.Contains(got, `"mode": "session"`) || !strings.Contains(got, `"pane": "w1:p1"`) {
+		t.Errorf("output:\n%s", got)
+	}
+	if calls := h.calls(t); !strings.Contains(calls, "[agent][prompt][w1:p1][/mass-implement acme/web #20 #21\n") {
+		t.Errorf("herdr calls:\n%s\nlack the batch's prompt", calls)
+	}
+	if d.note(t, fixtureDate) != before {
+		t.Error("a session dispatch wrote the note")
+	}
+}
+
+// TestTaskDispatchBatchFresh dispatches a batch fresh, in a jj project and in a git one: its
+// checkout directory, jj workspace or git branch, and agent are named after its item id, and
+// its agent gets the batch's prompt.
+func TestTaskDispatchBatchFresh(t *testing.T) {
+	t.Parallel()
+	for _, vcs := range []string{"jj", "git"} {
+		t.Run(vcs, func(t *testing.T) {
+			t.Parallel()
+			d := fixtureDeps(t, edited(t, "- Wave 2 after the stack lands.\n", batch), true)
+			h := newFakeHerdr(t)
+			d.Herdr = h.Bin
+			checkout := filepath.Join(t.TempDir(), "web")
+			if vcs == "jj" {
+				d.jj(t, "git", "init", checkout)
+			} else {
+				d.Git = gitRepo(t, d, checkout)
+			}
+			root := filepath.Join(t.TempDir(), "ws")
+			d.Config.Dispatch.WorkspaceRoot = root
+			d.Config.Projects.Repos = map[string]config.Project{"acme/web": {Path: checkout}}
+			d.Config.Harness = map[string]config.Harness{
+				"claude": {Kind: "claude"},
+				"glm":    {Kind: "omp", Args: []string{"--model", "glm-5"}},
+			}
+			d.Config.Tiers = map[string]string{config.DefaultTier: "claude", "basic-implementation": "glm"}
+
+			var out bytes.Buffer
+			in := `{"item":"wave-2","mode":"fresh","date":"` + fixtureDate + `","instruction":"Keep it small."}`
+			if err := RunVerb(t.Context(), All(d), "dispatch", []byte(in), &out); err != nil {
+				t.Fatal(err)
+			}
+			ws := filepath.Join(root, "acme", "web", "wave-2")
+			if got := out.String(); strings.Contains(got, `"ref"`) || !strings.Contains(got, `"item": "wave-2"`) ||
+				!strings.Contains(got, `"workspace": "`+ws+`"`) {
+				t.Errorf("output:\n%s", got)
+			}
+			calls := h.calls(t)
+			for _, want := range []string{
+				"[tab][create][--workspace][w1][--cwd][" + ws + "][--label][web-wave-2][--no-focus]\n",
+				"[agent][start][web-wave-2][--kind][omp][--pane][w1:p9][--][--model][glm-5]\n",
+				"[agent][prompt][w1:p9][/mass-implement acme/web #20 #21\n\nKeep it small.\n\n",
+			} {
+				if !strings.Contains(calls, want) {
+					t.Errorf("herdr calls:\n%s\nlack %s", calls, want)
+				}
+			}
+			if !strings.Contains(calls, "work item ^wave-2 in ") {
+				t.Errorf("the prompt lacks its closing line:\n%s", calls)
+			}
+			if vcs == "jj" {
+				if got := d.jj(t, "-R", checkout, "workspace", "list"); !strings.Contains(got, "wave-2:") {
+					t.Errorf("jj workspaces:\n%s\nlack wave-2", got)
+				}
+			} else if b := strings.TrimSpace(git(t, d, ws, "branch", "--show-current")); b != "wave-2" {
+				t.Errorf("branch %q, want wave-2", b)
+			}
+			got := d.note(t, fixtureDate)
+			if !strings.Contains(got, "##### 🔄 Wave 2: the form and the store") ||
+				!strings.Contains(got, "<!-- qm pane=w1:p9 ws="+ws+" -->") {
+				t.Errorf("^wave-2 is not recorded as dispatched:\n%s", got)
+			}
+		})
+	}
+}
+
+// gitRepo makes a git repository with one commit at dir, and returns git's path.
+func gitRepo(t *testing.T, d Deps, dir string) string {
+	t.Helper()
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git on PATH")
+	}
+	d.Git = bin
+	git(t, d, "", "init", "-q", dir)
+	git(t, d, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+	return bin
+}
+
+// git runs d's git in dir.
+func git(t *testing.T, d Deps, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(d.Git, args...)
+	cmd.Env, cmd.Dir = d.Env, dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
 }

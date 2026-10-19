@@ -139,12 +139,15 @@ func prompt(src []byte, id string) (to, text string, err error) {
 		}
 		return "", "", err
 	}
-	text = strings.TrimSpace(dedent(it.Prompt.Body))
+	text = Text(it.Prompt)
 	if text == "" {
 		return "", "", fmt.Errorf("block %q needs to= and a body", id)
 	}
 	return it.Prompt.To, text, nil
 }
+
+// Text is the text p sends: its body, dedented and trimmed.
+func Text(p *note.Prompt) string { return strings.TrimSpace(dedent(p.Body)) }
 
 // dedent removes the leading spaces and tabs every non-blank line shares, and empties lines
 // of only spaces and tabs, as Python's textwrap.dedent does.

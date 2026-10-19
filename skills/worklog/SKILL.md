@@ -41,7 +41,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `carryover_verdict` | record keep, defer or drop on a carry-over row |
 | `refresh` | reconcile the note with GitHub and herdr |
 | `prompt_send` | send a work item's prompt to its herdr session; leaves the note alone |
-| `task_dispatch` | start work on a ref, in its project's session or in a fresh agent |
+| `task_dispatch` | start work on a ref or a work item, in its project's session or in a fresh agent |
 
 `prompt_send` is the tool form of the ▶ button's `worklog send`: see
 [Buttons](#buttons). The server lists each tool's input schema. Every tool but `day_open`
@@ -193,8 +193,8 @@ several, as a **batch**. Both are user-invoked, so the work starts from the ▶ 
 *Next*, which sends the command to the project's session. For example:
 `/mass-implement arbora-partners/trunk #883 #871 — global context: <epic URL>`. When the
 user asks you to start it, send it yourself (see [Buttons](#buttons)). For one ticket,
-`task_dispatch` also works: pass it the item's tier's default mode from
-[Tiers](#tiers). Mode `session` sends its prompt to the project's session, and mode
+`task_dispatch` also works, and for a batch, given its item id as `item`: pass it the
+item's tier's default mode from [Tiers](#tiers). Mode `session` sends its prompt to the project's session, and mode
 `fresh` gives it its own workspace and agent, and moves it to `IN_PROGRESS`. An item whose
 tier defaults to `fresh` keeps its ▶ button: the button runs it in the session, which the
 user may choose.
@@ -337,8 +337,8 @@ When you read a worker's report, act on it once:
 - `stuck:` from a tier the developer's config does not route to claude, by default
   `basic-implementation` or `refactoring` (`[tiers]` in `worklog.toml`), is **escalated**:
   1. `item_upsert` raises its tier to `complex-implementation`, and gives it a prompt to
-     the session agent that dispatches it fresh again: call `task_dispatch` with its ref,
-     mode `fresh`, and as `instruction` the note on the reused checkout, "A
+     the session agent that dispatches it fresh again: call `task_dispatch` with its ref (a
+     batch's item id as `item`), mode `fresh`, and as `instruction` the note on the reused checkout, "A
      `basic-implementation` worker stopped here: <reason>. Its work is in `<ws>`; continue
      from it." The marker's `ws=` is the checkout. The prompt also says to leave the item
      to its new worker: `task_dispatch` moves it to `IN_PROGRESS`, and the session must not

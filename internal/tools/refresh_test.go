@@ -118,6 +118,10 @@ const (
 	oldForm      = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 ^old-form"
 	oldFormFresh = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm pane=w1:p1 ws=/ws/acme/web/issue-13 --> ^old-form"
 	oldFormDone  = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm ws=/ws/acme/web/issue-13 --> ^old-form"
+	// A batch with no ref in its place, as a fresh dispatch leaves it: its agent is web-old-form,
+	// in its checkout named after its item id.
+	batchFresh = "- ❌ wave 1: dropped, superseded by #12 <!-- qm pane=w1:p1 ws=/ws/acme/web/old-form --> ^old-form"
+	batchDone  = "- ❌ wave 1: dropped, superseded by #12 <!-- qm ws=/ws/acme/web/old-form --> ^old-form"
 )
 
 // TestRefreshClosesFinishedDispatch closes a DONE or DROPPED item's fresh dispatch tab once its
@@ -150,6 +154,16 @@ func TestRefreshClosesFinishedDispatch(t *testing.T) {
 				h.agents(t, herdrAgent("omp", "web-13", "idle", "/ws/acme/web/issue-13", 1))
 			},
 			apply: &refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DONE", To: "DONE", Pane: "w1:p1", Tab: "w1:t1"}},
+		{name: "a batch's", marked: batchFresh, want: batchDone, close: true,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-old-form", "idle", "/ws/acme/web/old-form", 1))
+			},
+			apply: &refresh.Applied{Item: "old-form", From: "DROPPED", To: "DROPPED", Pane: "w1:p1", Tab: "w1:t1"}},
+		{name: "a batch's, renamed", marked: batchFresh, want: batchFresh,
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.agents(t, herdrAgent("omp", "web-13", "idle", "/ws/acme/web/old-form", 1))
+			},
+			skip: `its worker in pane w1:p1 is named "web-13", not as its dispatch named it, so it keeps its tab`},
 		{name: "its agent exited", marked: oldFormFresh, want: oldFormDone, close: true,
 			setup: func(t *testing.T, h fakeHerdr) {
 				h.agents(t)

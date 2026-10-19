@@ -75,7 +75,7 @@ dir = "worklog"                           # Obsidian vault, relative to repo
 name = "worklog"                          # Obsidian vault name, for obsidian:// URIs
 
 [dispatch]
-workspace_root = "~/.local/share/quartermaster/worklog/workspaces"  # <root>/<owner>/<repo>/issue-<n>
+workspace_root = "~/.local/share/quartermaster/worklog/workspaces"  # <root>/<owner>/<repo>/issue-<n>, or <item-id> for a batch
 
 [harness.claude]                # a named harness: a herdr agent kind and its arguments
 kind = "claude"
@@ -265,7 +265,7 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. A keep with no title, on a row linking a work item as `[[<prev>#^<id>\|^<id>]]`, takes that item's title from the note the link names, without its ref link, cost, route, tier, sent status and summary, and its ref, cost, route and tier unless given; any other row's text is the title. The row stays as written. | — |
 | `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). On a `DONE` or `DROPPED` item with a `fresh` dispatch marker, it also closes the dispatch's herdr tab once its worker is finished, and drops `pane=` from the marker; on a later `refresh`, with `ws=` alone left, it removes the dispatch's checkout and drops `ws=`, and the marker with it ([§9.2]). It reports what it closed, removed or dropped as applied, and a close or removal it skipped or that failed as skipped, with why; neither failure fails another step. | — |
 | `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send`. | — |
-| `task_dispatch` | Start work on a ref ([§9.2]). | `task_dispatch` |
+| `task_dispatch` | Start work on a ref, or on a work item by id, such as a batch, which has no ref ([§9.2]). Exactly one of the two is given. | `task_dispatch` |
 
 Times come from the clock (UTC). A tool that records an event the user timed takes an
 explicit `at`; nothing estimates a time.
@@ -322,7 +322,11 @@ Behaviour is a strict port of `worklog-send`; its self-check becomes the Go test
 
 ### 9.2 `task_dispatch`
 
-Input: `{ref: "owner/repo#N", mode: "session" | "fresh", instruction?}`.
+Input: `{ref: "owner/repo#N" | item: "<item-id>", mode: "session" | "fresh", instruction?}`,
+with exactly one of `ref` and `item`. An item with a ref is dispatched as its ref. A **batch**,
+an item with no ref, is dispatched in the project whose section holds it, with its own prompt:
+one with no prompt is refused, and so is an id starting with `issue-`, which would name a
+ref's checkout, or with `-`, which jj and git would read as a flag.
 
 The **project's herdr workspace** is resolved at use, from herdr's live state, the first of:
 
@@ -336,8 +340,8 @@ The **project's herdr workspace** is resolved at use, from herdr's live state, t
 No match is an error asking for an override. A `herdr-prompt` block's `to=` still names a
 workspace by its label (§9.1).
 
-- **`session`** (default): build the prompt from the ref's work item (or `/implement <url>`
-  when none exists) and send it to the session, as in §9.1: the block's `to=` for an item
+- **`session`** (default): build the prompt from the work item (or `/implement <url>`
+  when a ref has none) and send it to the session, as in §9.1: the block's `to=` for an item
   with a prompt, else the project's herdr workspace.
 - **`fresh`**: an isolated workspace and a new agent:
   1. `gh issue view` for title and body.
@@ -359,15 +363,17 @@ workspace by its label (§9.1).
      of the harness `[tiers]` maps the item's tier to, or of `default` when the item has no
      tier (§3). herdr agent
      names are unique among all live agents and match `[a-z][a-z0-9_-]{0,31}`, so the name is
-     the first of `<repo>-<N>`, `<repo>-<N>-2`, `<repo>-<N>-3`, … that no live agent has in
+     the first of `<repo>-<N>`, `<repo>-<N>-2`, `<repo>-<N>-3`, … (`<repo>-<item-id>`, … for a
+     batch) that no live agent has in
      `herdr agent list` (its `name` field), read with step 2's read-only checks. `<repo>` is
      the repo part of `owner/repo`; the owner stays out. The name is lowercased, every
      character outside `[a-z0-9_-]` becomes `-`, and it is prefixed `a` unless it starts with a
      letter (`1password` → `a1password-5`). Only the repo part is cut to fit 32 characters;
      `-<N>` and `-<k>` never are. An agent taking the name before `agent start` makes herdr
      refuse it, a herdr failure like any other. The workspace's directory, jj workspace name
-     and git branch stay `issue-<N>`.
-  5. `herdr agent prompt` with the issue and the instruction.
+     and git branch stay `issue-<N>`. A batch's are its item id:
+     `<workspace_root>/<owner>/<repo>/<item-id>`, `git worktree add -b <item-id>`.
+  5. `herdr agent prompt` with `/implement <url>`, or a batch's prompt, and the instruction.
   6. Record the pane id and workspace path on the work item (an HTML comment
      `<!-- qm pane=<id> ws=<path> -->` on the item's line), and transition it to
      `IN_PROGRESS`.
@@ -375,8 +381,8 @@ workspace by its label (§9.1).
      (`herdr tab close`, the tab id read from `herdr pane get`) and drops `pane=` from the
      marker, so tabs do not pile up. `ws=` stays, for step 8. It closes the tab when both hold:
      - the agent is `idle` or `done`, or no agent runs in the pane any more;
-     - the agent still bears its dispatch name, `<repo>-<N>` with its counter, as step 4
-       gives it for the marker's `ws=` path.
+     - the agent still bears its dispatch name, `<repo>-<N>` or a batch's `<repo>-<item-id>`
+       with its counter, as step 4 gives it for the marker's `ws=` path.
 
      A `working` or `blocked` agent, or one in any other status, is left for the next
      `refresh`. Renaming the agent in herdr keeps its tab, and `pane=` stays: that is how the

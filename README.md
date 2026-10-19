@@ -101,7 +101,9 @@ with its closing line, to the one agent in the herdr workspace the block names, 
 
 `task_dispatch` takes `{ref, mode, instruction}`, the ref as `owner/repo#N`, and finds the
 ref's work item in the note by the link leading its title
-([spec §9.2](docs/spec.md#92-task_dispatch)). Mode `session`, the default, sends the item's
+([spec §9.2](docs/spec.md#92-task_dispatch)). In place of `ref` it takes `item`, a work item's
+id: a batch, which has no ref, runs in its project with its own prompt, and its workspace,
+branch and agent are named after the id. Mode `session`, the default, sends the item's
 prompt, or `/implement <url>`, to the project's herdr session as `worklog send` does,
 and leaves the note alone. Mode `fresh` creates the ref's workspace at
 `<dispatch.workspace_root>/<owner>/<repo>/issue-<N>` with `jj workspace add`, or with

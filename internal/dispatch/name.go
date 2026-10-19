@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// wsPrefix starts the name of a fresh dispatch's workspace for issue N: issue-<N>.
+// wsPrefix starts the name of a fresh dispatch's workspace for issue N: issue-<N>. A batch's
+// workspace is named after its item id, which never starts with it.
 const wsPrefix = "issue-"
 
 // maxName is the longest name herdr gives an agent: it takes [a-z][a-z0-9_-]{0,31}.
@@ -21,7 +22,7 @@ const maxName = 32
 // Both parts are lowercased and every character outside [a-z0-9_-] becomes `-`; the repo part
 // is then prefixed `a` unless it starts with a letter. Only the repo part is cut to fit 32 characters:
 // the suffix and the counter never are. A fresh dispatch's suffix is the issue's number; a
-// session's will be its harness. A suffix too long to leave the repo a character is not cut,
+// batch's, its item id; a session's will be its harness. A suffix too long to leave the repo a character is not cut,
 // so herdr refuses the name.
 func AgentName(repo, suffix string, taken []string) string {
 	for k := 1; ; k++ {
@@ -32,11 +33,12 @@ func AgentName(repo, suffix string, taken []string) string {
 }
 
 // IsFreshAgent reports whether name is one a fresh dispatch gives the agent it starts in
-// workspace ws, `<workspace_root>/<owner>/<repo>/issue-<N>`: `<repo>-<N>`, whatever its counter.
-// An agent renamed since, or a session's, is not.
+// workspace ws, whatever its counter: `<repo>-<N>` in `<workspace_root>/<owner>/<repo>/issue-<N>`,
+// or a batch's `<repo>-<item-id>` in `<workspace_root>/<owner>/<repo>/<item-id>`. An agent
+// renamed since, or a session's, is not.
 func IsFreshAgent(name, ws string) bool {
-	n, ok := strings.CutPrefix(filepath.Base(ws), wsPrefix)
-	return ok && isAgentName(name, filepath.Base(filepath.Dir(ws)), n)
+	suffix := strings.TrimPrefix(filepath.Base(ws), wsPrefix)
+	return isAgentName(name, filepath.Base(filepath.Dir(ws)), suffix)
 }
 
 // isAgentName reports whether name is one AgentName gives repo and suffix, whatever the
