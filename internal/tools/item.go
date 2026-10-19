@@ -37,7 +37,7 @@ type ItemFields struct {
 
 // PromptInput is a work item's herdr-prompt block.
 type PromptInput struct {
-	To   string `json:"to" jsonschema:"the herdr workspace label of the session it goes to"`
+	To   string `json:"to" jsonschema:"the project whose session it goes to, owner/repo, whose herdr workspace is opened if need be; or a herdr workspace label, only looked up"`
 	Text string `json:"text" jsonschema:"the self-contained prompt"`
 }
 

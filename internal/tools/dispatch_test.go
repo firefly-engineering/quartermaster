@@ -113,6 +113,12 @@ func TestTaskDispatchAgain(t *testing.T) {
 		{name: "working", marker: "pane=w1:p1",
 			setup:   func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "web-20", "working", "", 1)) },
 			refused: "^cache: its worker is still running: web-20 in pane w1:p1 is working; dispatch it again once it is idle or done"},
+		{name: "working, the project's herdr workspace gone", marker: "pane=w1:p1",
+			setup: func(t *testing.T, h fakeHerdr) {
+				h.workspaces(t)
+				h.agents(t, herdrAgent("omp", "web-20", "working", "", 1))
+			},
+			refused: "^cache: its worker is still running: web-20 in pane w1:p1 is working; dispatch it again once it is idle or done"},
 		{name: "blocked", marker: "pane=w1:p1",
 			setup:   func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "web-20", "blocked", "", 1)) },
 			refused: "^cache: its worker is still running: web-20 in pane w1:p1 is blocked; dispatch it again once it is idle or done"},
@@ -170,6 +176,9 @@ func TestTaskDispatchAgain(t *testing.T) {
 				}
 				if strings.Contains(calls, tabCreate) {
 					t.Errorf("a worker started; calls:\n%s", calls)
+				}
+				if strings.Contains(calls, "[workspace][create]") {
+					t.Errorf("a herdr workspace was created before the refusal; calls:\n%s", calls)
 				}
 				d.checkNote(t, src)
 				return

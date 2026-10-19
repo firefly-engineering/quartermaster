@@ -361,11 +361,11 @@ it goes to the user; escalation never loops.
 ## Buttons
 
 A ▶ button runs `worklog send`, which types a work item's prompt into a herdr
-session: the user's agent for a project, in the herdr workspace labelled with the
-project's name (`trunk`, `IaC`). Nothing is pasted by hand.
+session: the user's agent for a project, in the project's herdr workspace. Nothing is
+pasted by hand.
 
-Give a work item a prompt with `item_upsert`: `prompt.to` is the workspace label,
-`prompt.text` the prompt, and `button` the label. The server renders the item, its
+Give a work item a prompt with `item_upsert`: `prompt.to` is the project the prompt goes
+to, as `owner/repo` (`arbora-partners/trunk`), `prompt.text` the prompt, and `button` the label. The server renders the item, its
 button and its prompt block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
 `next_set` repeats the button on the item's line in *Next*.
@@ -396,8 +396,9 @@ Point the user at [`buttons-setup.md`](buttons-setup.md) once.
 To send a prompt yourself, call `prompt_send` with the item's id. It records the pane it
 sent to on the item, unless the item was dispatched `fresh` (its marker keeps that worker),
 and nothing else: record the send yourself. When no agent of the item's harness there is
-`idle` or `done`, it starts one in a new tab. It fails if herdr is not found or the
-workspace is missing; leave the item as it was and say why.
+`idle` or `done`, it starts one in a new tab, and when the project has no herdr workspace,
+it opens one at the project's checkout. It fails if herdr is not found or the checkout is
+missing; leave the item as it was and say why.
 
 ## Other repos
 
@@ -407,8 +408,8 @@ own session over herdr. It is tracked in the **originating** project's *Sent to 
 repos* bucket, because that project is waiting on it.
 
 1. Write the work item with `item_upsert` under *Sent to other repos*, with `sent: to send`
-   and a prompt to the other repo's workspace label. The server writes
-   `→ <workspace label>, **to send**` after its title. The prompt says what
+   and a prompt to the other repo's `owner/repo`. The server writes
+   `→ <owner/repo>, **to send**` after its title. The prompt says what
    is needed and why, links the ticket it unblocks, says how the result is verified, and
    asks for a reply with links (issue, PR, run). Give it no `ref` yet: `refresh` closes
    an item when its ref closes, and the ticket it unblocks is not that event. Once the

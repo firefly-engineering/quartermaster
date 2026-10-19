@@ -17,7 +17,7 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | `internal/herdr/` | the herdr client: one method per herdr call, each answer's JSON declared once |
 | `internal/note/` | the note parser: every unit of spec §4.1 by source range (ADR 0002) |
 | `internal/refresh/` | `refresh`: reconcile the note from GitHub, herdr and ticked checkboxes; close finished `fresh` dispatch tabs and remove their checkouts (ADR 0003, ADR 0011) |
-| `internal/send/` | `worklog send`: deliver a work item's prompt to its herdr session (spec §9.1) |
+| `internal/send/` | the one send path for ▶, `prompt_send` and `task_dispatch` session: pick or spawn an agent of the tier's harness, open the project's herdr workspace on demand, record the pane (spec §9.1, §9.2); the agent naming dispatch shares |
 | `internal/server/` | the MCP server (`worklog serve`): the prompts, cut from the embedded skill |
 | `internal/tools/` | every MCP tool and `note` verb, one `Def` each (spec §6) |
 | `skills/worklog/` | the worklog skill: one source for the installed skill and the `workflow_rules` prompt (ADR 0005) |

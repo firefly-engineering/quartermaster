@@ -12,7 +12,9 @@ import (
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/engine"
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
 const date = "2026-10-18"
@@ -568,7 +570,8 @@ func TestRefuses(t *testing.T) {
 }
 
 // TestHerdrWorkspace resolves a project's herdr workspace: the override, else the one
-// workspace with a pane in the checkout, else the one labelled with the repo's name.
+// workspace with a pane in the checkout, else the one labelled with the repo's name, else none,
+// and it has no checkout to create one at. The tools tests cover creation.
 func TestHerdrWorkspace(t *testing.T) {
 	t.Parallel()
 	const spaces = `{"result":{"workspaces":[` +
@@ -597,7 +600,7 @@ func TestHerdrWorkspace(t *testing.T) {
 			name:     "an override labelling no workspace",
 			repo:     "o/r",
 			override: config.Project{Workspace: "gone"},
-			errs:     []string{`projects."o/r".workspace`, `0 herdr workspaces labelled "gone"`},
+			errs:     []string{"no checkout of it at /src/o/r", `projects."o/r".path`},
 		},
 		{
 			name:  "a pane in the checkout wins over the label",
@@ -641,7 +644,7 @@ func TestHerdrWorkspace(t *testing.T) {
 			name:  "no pane and no label",
 			repo:  "o/nothing",
 			panes: panes(pane("w3", "/src/o/r")),
-			errs:  []string{"no herdr workspace for o/nothing", "/src/o/nothing", `"nothing"`, `projects."o/nothing".workspace`},
+			errs:  []string{"no herdr workspace for o/nothing", "no checkout of it at /src/o/nothing", "nothing is cloned"},
 		},
 		{
 			name: "two workspaces labelled with the repo's name",
@@ -652,16 +655,14 @@ func TestHerdrWorkspace(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			bin := t.TempDir()
-			herdr := filepath.Join(bin, "herdr")
-			writeHerdr(t, herdr)
+			exe := filepath.Join(bin, "herdr")
+			writeHerdr(t, exe)
 			write(t, filepath.Join(bin, "workspaces"), spaces)
 			if c.panes != "" {
 				write(t, filepath.Join(bin, "panes"), c.panes)
 			}
-			d := Dispatcher{Herdr: herdr, Config: config.Config{Projects: config.Projects{
-				Root: "/src", Repos: map[string]config.Project{c.repo: c.override},
-			}}}
-			got, err := d.herdrWorkspace(context.Background(), c.repo)
+			projects := config.Projects{Root: "/src", Repos: map[string]config.Project{c.repo: c.override}}
+			got, _, err := send.ProjectWorkspace(context.Background(), herdr.New(exe, nil), projects, c.repo)
 			if c.want == "" {
 				if err == nil {
 					t.Fatalf("got %+v, want an error", got)

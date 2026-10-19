@@ -215,12 +215,8 @@ func (d Dispatcher) session(ctx context.Context, date string, j job, instruction
 	if it != nil && it.Prompt != nil {
 		sent, err = s.SendItem(ctx, filepath.Dir(res.Path), date, it.ID, instruction)
 	} else {
-		var to send.Workspace
-		if to, err = d.herdrWorkspace(ctx, j.repo); err != nil {
-			return Result{}, err
-		}
 		p := send.Prompt{
-			To: to, Repo: j.repo, Checkout: d.Config.Projects.Project(j.repo).Path,
+			Repo: j.repo, Checkout: d.Config.Projects.Project(j.repo).Path,
 			Text: implement(*ref, instruction), Date: date, Ref: ref.String(),
 		}
 		if it != nil {
@@ -269,14 +265,16 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 	if fi, err := os.Stat(checkout); err != nil || !fi.IsDir() {
 		return Result{}, fmt.Errorf("no checkout of %s at %s: clone it there, or set projects.%q.path", j.repo, checkout, j.repo)
 	}
-	// Finding the herdr workspace only reads, so it goes before anything is made.
-	herdrWS, err := d.herdrWorkspace(ctx, j.repo)
-	if err != nil {
+	// A dispatch again starts its worker where the last one stopped: that one's tab goes before
+	// anything is created, so two agents never write in one checkout, a refusal leaves nothing
+	// behind, and its name is free again.
+	var err error
+	if res.Closed, err = d.closePrevious(ctx, it); err != nil {
 		return Result{}, err
 	}
-	// A dispatch again starts its worker where the last one stopped: that one's tab goes first,
-	// so two agents never write in one checkout, and its name is free again.
-	if res.Closed, err = d.closePrevious(ctx, it); err != nil {
+	// The project's herdr workspace, created when it has none, goes before the checkout is made.
+	herdrWS, _, err := send.ProjectWorkspace(ctx, d.herdr(), d.Config.Projects, j.repo)
+	if err != nil {
 		return Result{}, err
 	}
 	// Naming the agent only reads, after the close that frees the name. Another agent may take

@@ -55,8 +55,8 @@ tags:
 Unblocks <…>. <why that route>. Cost: <cost>. Route: `<skill>`. Tier: `<tier>`.
 [▶ <verb> in <workspace>](obsidian://shell-commands/?vault=worklog&execute=<id>&_date=<date>&_item=<item-id>) ^<item-id>
 
-> [!prompt]- Prompt sent to <workspace label>
-> ```herdr-prompt id=<item-id> to=<workspace label>
+> [!prompt]- Prompt sent to <owner/repo>
+> ```herdr-prompt id=<item-id> to=<owner/repo>
 > <self-contained prompt, e.g. /grill-with-docs https://github.com/<o>/<r>/issues/N — the question and its context>
 > ```
 
@@ -72,7 +72,7 @@ Unblocks <…>. <why that route>. Cost: <cost>. Route: `<skill>`. Tier: `<tier>`
 
 #### <icon> Sent to other repos
 
-- <icon> <item> → <workspace label>, **<to send / sent / acked / done>**, <links>. While **to send**, it is a `#####` work item with its button and prompt
+- <icon> <item> → <owner/repo>, **<to send / sent / acked / done>**, <links>. While **to send**, it is a `#####` work item with its button and prompt
 
 #### <icon> Outside input: chase
 

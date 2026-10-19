@@ -145,7 +145,7 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Bucket | `#### <icon> <bucket name>` under `### <icon> What remains` |
 | Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>`. Its ref, cost, route and tier are read as the renderer writes them, below |
 | Anchor | a paragraph in a Part or bucket ending with `^<id>`: a link target, with no state |
-| Prompt block | a ```` ```herdr-prompt id=<item-id> to=<label> ```` fence, inside a `> [!prompt]-` callout |
+| Prompt block | a ```` ```herdr-prompt id=<item-id> to=<owner/repo> ```` or ```` to=<label> ```` fence, inside a `> [!prompt]-` callout. `owner/repo` names a project, whose herdr workspace §9.2 resolves, opening it if need be; a bare label names a herdr workspace, only looked up ([§9.1]) |
 | Dispatch marker | an HTML comment `<!-- qm pane=<id> ws=<path> -->` before a work item's `^<item-id>`: the herdr pane its prompt was last sent to, by a send ([§9.1]) or a `fresh` dispatch ([§9.2]), and the `fresh` dispatch's workspace. A send records `pane=` alone, except on an item whose marker has `ws=`, which it leaves as it is |
 | Manual action | a task list item `- [ ]` / `- [x]`, or an ordered one `1. [ ]` in *Next* |
 | Carry-over | the table under `## Carry-over` |
@@ -315,10 +315,13 @@ exists under the vault, and the vault is the configured one (`vault.repo` and `v
 (§9.2) share one send path ([ADR 0011]):
 
 1. Read the prompt from the item's `herdr-prompt` block (through callout `>` markers) and
-   resolve `to` to exactly one herdr workspace with that label. The project whose session
-   that is gives the checkout (§3): the project whose `workspace` override is the label,
-   else the project of the item's ref or of its section whose repo is named as the label
-   and has no override. No such project is an error asking for the override.
+   resolve `to`. An `owner/repo` names the project, whose checkout is §3's and whose herdr
+   workspace is §9.2's, created when it has none. Anything else is a bare label: it resolves
+   to exactly one herdr workspace with that label, and never creates one, for workspaces
+   outside any project. The project whose session that is gives the checkout (§3): the
+   project whose `workspace` override is the label, else the project of the item's ref or
+   of its section whose repo is named as the label and has no override. No such project is
+   an error asking for the override. The worklog skill writes the `owner/repo` form.
 2. Resolve the harness from the item's tier through `[tiers]`, or `[tiers] default` when
    the item has none (§3).
 3. Pick the agent: the first in `herdr agent list` order that is in the workspace, of the
@@ -328,14 +331,15 @@ exists under the vault, and the vault is the configured one (`vault.repo` and `v
    neither is sent to, nor is an `unknown` one. A `fresh` dispatch's agent works in its own
    checkout, so it is never picked. An agent started by hand counts when it matches.
 4. With no available agent, none at all or only busy ones of the kind, spawn one of the
-   harness: `herdr tab create` in the workspace with its cwd at the checkout, labelled with
-   the agent's name and `--no-focus`, then `herdr agent start <name> --kind <kind> --pane
+   harness. In a workspace step 1 just created, it takes the workspace's initial shell pane;
+   in any other, `herdr tab create` in the workspace with its cwd at the checkout, labelled
+   with the agent's name and `--no-focus`. Then `herdr agent start <name> --kind <kind> --pane
    <pane> -- <args>`. Only the harness the prompt needs starts. The name is the first of
    `<repo>-<harness>`, `<repo>-<harness>-2`, `<repo>-<harness>-3`, … that no live agent has,
    in any workspace, sanitised and fitted to 32 characters as a `fresh` agent's is (§9.2
-   step 4). The tool never closes a session spawn: it is the session from then on, and keeps
-   its warm context. A spawn that fails is an error; a tab created before the agent fails to
-   start is left in place and named.
+   step 4). The tool never closes a session spawn, nor a workspace it created: it is the
+   session from then on, and keeps its warm context. A spawn that fails is an error; a tab or
+   workspace created before the agent fails to start is left in place and named.
 5. Run `herdr agent prompt <pane> <text>` with no shell in between, the text ending with the
    closing line the skill relies on (`send.Closing`): update work item `^<id>`, or
    `owner/repo#N` for a prompt no block holds, in the note at its path, and refresh *Next*.
@@ -367,10 +371,17 @@ The **project's herdr workspace** is resolved at use, from herdr's live state, t
    a directory under it, compared by whole path components once cleaned, so `/a/bc` is not
    under `/a/b`. Panes of two workspaces there is an error naming both and asking for an
    override;
-3. the workspace labelled with the repo's name (`herdr workspace list`).
+3. the workspace labelled with the repo's name (`herdr workspace list`);
+4. none of these: `herdr workspace create --cwd <checkout> --label <label> --no-focus`, the
+   label the `workspace` override when set, else the repo's name, so step 1 or 3 finds it
+   next time. A set override labelling no workspace creates one with that label. A missing
+   checkout is an error, and nothing is cloned. Panes of two workspaces in the checkout stay
+   step 2's error: a third workspace would not settle it. Nothing locks against two
+   concurrent resolves each creating one; the next resolve reports both through step 2's
+   error. The tool never closes a workspace it created.
 
-No match is an error asking for an override. A `herdr-prompt` block's `to=` still names a
-workspace by its label (§9.1).
+A `herdr-prompt` block's `to=owner/repo` resolves here; a bare label is only looked up
+(§9.1).
 
 - **`session`** (default): build the prompt from the work item (or `/implement <url>`
   when a ref has none) and send it through §9.1's send path: to the block's `to=` for an
@@ -379,13 +390,14 @@ workspace by its label (§9.1).
   `[tiers] default` and records nothing.
 - **`fresh`**: an isolated workspace and a new agent:
   1. `gh issue view` for title and body.
-  2. Resolve the project's herdr workspace, which only reads, then create the workspace at
-     `<workspace_root>/<owner>/<repo>/issue-<N>` from the project's checkout:
-     `jj workspace add` when the checkout has `.jj`, else `git worktree add -b issue-<N>`
+  2. Resolve the project's herdr workspace, which creates it only when it has none, then
+     create the workspace at `<workspace_root>/<owner>/<repo>/issue-<N>` from the project's
+     checkout: `jj workspace add` when the checkout has `.jj`, else `git worktree add -b issue-<N>`
      ([ADR 0004]). An existing workspace for the ref is reused, never clobbered.
 
      A dispatch again, as after an escalation (step 9), reuses that checkout, so the new agent
-     starts on the last one's work. Before creating anything, when the item's marker records
+     starts on the last one's work. Before creating anything, the project's herdr workspace
+     included, when the item's marker records
      `pane=` and `ws=`, it closes the previous agent's tab under step 7's guards, which also
      frees its name. It refuses, "its worker is still running", while that agent is
      `working` or `blocked`, so two agents never write in one checkout. It refuses as well
@@ -486,7 +498,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 | Obsidian writes mid-mutation | Lost edit | Hash check and retry ([§7]); jj history for the narrow window left. |
 | Workspace for a ref already exists | `add` fails | Reuse it if it is the ref's; otherwise fail with its path. `git worktree prune` before a git add. |
 | Unparseable note (hand edit broke a structure) | — | Mutating tools refuse, naming the unit and line; `day_read` returns what it could parse plus the errors. Never rewrite what failed to parse. |
-| herdr not running or label ambiguous | Send fails | Fail with the reason; the item stays **to send**. |
+| herdr not running, label ambiguous or missing, or no checkout to open a project's workspace at | Send fails | Fail with the reason; the item stays **to send**. |
 | Reply to a sent item | `refresh` marks it **acked** with the reply's links | `refresh` reads the reply from the pane the item's `qm` marker records, once its agent is `idle` or `done`. An item that records no pane, such as one sent before sends recorded them, is skipped with why ([§9.1]). |
 | Another prompt sent to the same pane | Its reply's links credited to the earlier item | A reply runs from the line after its item's full closing-line prefix, up to the next closing line for any work item or ref; a mention of `work item ^<id>` in reply prose matches neither. A later prompt's own body, before its closing line, still counts as the earlier reply: a prompt cannot open with a marker, since a slash command must come first ([#90](https://github.com/firefly-engineering/quartermaster/issues/90)). |
 

@@ -221,7 +221,7 @@ type Item struct {
 type Prompt struct {
 	Span        // the whole callout
 	ID   string // the block's id=, always its work item's id
-	To   string // the block's to=: a herdr workspace label
+	To   string // the block's to=: a project's owner/repo, or a herdr workspace label
 	Body string // the block's content, without the callout's `>` markers
 }
 

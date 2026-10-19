@@ -223,3 +223,116 @@ func TestTaskDispatchSession(t *testing.T) {
 	}
 	d.checkNote(t, edited(t, queue, strings.Replace(item, " ^rename", " <!-- qm pane=w1:p2 --> ^rename", 1)+queue))
 }
+
+// toRepo is the fixture's prompt block naming its project, acme/web, rather than a workspace.
+var toRepo = []string{"id=session-store to=web", "id=session-store to=acme/web"}
+
+// TestPromptSendToRepo resolves a block's to=owner/repo through the project's herdr workspace
+// (spec §9.2): one found is sent to as a label's is, and with none, one is created at the
+// checkout, labelled with the override or the repo's name, without focus, and the spawn takes
+// its initial shell pane rather than a new tab.
+func TestPromptSendToRepo(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name     string
+		override string // the project's workspace override
+		spaces   []herdr.Workspace
+		agents   []herdr.Agent
+		create   string // the label workspace create is given; "" for none
+		to, pane string
+	}{
+		{name: "a workspace labelled with the repo's name", spaces: []herdr.Workspace{{ID: "w1", Label: "web"}},
+			agents: mixed(), to: "web", pane: "w1:p6"},
+		{name: "none: created with the repo's name", create: "web", to: "web", pane: "w9:p1"},
+		{name: "none: created with the override", override: "site", spaces: []herdr.Workspace{{ID: "w1", Label: "web"}},
+			create: "site", to: "site", pane: "w9:p1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			src := edited(t, toRepo...)
+			h := newFakeHerdr(t)
+			h.workspaces(t, c.spaces...)
+			d := sendDeps(t, src, h)
+			checkout := t.TempDir()
+			agents := c.agents
+			for i := range agents {
+				agents[i].Cwd = strings.Replace(agents[i].Cwd, "/src/web", checkout, 1)
+			}
+			h.agents(t, agents...)
+			d.Config.Projects.Repos["acme/web"] = config.Project{Path: checkout, Workspace: c.override}
+			path := filepath.Join(d.Config.Vault.Repo, d.Config.Vault.Dir, fixtureDate+".md")
+
+			out, err := d.promptSend(t.Context(), PromptSendInput{Item: "session-store"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.To != c.to || out.Pane != c.pane || !out.Committed {
+				t.Errorf("result %+v", out)
+			}
+			calls := h.calls(t)
+			prompt := "[agent][prompt][" + c.pane + "][/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
+				send.Closing(send.Item("session-store"), path) + "]\n"
+			want := "[workspace][create][--cwd][" + checkout + "][--label][" + c.create + "][--no-focus]\n[agent][list]\n" +
+				"[agent][start][web-claude][--kind][claude][--pane][w9:p1]\n" + prompt
+			if c.create == "" {
+				want = "[agent][list]\n" + prompt
+			}
+			if !strings.HasSuffix(calls, want) || strings.Contains(calls, "[tab]") {
+				t.Errorf("herdr got\n%s\nwant it to end\n%s", calls, want)
+			}
+			const button = "_item=session-store) ^session-store"
+			d.checkNote(t, strings.Replace(src, button, "_item=session-store) <!-- qm pane="+c.pane+" --> ^session-store", 1))
+		})
+	}
+}
+
+// TestPromptSendToRefuses checks what a block's to= never does: a bare label is looked up
+// only, never created; to=owner/repo creates nothing without a checkout, clones nothing, and
+// keeps panes of two workspaces in the checkout an error naming both.
+func TestPromptSendToRefuses(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name     string
+		to       bool // the block names acme/web, not the label web
+		checkout bool // the checkout exists
+		panes    []herdr.Pane
+		want     []string
+	}{
+		{name: "a bare label with no workspace", checkout: true, want: []string{`0 herdr workspaces labelled "web"`}},
+		{name: "owner/repo with no checkout", to: true, want: []string{"no checkout of it at", "nothing is cloned"}},
+		{name: "owner/repo with panes of two workspaces in the checkout", to: true, checkout: true,
+			panes: []herdr.Pane{{ID: "w2:p1", Workspace: "w2", Cwd: "CHECKOUT"}, {ID: "w3:p1", Workspace: "w3", Cwd: "CHECKOUT/sub"}},
+			want:  []string{`"w2" (w2)`, `"w3" (w3)`, `projects."acme/web".workspace`}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			src := settled(t)
+			if c.to {
+				src = edited(t, toRepo...)
+			}
+			h := newFakeHerdr(t)
+			h.workspaces(t)
+			d := sendDeps(t, src, h)
+			checkout := filepath.Join(t.TempDir(), "web")
+			if c.checkout {
+				checkout = t.TempDir()
+			}
+			for i := range c.panes {
+				c.panes[i].Cwd = strings.Replace(c.panes[i].Cwd, "CHECKOUT", checkout, 1)
+			}
+			h.panes(t, c.panes...)
+			d.Config.Projects.Repos["acme/web"] = config.Project{Path: checkout}
+
+			_, err := d.promptSend(t.Context(), PromptSendInput{Item: "session-store"})
+			for _, w := range c.want {
+				if err == nil || !strings.Contains(err.Error(), w) {
+					t.Errorf("%v, want %q", err, w)
+				}
+			}
+			if calls := h.calls(t); strings.Contains(calls, "[create]") || strings.Contains(calls, "[agent][prompt]") {
+				t.Errorf("herdr created or prompted:\n%s", calls)
+			}
+			d.checkNote(t, src)
+		})
+	}
+}

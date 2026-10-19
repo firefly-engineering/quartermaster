@@ -199,7 +199,7 @@ func TestTemplate(t *testing.T) {
 		t.Errorf("buckets: %v", names)
 	}
 	it := n.Item("grill-2")
-	if it == nil || !it.Heading || it.Prompt == nil || it.Prompt.To != "quartermaster" ||
+	if it == nil || !it.Heading || it.Prompt == nil || it.Prompt.To != "firefly-engineering/quartermaster" ||
 		it.Prompt.Body != "/grill-with-docs https://github.com/firefly-engineering/quartermaster/issues/2\n" {
 		t.Fatalf("item: %+v", it)
 	}
@@ -631,12 +631,11 @@ func filledTemplate(t *testing.T) []byte {
 		"title":                                  "spec",
 		"running / done":                         "done",
 		"one line per decision with its link · or a Ticket | PR | Outcome table · or the merge and its post-merge ops": "- ✅ decided.",
-		"question":        "is the parser strict?",
-		"…":               "#3",
-		"skill":           "/grill-with-docs",
-		"tier":            "design",
-		"why that route":  "It touches ADR 0002",
-		"workspace label": "quartermaster",
+		"question":       "is the parser strict?",
+		"…":              "#3",
+		"skill":          "/grill-with-docs",
+		"tier":           "design",
+		"why that route": "It touches ADR 0002",
 		"self-contained prompt, e.g. /grill-with-docs https://github.com/<o>/<r>/issues/N — the question and its context": "/grill-with-docs https://github.com/firefly-engineering/quartermaster/issues/2",
 		"a decision with no prompt yet, one line": "a decision with no prompt yet",
 		"item":                          "a grant",

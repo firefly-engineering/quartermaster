@@ -111,7 +111,7 @@ func SplitSummary(title string) (head, summary string) {
 
 // PromptUnit is a work item's herdr-prompt block.
 type PromptUnit struct {
-	To   string // the herdr workspace label
+	To   string // the project's owner/repo, or a herdr workspace label
 	Body string // the prompt, without callout markers
 }
 
@@ -902,7 +902,7 @@ const (
 // prompt renders the collapsed callout holding item id's herdr-prompt block.
 func prompt(id string, p PromptUnit) (string, error) {
 	if p.To == "" || strings.ContainsFunc(p.To, isSpace) {
-		return "", fmt.Errorf("prompt to=%q: want a workspace label with no spaces", p.To)
+		return "", fmt.Errorf("prompt to=%q: want owner/repo or a workspace label, with no spaces", p.To)
 	}
 	body := strings.TrimSuffix(p.Body, "\n")
 	if strings.TrimSpace(body) == "" {

@@ -744,7 +744,7 @@ func (p *parser) blockquote(q *ast.Blockquote, after *Item) {
 		attrs[k] = v
 	}
 	if attrs["id"] == "" || attrs["to"] == "" {
-		p.errorf(fline, "a herdr-prompt block needs id=<item-id> and to=<workspace label>")
+		p.errorf(fline, "a herdr-prompt block needs id=<item-id> and to=<owner/repo or workspace label>")
 		return
 	}
 	if attrs["id"] != after.ID {

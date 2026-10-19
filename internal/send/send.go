@@ -51,7 +51,8 @@ func (s Sent) String() string { return fmt.Sprintf("sent %s to %s (%s)", s.ID, s
 
 // Send sends work item id's prompt from vault/<date>.md to an available agent in the herdr
 // workspace its block names, spawned when there is none, and records the agent's pane on the
-// item.
+// item. A block's to=owner/repo names the project, whose workspace is opened if it has none;
+// a bare label names the workspace, only looked up.
 func (s Sender) Send(ctx context.Context, vault, date, id string) (Sent, error) {
 	return s.SendItem(ctx, vault, date, id, "")
 }
@@ -83,17 +84,19 @@ func (s Sender) SendItem(ctx context.Context, vault, date, id, extra string) (Se
 	if extra = strings.TrimSpace(extra); extra != "" {
 		text += "\n\n" + extra
 	}
-	ws, err := s.labelled(ctx, it.Prompt.To)
-	if err != nil {
-		return Sent{}, err
+	p := Prompt{Tier: it.Tier, Text: text, Date: date, Item: id}
+	// to=owner/repo names the project, whose workspace deliver resolves, creating it if need
+	// be. A bare label names a workspace, only looked up.
+	if p.Repo = it.Prompt.To; !note.ValidRepo(p.Repo) {
+		if p.To, err = s.labelled(ctx, it.Prompt.To); err != nil {
+			return Sent{}, err
+		}
+		if p.Repo, err = s.project(n, it, it.Prompt.To); err != nil {
+			return Sent{}, err
+		}
 	}
-	repo, err := s.project(n, it, it.Prompt.To)
-	if err != nil {
-		return Sent{}, err
-	}
-	return s.deliver(ctx, Prompt{
-		To: ws, Repo: repo, Checkout: s.Config.Projects.Project(repo).Path, Tier: it.Tier, Text: text, Date: date, Item: id,
-	})
+	p.Checkout = s.Config.Projects.Project(p.Repo).Path
+	return s.deliver(ctx, p)
 }
 
 // Workspace is one herdr workspace: its id, and the label messages and Sent.To name it by.
@@ -101,7 +104,7 @@ type Workspace = herdr.Workspace
 
 // Prompt is one prompt to a project's session.
 type Prompt struct {
-	To       Workspace // the project's herdr workspace
+	To       Workspace // the project's herdr workspace; resolved from Repo when zero (ProjectWorkspace)
 	Repo     string    // the project, owner/repo, which names an agent spawned for it
 	Checkout string    // the project's checkout, which the agent's cwd is in
 	Tier     string    // the work item's tier, which picks the harness; "" for [tiers] default
@@ -109,15 +112,18 @@ type Prompt struct {
 	Date     string // the date of the note the closing line names
 	Item     string // the work item the prompt is about, which records the pane; "" for none
 	Ref      string // what the closing line names when Item is "", as owner/repo#N
+
+	root string // the initial shell pane of To, when deliver just created it, which a spawn takes
 }
 
 // Deliver sends p, for which no herdr-prompt block holds the text, as Send sends a block's:
 // to an available agent of p's harness, closed with the line asking it to update p's item, or
-// p's ref when it has none (Closing). Sent.ID is p's item, or its ref when it has none.
+// p's ref when it has none (Closing). With no To, it goes to the project's herdr workspace,
+// created if need be (ProjectWorkspace). Sent.ID is p's item, or its ref when it has none.
 func (s Sender) Deliver(ctx context.Context, p Prompt) (Sent, error) {
 	p.Text = strings.TrimSpace(p.Text)
-	if p.To.ID == "" || p.Repo == "" || p.Text == "" {
-		return Sent{}, fmt.Errorf("a prompt needs a workspace, a project and a text: to %q, repo %q, text %q", p.To.ID, p.Repo, p.Text)
+	if p.Repo == "" || p.Text == "" {
+		return Sent{}, fmt.Errorf("a prompt needs a project and a text: repo %q, text %q", p.Repo, p.Text)
 	}
 	if p.Item != "" && !note.ValidID(p.Item) {
 		return Sent{}, fmt.Errorf("not an item id: %q", p.Item)
@@ -152,11 +158,17 @@ func (s Sender) deliver(ctx context.Context, p Prompt) (Sent, error) {
 		return Sent{}, fmt.Errorf("not a date: %q", p.Date)
 	}
 	if p.Checkout == "" {
-		return Sent{}, fmt.Errorf("no checkout for the session in herdr workspace %q: set projects.root, or the project's path", p.To.Label)
+		return Sent{}, fmt.Errorf("no checkout for %s's session: set projects.root, or projects.%q.path", p.Repo, p.Repo)
 	}
 	name, h := s.Config.HarnessFor(p.Tier)
 	if h.Kind == "" {
 		return Sent{}, fmt.Errorf("[tiers] routes tier %q to no harness", p.Tier)
+	}
+	if p.To.ID == "" {
+		var err error
+		if p.To, p.root, err = ProjectWorkspace(ctx, s.herdr(), s.Config.Projects, p.Repo); err != nil {
+			return Sent{}, err
+		}
 	}
 	a, err := s.agent(ctx, p, name, h)
 	if err != nil {
@@ -325,8 +337,9 @@ func (s Sender) agent(ctx context.Context, p Prompt, name string, h config.Harne
 	return s.spawn(ctx, p, name, h, agents)
 }
 
-// spawn starts an agent of harness name, h, for p, and returns it: in a new tab of p's
-// workspace at its checkout, without focus. It is named the first free `<repo>-<harness>`
+// spawn starts an agent of harness name, h, for p, and returns it: in the initial shell pane of
+// p's workspace when deliver just created it, else in a new tab of the workspace at its
+// checkout, without focus. It is named the first free `<repo>-<harness>`
 // among live, all of herdr's agents (AgentName). The tool never closes it: a session keeps its
 // warm context.
 func (s Sender) spawn(ctx context.Context, p Prompt, name string, h config.Harness, live []herdr.Agent) (herdr.Agent, error) {
@@ -336,6 +349,12 @@ func (s Sender) spawn(ctx context.Context, p Prompt, name string, h config.Harne
 	}
 	_, repo, _ := strings.Cut(p.Repo, "/")
 	agent := AgentName(repo, name, taken)
+	if p.root != "" {
+		if err := s.herdr().AgentStart(ctx, agent, h.Kind, p.root, h.Args); err != nil {
+			return herdr.Agent{}, fmt.Errorf("%w; herdr workspace %q, created for it, is left in place", err, p.To.Label)
+		}
+		return herdr.Agent{Name: agent, Kind: h.Kind, Workspace: p.To.ID, Pane: p.root, Cwd: p.Checkout}, nil
+	}
 	pane, err := Start(ctx, s.herdr(), h, p.To.ID, p.Checkout, agent)
 	if err != nil {
 		if pane != "" {
