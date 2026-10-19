@@ -16,7 +16,7 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | `internal/engine/` | the mutation engine: lock, hash check, rename, jj commit; the only writer of a note (ADR 0006) |
 | `internal/herdr/` | the herdr client: one method per herdr call, each answer's JSON declared once |
 | `internal/note/` | the note parser: every unit of spec §4.1 by source range (ADR 0002) |
-| `internal/refresh/` | `refresh`: reconcile the note from GitHub, herdr and ticked checkboxes (ADR 0003) |
+| `internal/refresh/` | `refresh`: reconcile the note from GitHub, herdr and ticked checkboxes; close finished `fresh` dispatch tabs and remove their checkouts (ADR 0003, ADR 0011) |
 | `internal/send/` | `worklog send`: deliver a work item's prompt to its herdr session (spec §9.1) |
 | `internal/server/` | the MCP server (`worklog serve`): the prompts, cut from the embedded skill |
 | `internal/tools/` | every MCP tool and `note` verb, one `Def` each (spec §6) |

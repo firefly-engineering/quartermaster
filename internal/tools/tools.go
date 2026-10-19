@@ -183,7 +183,9 @@ func All(d Deps) []Tool {
 				"(spec §11): a merged PR or an issue closed as completed moves its item to DONE with the PR or " +
 				"commit; an issue closed as not planned or a duplicate, to DROPPED; a dispatched IN_PROGRESS " +
 				"item whose pane is gone or whose agent exited, to WAITING (\"worker exited\"), never DONE; a " +
-				"reply with links to an item sent to another repo marks it acked. Also ticks paired checkboxes " +
+				"reply with links to an item sent to another repo marks it acked. On a DONE or DROPPED item's fresh " +
+				"dispatch, it closes the finished worker's tab, then, on a later refresh, removes its checkout, never " +
+				"forced. Also ticks paired checkboxes " +
 				"and derives icons. Returns what it changed and every item it checked and left, with why.",
 			Run: d.refresh,
 		},

@@ -134,7 +134,26 @@ func TestSetDispatch(t *testing.T) {
 	if want := strings.Replace(dispatchNote, "<!-- qm pane=w1:p3 ws=", "<!-- qm ws=", 1); string(out) != want {
 		t.Errorf("pane dropped:\n%s", out)
 	}
-	for _, bad := range []Dispatch{{}, {Pane: "a b", Workspace: "/x"}, {Pane: "p", Workspace: "/a b"},
+	// An empty dispatch removes the marker, with the space it was written with, in either form.
+	for _, c := range []struct{ id, marker string }{
+		{"d11", " <!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 -->"},
+		{"d13", " <!-- qm pane=w1:p4 ws=/ws/o/r/issue-13 -->"},
+	} {
+		n, _ = Parse(src)
+		out, err = SetDispatch(n, src, c.id, Dispatch{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := strings.Replace(dispatchNote, c.marker, "", 1); string(out) != want {
+			t.Errorf("%s marker removed:\n%s", c.id, out)
+		}
+	}
+	// An item with no marker is left as it is.
+	n, _ = Parse(src)
+	if out, err = SetDispatch(n, src, "d12", Dispatch{}); err != nil || string(out) != dispatchNote {
+		t.Errorf("no marker to remove: %v\n%s", err, out)
+	}
+	for _, bad := range []Dispatch{{Pane: "a b", Workspace: "/x"}, {Pane: "p", Workspace: "/a b"},
 		{Pane: "p", Workspace: "/a-->"}, {Pane: "p", Workspace: "relative"}} {
 		if _, err := SetDispatch(n, src, "d12", bad); err == nil {
 			t.Errorf("%+v: no error", bad)

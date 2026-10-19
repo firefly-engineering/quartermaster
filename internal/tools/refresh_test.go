@@ -3,6 +3,10 @@ package tools
 import (
 	"context"
 	"errors"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -235,4 +239,162 @@ func TestRefreshClosesFinishedDispatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// checkoutDeps is fixtureDeps with jj and git, and a project acme/web under projects.root: a
+// jj repo, or a git one, with one commit. Its fresh checkout for issue 13 is ws, made as
+// dispatch makes it, and the fixture's dropped item records it alone, its tab closed already.
+func checkoutDeps(t *testing.T, vcs string) (d Deps, project, ws string) {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, ws = filepath.Join(root, "src", "acme", "web"), filepath.Join(root, "ws", "acme", "web", "issue-13")
+	d = fixtureDeps(t, edited(t, oldForm, strings.Replace(oldForm, " ^old-form", " <!-- qm ws="+ws+" --> ^old-form", 1)), true)
+	d.Config.Projects.Root = filepath.Join(root, "src")
+	if d.Git, err = exec.LookPath("git"); err != nil {
+		t.Fatal("git not found: run the tests in the dev shell")
+	}
+	for _, dir := range []string{project, filepath.Dir(ws)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if vcs == "jj" {
+		d.jj(t, "git", "init", project)
+		d.jj(t, "-R", project, "commit", "-m", "init")
+		d.jj(t, "-R", project, "workspace", "add", "--name", "issue-13", ws)
+	} else {
+		d.git(t, "init", "-q", project)
+		d.git(t, "-C", project, "commit", "-q", "--allow-empty", "-m", "init")
+		d.git(t, "-C", project, "worktree", "add", "-q", "-b", "issue-13", ws)
+	}
+	return d, project, ws
+}
+
+func (d Deps) git(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(d.Git, append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.com"}, args...)...)
+	cmd.Env = d.Env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
+
+// refreshCheckout refreshes d, which GitHub proves nothing about and whose items herdr is never
+// asked about, and returns what it reports for the dropped item: applied, or skipped and why.
+func (d Deps) refreshCheckout(t *testing.T) (applied *refresh.Applied, skip string) {
+	t.Helper()
+	rec := d.reconciler()
+	rec.GH, rec.Herdr = ghFake(t, map[string]string{"acme/web#14": openIssue, "acme/web#12": openPR}), herdr.Client{Run: noHerdr(t)}
+	out, err := d.refreshWith(t.Context(), RefreshInput{}, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range out.Applied {
+		if a.Item == "old-form" {
+			applied = &a
+		}
+	}
+	for _, s := range out.SkippedItems {
+		if s.Item == "old-form" {
+			skip = s.Reason
+		}
+	}
+	return applied, skip
+}
+
+// checkRemoved checks that a refresh removed ws and dropped it from the item, whose marker went
+// with it, and committed that.
+func (d Deps) checkRemoved(t *testing.T, applied *refresh.Applied, skip, ws string) {
+	t.Helper()
+	if want := (refresh.Applied{Item: "old-form", Ref: "acme/web#13", From: "DROPPED", To: "DROPPED", Workspace: ws}); applied == nil ||
+		applied.Item != want.Item || applied.Ref != want.Ref || applied.From != want.From || applied.To != want.To ||
+		applied.Pane != "" || applied.Workspace != want.Workspace || skip != "" {
+		t.Errorf("applied %+v, skipped %q; want %+v", applied, skip, want)
+	}
+	d.checkNote(t, edited(t))
+	if _, err := os.Lstat(ws); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s is still there: %v", ws, err)
+	}
+	if log := d.jj(t, "log", "--no-graph", "-r", "@-", "-T", "description"); !strings.HasPrefix(log,
+		"worklog(2026-10-16): refresh: ^old-form checkout removed\n") {
+		t.Errorf("commit %q", log)
+	}
+}
+
+// TestRefreshRemovesFinishedCheckout removes a DONE or DROPPED item's fresh checkout once its
+// tab is closed: a jj workspace snapshotted, forgotten and deleted; a git worktree removed, never
+// forced, so a dirty one stays until the next refresh finds it clean. Its issue-<N> branch
+// stays (spec §9.2, §11).
+func TestRefreshRemovesFinishedCheckout(t *testing.T) {
+	t.Parallel()
+	t.Run("jj", func(t *testing.T) {
+		t.Parallel()
+		d, project, ws := checkoutDeps(t, "jj")
+		if err := os.WriteFile(filepath.Join(ws, "work.txt"), []byte("work\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		applied, skip := d.refreshCheckout(t)
+		d.checkRemoved(t, applied, skip, ws)
+		if list := d.jj(t, "-R", project, "workspace", "list", "-T", `name ++ "\n"`); list != "default\n" {
+			t.Errorf("workspaces:\n%s", list)
+		}
+		// The snapshot kept the work no one committed.
+		if got := d.jj(t, "-R", project, "log", "--no-graph", "-r", `files(root:"work.txt")`, "-T", `"found\n"`); got != "found\n" {
+			t.Errorf("work.txt in %q", got)
+		}
+	})
+	t.Run("jj, its directory gone", func(t *testing.T) {
+		t.Parallel()
+		d, project, ws := checkoutDeps(t, "jj")
+		if err := os.RemoveAll(ws); err != nil {
+			t.Fatal(err)
+		}
+		applied, skip := d.refreshCheckout(t)
+		d.checkRemoved(t, applied, skip, ws)
+		if list := d.jj(t, "-R", project, "--ignore-working-copy", "workspace", "list", "-T", `name ++ "\n"`); list != "default\n" {
+			t.Errorf("workspaces:\n%s", list)
+		}
+	})
+	t.Run("git, dirty then clean", func(t *testing.T) {
+		t.Parallel()
+		d, project, ws := checkoutDeps(t, "git")
+		if err := os.WriteFile(filepath.Join(ws, "work.txt"), []byte("work\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		applied, skip := d.refreshCheckout(t)
+		if applied != nil || !strings.HasPrefix(skip, "removing checkout "+ws+": git ") ||
+			!strings.Contains(skip, "contains modified or untracked files") || !strings.HasSuffix(skip, "; retried next refresh") {
+			t.Errorf("applied %+v, skipped %q", applied, skip)
+		}
+		d.checkNote(t, edited(t, oldForm, strings.Replace(oldForm, " ^old-form", " <!-- qm ws="+ws+" --> ^old-form", 1)))
+		if _, err := os.Stat(filepath.Join(ws, "work.txt")); err != nil {
+			t.Fatal(err)
+		}
+		// Committed, the work leaves the tree clean, and the next refresh removes it.
+		d.git(t, "-C", ws, "add", "work.txt")
+		d.git(t, "-C", ws, "commit", "-q", "-m", "work")
+		applied, skip = d.refreshCheckout(t)
+		d.checkRemoved(t, applied, skip, ws)
+		if got := d.git(t, "-C", project, "show", "issue-13:work.txt"); got != "work\n" {
+			t.Errorf("issue-13:work.txt %q", got)
+		}
+	})
+	t.Run("git, its directory gone", func(t *testing.T) {
+		t.Parallel()
+		d, project, ws := checkoutDeps(t, "git")
+		if err := os.RemoveAll(ws); err != nil {
+			t.Fatal(err)
+		}
+		applied, skip := d.refreshCheckout(t)
+		d.checkRemoved(t, applied, skip, ws)
+		if list := d.git(t, "-C", project, "worktree", "list"); strings.Contains(list, ws) {
+			t.Errorf("worktrees:\n%s", list)
+		}
+		d.git(t, "-C", project, "rev-parse", "--verify", "-q", "issue-13")
+	})
 }

@@ -31,8 +31,15 @@
 // running agent is left for the next refresh, and a renamed one keeps its tab: renaming it is
 // how the developer keeps one. A session send's pane, with no `ws=`, is never closed.
 //
-// Like every package but main, this one reads neither the environment nor the cwd: gh and
-// herdr come in as a Runner and a herdr.Client.
+// The next refresh, finding `ws=` alone, removes that checkout, and Apply drops `ws=`, the
+// marker with it. A jj workspace is snapshotted, forgotten in its project and deleted; a git
+// worktree is removed, never forced, so a dirty one stays. A checkout already gone is forgotten,
+// or pruned. A removal that fails keeps `ws=` for the next refresh to retry. The checkout's
+// issue-<N> branch is never deleted.
+//
+// Like every package but main, this one reads neither the environment nor the cwd: gh, jj and
+// git come in as Runners, herdr as a herdr.Client, and the projects' checkouts from the
+// configuration.
 package refresh
 
 import (
@@ -41,14 +48,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 )
 
 // Reconciler gathers the evidence for a refresh.
 type Reconciler struct {
-	GH    Runner       // runs gh
-	Herdr herdr.Client // calls herdr
+	GH       Runner          // runs gh
+	Herdr    herdr.Client    // calls herdr
+	JJ, Git  Runner          // run jj and git, to remove a finished fresh checkout
+	Projects config.Projects // where that checkout's project is
 }
 
 // Applied is one change refresh made to the note.
@@ -62,6 +72,8 @@ type Applied struct {
 	Links   []string `json:"links,omitempty" jsonschema:"an item sent to another repo: the links from its reply added to its line"`
 	Pane    string   `json:"pane,omitempty" jsonschema:"a finished fresh dispatch: the pane dropped from its marker"`
 	Tab     string   `json:"tab,omitempty" jsonschema:"a finished fresh dispatch: the herdr tab closed with it; absent when it was gone already"`
+	// Workspace is set alone, on the refresh after the one that drops Pane.
+	Workspace string `json:"ws,omitempty" jsonschema:"a finished fresh dispatch whose tab is closed: the checkout removed, or found gone, and dropped from its marker"`
 }
 
 // Skipped is a work item refresh checked and left as it was.
@@ -100,7 +112,8 @@ type gatherer struct {
 
 // Gather asks GitHub and herdr about every work item of n that is not DONE or DROPPED, in note
 // order, and returns what the answers prove. A DONE or DROPPED item's finished fresh dispatch
-// has its tab closed here, and its pane dropped by Apply.
+// has its tab closed here, and its pane dropped by Apply; once its pane is dropped, its
+// checkout is removed here, and its ws dropped by Apply.
 func (r Reconciler) Gather(ctx context.Context, n *note.Note) Plan {
 	g := &gatherer{Reconciler: r, refs: map[note.Ref]evidence{}}
 	var p Plan
@@ -193,22 +206,29 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 
 // finished closes the herdr tab of a DONE or DROPPED item's fresh dispatch, when its worker is
 // done with it, and plans dropping its pane from the item's marker. A marker with no ws is not a
-// fresh dispatch's, so its pane is never closed.
+// fresh dispatch's, so its pane is never closed. A marker with a ws alone, its tab closed, has
+// its checkout removed, and plans dropping its ws.
 func (g *gatherer) finished(ctx context.Context, p *Plan, it *note.Item, from note.State) {
 	d := it.Dispatch
-	if d == nil || d.Pane == "" || d.Workspace == "" {
+	if d == nil || d.Workspace == "" {
 		return
 	}
-	m := move{Applied: Applied{Item: it.ID, From: from.String(), To: from.String(), Pane: d.Pane}, from: from, state: from}
+	m := move{Applied: Applied{Item: it.ID, From: from.String(), To: from.String()}, from: from, state: from}
 	if l := parseLine(it); l.ref != (note.Ref{}) {
 		m.Ref = l.ref.String()
 	}
-	tab, reason := g.closeTab(ctx, d.Pane, d.Workspace)
+	var reason string
+	if d.Pane != "" {
+		m.Pane = d.Pane
+		m.Tab, reason = g.closeTab(ctx, d.Pane, d.Workspace)
+	} else {
+		m.Workspace = d.Workspace
+		reason = g.removeCheckout(ctx, d.Workspace)
+	}
 	if reason != "" {
 		p.skipped = append(p.skipped, Skipped{Item: it.ID, Ref: m.Ref, Reason: reason})
 		return
 	}
-	m.Tab = tab
 	p.moves = append(p.moves, m)
 }
 
@@ -263,6 +283,14 @@ func (m move) apply(src []byte) ([]byte, error) {
 		}
 		d := *it.Dispatch
 		d.Pane = ""
+		return note.SetDispatch(n, src, m.Item, d)
+	}
+	if m.Workspace != "" {
+		if it.Dispatch == nil || it.Dispatch.Workspace != m.Workspace {
+			return nil, fmt.Errorf("its marker no longer records ws %s", m.Workspace)
+		}
+		d := *it.Dispatch
+		d.Workspace = ""
 		return note.SetDispatch(n, src, m.Item, d)
 	}
 	if m.state != m.from {

@@ -11,7 +11,7 @@ import (
 // pane and its workspace. The item records it as an HTML comment, `<!-- qm pane=<id> ws=<path> -->`,
 // just before its `^<id>`, in a list item's line or a ##### item's paragraph; Obsidian does not
 // show it. Either part may be absent, as the pane once refresh closes a finished dispatch's tab,
-// but not both.
+// but not both: once refresh removes the checkout too, the marker goes.
 type Dispatch struct {
 	Pane, Workspace string
 }
@@ -83,12 +83,23 @@ func parseMarker(raw string) (d Dispatch, ok bool) {
 }
 
 // SetDispatch records d on work item id of n, parsed from src, and returns the new source: it
-// replaces the item's marker, or writes one just before its `^<id>`. Nothing else changes.
+// replaces the item's marker, or writes one just before its `^<id>`. An empty d removes the
+// marker, with the space written after it. Nothing else changes.
 func SetDispatch(n *Note, src []byte, id string, d Dispatch) ([]byte, error) {
+	it := n.Item(id)
+	if d == (Dispatch{}) && it != nil {
+		if it.Dispatch == nil {
+			return src, nil
+		}
+		end := it.marker.End
+		if end < len(src) && src[end] == ' ' {
+			end++
+		}
+		return Replace(src, Span{Start: it.marker.Start, End: end}, nil), nil
+	}
 	if err := d.Check(); err != nil {
 		return nil, fmt.Errorf("^%s: %w", id, err)
 	}
-	it := n.Item(id)
 	if it == nil {
 		return nil, fmt.Errorf("%w ^%s", ErrNoItem, id)
 	}
