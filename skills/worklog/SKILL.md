@@ -40,7 +40,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `status_set` | rewrite the status line |
 | `carryover_verdict` | record keep, defer or drop on a carry-over row |
 | `refresh` | reconcile the note with GitHub and herdr |
-| `prompt_send` | send a work item's prompt to its herdr session; leaves the note alone |
+| `prompt_send` | send a work item's prompt to an available agent of its tier's harness in its herdr session; records the pane on the item and leaves its state |
 | `task_dispatch` | start work on a ref or a work item, in its project's session or in a fresh agent |
 
 `prompt_send` is the tool form of the ▶ button's `worklog send`: see
@@ -393,10 +393,11 @@ The judgement stays here:
 When the note shows prompts but no buttons, the vault lacks the Shell commands setup.
 Point the user at [`buttons-setup.md`](buttons-setup.md) once.
 
-To send a prompt yourself, call `prompt_send` with the item's id. It does not touch the
-note: record the send yourself. It fails if herdr is not found, if the workspace is missing
-or has no single agent, or if that agent is `blocked` on an approval; leave the item as it
-was and say why.
+To send a prompt yourself, call `prompt_send` with the item's id. It records the pane it
+sent to on the item, unless the item was dispatched `fresh` (its marker keeps that worker),
+and nothing else: record the send yourself. It fails if herdr is not
+found, if the workspace is missing, or if no agent of the item's harness there is `idle` or
+`done`; leave the item as it was and say why.
 
 ## Other repos
 

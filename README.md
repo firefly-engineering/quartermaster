@@ -86,7 +86,7 @@ dropped or done, and *Process* to-dos. It refuses when today's note exists and i
 It asks `gh` about the issue or PR each open work item's title leads with: a merged PR, or an
 issue closed as completed, is `DONE` with the PR or the commit that closed it; an issue closed
 as not planned or as a duplicate is `DROPPED`. It asks `herdr` about the pane in each
-`IN_PROGRESS` item's dispatch marker: a pane gone, or no agent in it, is `WAITING` ("worker
+`IN_PROGRESS` item's `fresh` dispatch marker, one with `ws=`: a pane gone, or no agent in it, is `WAITING` ("worker
 exited"), never `DONE`. For an item in *Sent to other repos* marked **sent** or **acked**, it
 reads the agent the item was sent to (`herdr agent read`); GitHub links in the reply after the
 item's prompt mark it **acked** and are added to its line; once GitHub moves it to `DONE`, it
@@ -96,8 +96,12 @@ it checked and left as it was, with why.
 
 `prompt_send` takes `{date, item}` and does what `worklog send` does
 ([spec §9.1](docs/spec.md#91-worklog-send--buttons)): it sends the item's prompt block,
-with its closing line, to the one agent in the herdr workspace the block names, and refuses a
-`blocked` agent. It leaves the note alone; recording the send is the skill's.
+with its closing line, to the herdr workspace the block names. The item's tier picks the
+harness through `[tiers]`, and the prompt goes to the first `idle` or `done` agent of the
+harness's kind there whose cwd is in the project's checkout; with none, it fails naming the
+harness. It records the agent's pane on the item as `<!-- qm pane=<id> -->`, which `refresh`
+reads the reply from, unless the item's marker has `ws=`: a `fresh` dispatch's marker stays, its
+worker still the item's agent. It leaves the item's state; recording the send is the skill's.
 
 `task_dispatch` takes `{ref, mode, instruction}`, the ref as `owner/repo#N`, and finds the
 ref's work item in the note by the link leading its title
@@ -105,7 +109,7 @@ ref's work item in the note by the link leading its title
 id: a batch, which has no ref, runs in its project with its own prompt, and its workspace,
 branch and agent are named after the id. Mode `session`, the default, sends the item's
 prompt, or `/implement <url>`, to the project's herdr session as `worklog send` does,
-and leaves the note alone. Mode `fresh` creates the ref's workspace at
+and records the pane on the work item. Mode `fresh` creates the ref's workspace at
 `<dispatch.workspace_root>/<owner>/<repo>/issue-<N>` with `jj workspace add`, or with
 `git worktree add -b issue-<N>` when the project has no `.jj`
 ([ADR 0004](docs/adr/0004-dispatch-isolates-in-a-jj-workspace.md)), and reuses one that exists

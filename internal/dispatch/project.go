@@ -3,7 +3,6 @@ package dispatch
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -51,7 +50,7 @@ func (d Dispatcher) herdrWorkspace(ctx context.Context, repo string) (send.Works
 		}
 		var at []send.Workspace
 		for _, pn := range panes {
-			if !within(p.Path, pn.Cwd) || slices.ContainsFunc(at, func(w send.Workspace) bool { return w.ID == pn.Workspace }) {
+			if !send.Within(p.Path, pn.Cwd) || slices.ContainsFunc(at, func(w send.Workspace) bool { return w.ID == pn.Workspace }) {
 				continue
 			}
 			ws := send.Workspace{ID: pn.Workspace, Label: pn.Workspace}
@@ -84,14 +83,4 @@ func (d Dispatcher) herdrWorkspace(ctx context.Context, repo string) (send.Works
 	default:
 		return ws, fmt.Errorf("%d herdr workspaces labelled %q: set projects.%q.workspace to the project's", n, name, repo)
 	}
-}
-
-// within reports whether dir is root or under it, both absolute, by whole path components once
-// cleaned: /a/b/c is within /a/b, and /a/bc is not.
-func within(root, dir string) bool {
-	if !filepath.IsAbs(root) || !filepath.IsAbs(dir) {
-		return false
-	}
-	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(dir))
-	return err == nil && filepath.IsLocal(rel)
 }

@@ -1,12 +1,12 @@
 // Package dispatch starts work on a ref or a work item (spec §9.2): task_dispatch's logic.
 //
 // Mode session prompts the project's herdr session through package send, the path of
-// `worklog send`, and leaves the note alone. Mode fresh gives the ref, or a batch, a workspace
-// of its own (ADR 0004), starts an agent there under herdr, then records the agent's pane and
-// workspace on the work item and moves it to IN_PROGRESS, through the engine. Dispatched
-// fresh again, as after an escalation, it reuses the workspace, and first closes its previous
-// agent's tab under the guards refresh closes a finished one's with (CloseTab), or refuses
-// while that agent runs.
+// `worklog send`, which records the prompted pane on the work item. Mode fresh gives the ref,
+// or a batch, a workspace of its own (ADR 0004), starts an agent there under herdr, then
+// records the agent's pane and workspace on the work item and moves it to IN_PROGRESS, through
+// the engine. Dispatched fresh again, as after an escalation, it reuses the workspace, and
+// first closes its previous agent's tab under the guards refresh closes a finished one's with
+// (CloseTab), or refuses while that agent runs.
 //
 // The order is the failure contract: workspace, then agent, then note. A herdr failure leaves
 // the workspace in place and the item as it was; a note failure after the agent started
@@ -204,10 +204,12 @@ func item(n *note.Note, ref note.Ref) (*note.Item, error) {
 	return it, nil
 }
 
-// session sends the item's prompt to its workspace, or `/implement <url>` to the project's.
+// session sends the item's prompt to its workspace, or `/implement <url>` to the project's, as
+// `worklog send` does: to an available agent of the item's harness, whose pane the item records.
+// A batch always has a prompt, so only a ref reaches the second.
 func (d Dispatcher) session(ctx context.Context, date string, j job, instruction string, res Result) (Result, error) {
 	ref, it := j.ref, j.item
-	s := send.Sender{Herdr: d.Herdr, Env: d.Env}
+	s := send.Sender{Config: d.Config, Engine: d.Engine, Herdr: d.Herdr, Env: d.Env}
 	var sent send.Sent
 	var err error
 	if it != nil && it.Prompt != nil {
@@ -217,16 +219,19 @@ func (d Dispatcher) session(ctx context.Context, date string, j job, instruction
 		if to, err = d.herdrWorkspace(ctx, j.repo); err != nil {
 			return Result{}, err
 		}
-		what := ref.String()
-		if it != nil {
-			what = send.Item(it.ID)
+		p := send.Prompt{
+			To: to, Checkout: d.Config.Projects.Project(j.repo).Path,
+			Text: implement(*ref, instruction), Date: date, Ref: ref.String(),
 		}
-		sent, err = s.Deliver(ctx, to, implement(*ref, instruction), what, res.Path)
+		if it != nil {
+			p.Tier, p.Item = it.Tier, it.ID
+		}
+		sent, err = s.Deliver(ctx, p)
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	res.To, res.Pane = sent.To, sent.Pane
+	res.To, res.Pane, res.Note = sent.To, sent.Pane, sent.Note
 	return res, nil
 }
 

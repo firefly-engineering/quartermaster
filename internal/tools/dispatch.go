@@ -26,7 +26,7 @@ type TaskDispatchOutput struct {
 	Mode      string `json:"mode" jsonschema:"session or fresh"`
 	Item      string `json:"item,omitempty" jsonschema:"the work item; absent when the note has none for the ref"`
 	To        string `json:"to" jsonschema:"the herdr workspace label prompted"`
-	Pane      string `json:"pane" jsonschema:"the herdr pane prompted: fresh records it on the item"`
+	Pane      string `json:"pane" jsonschema:"the herdr pane prompted, recorded on the work item when it has one"`
 	Workspace string `json:"workspace,omitempty" jsonschema:"fresh: the workspace, <workspace_root>/<owner>/<repo>/issue-<N>, or <workspace_root>/<owner>/<repo>/<item-id> for a batch"`
 	Reused    bool   `json:"reused,omitempty" jsonschema:"fresh: the workspace existed and was reused"`
 	Closed    string `json:"closed,omitempty" jsonschema:"fresh: the herdr tab of the item's previous worker, closed before this one started"`

@@ -106,8 +106,6 @@ type gatherer struct {
 	agentList  []agent
 	agentsErr  error
 	agentsRead bool
-	spaces     map[string][]string
-	spacesErr  error
 }
 
 // Gather asks GitHub and herdr about every work item of n that is not DONE or DROPPED, in note
@@ -164,7 +162,9 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 		}
 		reasons = append(reasons, e.reason)
 	}
-	if it.Dispatch != nil && it.Dispatch.Pane != "" && from == note.InProgress {
+	// Only a fresh dispatch's worker (ws=) exiting moves its item: a session's pane, recorded by
+	// a send, is the user's agent, and its leaving says nothing of the item.
+	if it.Dispatch != nil && it.Dispatch.Pane != "" && it.Dispatch.Workspace != "" && from == note.InProgress {
 		checked = true
 		waiting, reason := g.worker(ctx, it.Dispatch.Pane)
 		if waiting != "" {
@@ -177,13 +177,11 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 		checked = true
 		switch l.status {
 		case statusSent, statusAcked:
-			pane, label := "", l.label
-			if it.Dispatch != nil && it.Dispatch.Pane != "" {
+			var pane string
+			if it.Dispatch != nil {
 				pane = it.Dispatch.Pane
-			} else if it.Prompt != nil {
-				label = it.Prompt.To
 			}
-			links, reason := g.reply(ctx, it.ID, pane, label, head)
+			links, reason := g.reply(ctx, it.ID, pane, head)
 			if len(links) > 0 {
 				m = m.transition(from, "")
 				m.wasStatus, m.Status, m.Links = l.status, statusAcked, links

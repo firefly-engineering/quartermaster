@@ -53,71 +53,26 @@ func (g *gatherer) agents(ctx context.Context) ([]agent, error) {
 	return g.agentList, g.agentsErr
 }
 
-// workspaces lists the ids of herdr's workspaces by label, once per refresh.
-func (g *gatherer) workspaces(ctx context.Context) (map[string][]string, error) {
-	if g.spaces == nil && g.spacesErr == nil {
-		var ws []herdr.Workspace
-		if ws, g.spacesErr = g.Herdr.WorkspaceList(ctx); g.spacesErr == nil {
-			g.spaces = map[string][]string{}
-			for _, w := range ws {
-				g.spaces[w.Label] = append(g.spaces[w.Label], w.ID)
-			}
-		}
-	}
-	return g.spaces, g.spacesErr
-}
-
-// replier finds the agent an item was sent to: the one in its dispatch marker's pane, else the
-// one agent in the workspace labelled label, as `worklog send` finds it.
-func (g *gatherer) replier(ctx context.Context, pane, label string) (agent, error) {
-	agents, err := g.agents(ctx)
-	if err != nil {
-		return agent{}, err
-	}
-	if pane != "" {
-		i := slices.IndexFunc(agents, func(a agent) bool { return a.Pane == pane })
-		if i < 0 {
-			return agent{}, fmt.Errorf("no agent in pane %s", pane)
-		}
-		return agents[i], nil
-	}
-	spaces, err := g.workspaces(ctx)
-	if err != nil {
-		return agent{}, err
-	}
-	if len(spaces[label]) != 1 {
-		return agent{}, fmt.Errorf("%d herdr workspaces labelled %q", len(spaces[label]), label)
-	}
-	var in []agent
-	for _, a := range agents {
-		if a.Workspace == spaces[label][0] {
-			in = append(in, a)
-		}
-	}
-	if len(in) != 1 {
-		return agent{}, fmt.Errorf("%d agents in workspace %q; expected one", len(in), label)
-	}
-	return in[0], nil
-}
-
 // readLines is how much of an agent's recent output refresh reads for a reply.
 const readLines = 400
 
-// reply reads the agent item id was sent to, by its pane or its workspace label, for its reply
-// to the item's prompt. It returns the reply's GitHub links not in the item's line already, or
-// why there are none to record.
-func (g *gatherer) reply(ctx context.Context, id, pane, label, title string) (links []string, reason string) {
-	if pane == "" && label == "" {
-		return nil, "no pane or workspace label to read a reply from"
+// reply reads the agent in pane, which the send of item id's prompt recorded, for its reply to
+// the prompt. It returns the reply's GitHub links not in the item's line already, or why there
+// are none to record.
+func (g *gatherer) reply(ctx context.Context, id, pane, title string) (links []string, reason string) {
+	if pane == "" {
+		return nil, "no pane recorded to read a reply from"
 	}
-	who := label
-	if pane != "" {
-		who = "pane " + pane
-	}
-	a, err := g.replier(ctx, pane, label)
+	who := "pane " + pane
+	agents, err := g.agents(ctx)
 	if err != nil {
 		return nil, "herdr: " + err.Error()
 	}
+	i := slices.IndexFunc(agents, func(a agent) bool { return a.Pane == pane })
+	if i < 0 {
+		return nil, "herdr: no agent in " + who
+	}
+	a := agents[i]
 	if a.Status != "idle" && a.Status != "done" {
 		return nil, fmt.Sprintf("the agent in %s is %s", who, a.Status)
 	}

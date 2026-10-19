@@ -233,13 +233,13 @@ func TestTaskDispatchItemRefuses(t *testing.T) {
 	}
 }
 
-// TestTaskDispatchBatchSession sends a batch's prompt to its project's session, as any item's.
+// TestTaskDispatchBatchSession sends a batch's prompt to its project's session, as any item's:
+// to an available agent of the harness its tier routes to, whose pane the batch records.
 func TestTaskDispatchBatchSession(t *testing.T) {
 	t.Parallel()
-	d := fixtureDeps(t, edited(t, "- Wave 2 after the stack lands.\n", batch), true)
-	h := newFakeHerdr(t, herdrAgent("claude", "web-claude", "idle", "/src/web", 1))
-	d.Herdr = h.Bin
-	before := d.note(t, fixtureDate)
+	src := edited(t, "- Wave 2 after the stack lands.\n", batch)
+	h := newFakeHerdr(t, mixed()...)
+	d := sendDeps(t, src, h)
 
 	var out bytes.Buffer
 	in := `{"item":"wave-2","date":"` + fixtureDate + `"}`
@@ -247,15 +247,15 @@ func TestTaskDispatchBatchSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := out.String(); strings.Contains(got, `"ref"`) || !strings.Contains(got, `"item": "wave-2"`) ||
-		!strings.Contains(got, `"mode": "session"`) || !strings.Contains(got, `"pane": "w1:p1"`) {
+		!strings.Contains(got, `"mode": "session"`) || !strings.Contains(got, `"pane": "w1:p2"`) ||
+		!strings.Contains(got, `"committed": true`) {
 		t.Errorf("output:\n%s", got)
 	}
-	if calls := h.calls(t); !strings.Contains(calls, "[agent][prompt][w1:p1][/mass-implement acme/web #20 #21\n") {
-		t.Errorf("herdr calls:\n%s\nlack the batch's prompt", calls)
+	if calls := h.calls(t); !strings.Contains(calls, "[agent][prompt][w1:p2][/mass-implement acme/web #20 #21\n") {
+		t.Errorf("herdr calls:\n%s\nlack the batch's prompt to the glm agent", calls)
 	}
-	if d.note(t, fixtureDate) != before {
-		t.Error("a session dispatch wrote the note")
-	}
+	const id = "Tier: `basic-implementation`. ^wave-2"
+	d.checkNote(t, strings.Replace(src, id, "Tier: `basic-implementation`. <!-- qm pane=w1:p2 --> ^wave-2", 1))
 }
 
 // TestTaskDispatchBatchFresh dispatches a batch fresh, in a jj project and in a git one: its

@@ -146,6 +146,7 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>`. Its ref, cost, route and tier are read as the renderer writes them, below |
 | Anchor | a paragraph in a Part or bucket ending with `^<id>`: a link target, with no state |
 | Prompt block | a ```` ```herdr-prompt id=<item-id> to=<label> ```` fence, inside a `> [!prompt]-` callout |
+| Dispatch marker | an HTML comment `<!-- qm pane=<id> ws=<path> -->` before a work item's `^<item-id>`: the herdr pane its prompt was last sent to, by a send ([§9.1]) or a `fresh` dispatch ([§9.2]), and the `fresh` dispatch's workspace. A send records `pane=` alone, except on an item whose marker has `ws=`, which it leaves as it is |
 | Manual action | a task list item `- [ ]` / `- [x]`, or an ordered one `1. [ ]` in *Next* |
 | Carry-over | the table under `## Carry-over` |
 | Process | the list under `## Process` |
@@ -264,7 +265,7 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `status_set` | Rewrite the status line. | — |
 | `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. A keep with no title, on a row linking a work item as `[[<prev>#^<id>\|^<id>]]`, takes that item's title from the note the link names, without its ref link, cost, route, tier, sent status and summary, and its ref, cost, route and tier unless given; any other row's text is the title. The row stays as written. | — |
 | `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). On a `DONE` or `DROPPED` item with a `fresh` dispatch marker, it also closes the dispatch's herdr tab once its worker is finished, and drops `pane=` from the marker; on a later `refresh`, with `ws=` alone left, it removes the dispatch's checkout and drops `ws=`, and the marker with it ([§9.2]). It reports what it closed, removed or dropped as applied, and a close or removal it skipped or that failed as skipped, with why; neither failure fails another step. | — |
-| `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send`. | — |
+| `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send` ([§9.1]). It records the prompted pane on the item's `qm` marker and leaves its state. | — |
 | `task_dispatch` | Start work on a ref, or on a work item by id, such as a batch, which has no ref ([§9.2]). Exactly one of the two is given. | `task_dispatch` |
 
 Times come from the clock (UTC). A tool that records an event the user timed takes an
@@ -309,14 +310,37 @@ the installed skill cannot drift ([ADR 0005]).
 The Obsidian Shell commands plugin runs `worklog send <vault> <date> <item-id>` when
 a button is clicked. Any web page can open an `obsidian://` URI, so the command takes only
 a date and an id and validates both: the date parses as ISO, the id matches §4.1, the note
-exists under the vault. It reads the prompt from the note's `herdr-prompt` block (through
-callout `>` markers), resolves `to` to exactly one herdr workspace with exactly one agent,
-refuses an agent whose status is not `idle`, `done` or `working` (a `blocked` agent shows
-an approval prompt that typed text could answer), and runs
-`herdr agent prompt <pane> <text>` with no shell in between. It appends the closing line
-the skill relies on (`send.Closing`): update work item `^<id>`, or `owner/repo#N` for a
-prompt no block holds, in the note at its path, and refresh *Next*. `refresh` reads an
-item's reply from its own closing line, up to the next closing line in the pane ([§11]).
+exists under the vault, and the vault is the configured one (`vault.repo` and `vault.dir`,
+§3), where the send is recorded. ▶ buttons, `prompt_send` and `task_dispatch` `session`
+(§9.2) share one send path ([ADR 0011]):
+
+1. Read the prompt from the item's `herdr-prompt` block (through callout `>` markers) and
+   resolve `to` to exactly one herdr workspace with that label. The project whose session
+   that is gives the checkout (§3): the project whose `workspace` override is the label,
+   else the project of the item's ref or of its section whose repo is named as the label
+   and has no override. No such project is an error asking for the override.
+2. Resolve the harness from the item's tier through `[tiers]`, or `[tiers] default` when
+   the item has none (§3).
+3. Pick the agent: the first in `herdr agent list` order that is in the workspace, of the
+   harness's `kind`, `idle` or `done`, and whose cwd is the checkout or under it, compared
+   by whole path components (§9.2). A `working` agent would queue the prompt behind its
+   turn, and a `blocked` one shows an approval prompt that typed text could answer, so
+   neither is sent to, nor is an `unknown` one. A `fresh` dispatch's agent works in its own
+   checkout, so it is never picked. An agent started by hand counts when it matches. No
+   available agent is an error naming the harness.
+4. Run `herdr agent prompt <pane> <text>` with no shell in between, the text ending with the
+   closing line the skill relies on (`send.Closing`): update work item `^<id>`, or
+   `owner/repo#N` for a prompt no block holds, in the note at its path, and refresh *Next*.
+5. Record the pane on the item, through the engine ([§7]): its `qm` marker becomes
+   `<!-- qm pane=<id> -->`, replacing any marker it had. A marker with `ws=` is a `fresh`
+   dispatch's (§9.2) and stays as it is: its worker remains the item's agent, and `refresh`
+   closes its tab and removes its checkout by that marker, so replacing it would orphan both
+   and defeat a re-dispatch's guards ([#146](https://github.com/firefly-engineering/quartermaster/issues/146)).
+   The result reports the note unchanged. The item's state is left alone. A failure here
+   reports the pane prompted.
+
+`refresh` reads an item's reply from the pane its marker records, from its own closing
+line up to the next closing line in the pane ([§11]).
 
 Behaviour is a strict port of `worklog-send`; its self-check becomes the Go test suite.
 
@@ -341,8 +365,10 @@ No match is an error asking for an override. A `herdr-prompt` block's `to=` stil
 workspace by its label (§9.1).
 
 - **`session`** (default): build the prompt from the work item (or `/implement <url>`
-  when a ref has none) and send it to the session, as in §9.1: the block's `to=` for an item
-  with a prompt, else the project's herdr workspace.
+  when a ref has none) and send it through §9.1's send path: to the block's `to=` for an
+  item with a prompt, else to the project's herdr workspace and checkout. The item's tier
+  picks the harness, and the item records the pane; a ref with no work item goes to
+  `[tiers] default` and records nothing.
 - **`fresh`**: an isolated workspace and a new agent:
   1. `gh issue view` for title and body.
   2. Resolve the project's herdr workspace, which only reads, then create the workspace at
@@ -443,7 +469,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 
 | Failure | Effect | Handling |
 |---|---|---|
-| Worker crashes | Item stays 🔄 | `refresh` asks herdr for the recorded pane. Gone, or the agent exited, with no transition recorded: move to `WAITING` with "worker exited". Never to `DONE`. |
+| Worker crashes | Item stays 🔄 | `refresh` asks herdr for a `fresh` dispatch's recorded pane (a marker with `ws=`). Gone, or the agent exited, with no transition recorded: move to `WAITING` with "worker exited". Never to `DONE`. A session's pane, recorded by a send with no `ws=`, is the user's agent, not the item's worker: its leaving moves nothing ([§9.1]). |
 | Closing a finished `fresh` dispatch's tab fails | Tab stays, `pane=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. A tab already gone counts as closed ([§9.2]). |
 | Removing a finished `fresh` dispatch's checkout fails (dirty git tree, permission error, failed forget) | Checkout stays, `ws=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. It never forces a removal. A checkout already gone counts as removed ([§9.2]). |
 | `fresh` dispatch again while the previous worker runs | Two agents would write in one checkout | Refused, "its worker is still running", while the marker's agent is `working` or `blocked`; nothing is created and the item stays. Dispatch again once it is `idle` or `done` ([§9.2]). |
@@ -453,6 +479,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 | Workspace for a ref already exists | `add` fails | Reuse it if it is the ref's; otherwise fail with its path. `git worktree prune` before a git add. |
 | Unparseable note (hand edit broke a structure) | — | Mutating tools refuse, naming the unit and line; `day_read` returns what it could parse plus the errors. Never rewrite what failed to parse. |
 | herdr not running or label ambiguous | Send fails | Fail with the reason; the item stays **to send**. |
+| Reply to a sent item | `refresh` marks it **acked** with the reply's links | `refresh` reads the reply from the pane the item's `qm` marker records, once its agent is `idle` or `done`. An item that records no pane, such as one sent before sends recorded them, is skipped with why ([§9.1]). |
 | Another prompt sent to the same pane | Its reply's links credited to the earlier item | A reply runs from the line after its item's full closing-line prefix, up to the next closing line for any work item or ref; a mention of `work item ^<id>` in reply prose matches neither. A later prompt's own body, before its closing line, still counts as the earlier reply: a prompt cannot open with a marker, since a slash command must come first ([#90](https://github.com/firefly-engineering/quartermaster/issues/90)). |
 
 ## 12. Open questions
@@ -483,6 +510,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [§7]: #7-concurrency-and-persistence
 [§8]: #8-mcp-prompts
 [§9]: #9-sending-and-dispatch
+[§9.1]: #91-worklog-send--buttons
 [§9.2]: #92-task_dispatch
 [§10]: #10-packaging
 [§10.1]: #101-home-manager-module

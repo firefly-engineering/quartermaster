@@ -2,70 +2,140 @@ package tools
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
-// webAgent is web's one agent, of status.
-func webAgent(status string) herdr.Agent { return herdrAgent("claude", "", status, "/src/web", 1) }
-
-// TestPromptSend sends a work item's prompt through a fake herdr, as a verb, and leaves the
-// note as it was.
-func TestPromptSend(t *testing.T) {
-	t.Parallel()
-	d := fixtureDeps(t, settled(t), false)
-	h := newFakeHerdr(t, webAgent("idle"))
+// sendDeps are the fixture's deps with herdr h, acme/web's checkout at /src/web, and the
+// harnesses claude and glm (omp), glm for basic-implementation and claude for the rest.
+func sendDeps(t *testing.T, src string, h fakeHerdr) Deps {
+	t.Helper()
+	d := fixtureDeps(t, src, true)
 	d.Herdr = h.Bin
-	path := filepath.Join(d.Config.Vault.Repo, d.Config.Vault.Dir, fixtureDate+".md")
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	d.Config.Projects.Repos = map[string]config.Project{"acme/web": {Path: "/src/web"}}
+	d.Config.Harness = map[string]config.Harness{
+		"claude": {Kind: "claude"},
+		"glm":    {Kind: "omp", Args: []string{"--model", "glm-5"}},
 	}
+	d.Config.Tiers = map[string]string{config.DefaultTier: "claude", "basic-implementation": "glm"}
+	return d
+}
 
-	var out bytes.Buffer
-	if err := RunVerb(t.Context(), All(d), "send", []byte(`{"item":"session-store"}`), &out); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"item": "session-store"`, `"to": "web"`, `"pane": "w1:p1"`, `"path": "` + path + `"`} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("output lacks %s:\n%s", want, out.String())
-		}
-	}
-	if want := "[workspace][list]\n[agent][list]\n[agent][prompt][w1:p1][/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
-		send.Closing(send.Item("session-store"), path) + "]\n"; h.calls(t) != want {
-		t.Errorf("herdr got\n%s\nwant\n%s", h.calls(t), want)
-	}
-	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(after, before) {
-		t.Errorf("the note changed: %v", err)
+// mixed is a workspace of claude and omp agents in which only w1:p2 (omp) and w1:p6 (claude)
+// are available: the rest are busy, in a fresh dispatch's checkout, or in a sibling directory.
+func mixed() []herdr.Agent {
+	return []herdr.Agent{
+		herdrAgent("claude", "", "working", "/src/web", 1),
+		herdrAgent("omp", "web-glm", "idle", "/src/web", 2),
+		herdrAgent("claude", "web-14", "idle", "/ws/acme/web/issue-14", 3),
+		herdrAgent("claude", "", "idle", "/src/webapp", 4),
+		herdrAgent("claude", "", "blocked", "/src/web", 5),
+		herdrAgent("claude", "", "done", "/src/web/pkg", 6),
+		herdrAgent("claude", "", "idle", "/src/web", 7),
+		herdrAgent("claude", "", "unknown", "/src/web", 8),
 	}
 }
 
-// TestPromptSendRefuses checks prompt_send keeps send's validation and prompts no agent when
-// it refuses.
-func TestPromptSendRefuses(t *testing.T) {
+// grill is the fixture's session-store body line, which a tier is added to.
+const grill = "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`."
+
+// TestPromptSend sends a work item's prompt, as a verb, to the first available agent of the
+// harness its tier routes to in a mixed workspace, and records the agent's pane on the item.
+func TestPromptSend(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
-		name, status string
-		in           PromptSendInput
-		want         string
+		name, tier, pane string
 	}{
-		{"no herdr", "", PromptSendInput{Item: "session-store"}, "herdr not found"},
-		{"a bad date", "idle", PromptSendInput{Date: "today", Item: "session-store"}, "not a date"},
-		{"a bad id", "idle", PromptSendInput{Item: "../x"}, "not an item id"},
-		{"no note", "idle", PromptSendInput{Date: "2026-10-15", Item: "session-store"}, "no note"},
-		{"no prompt", "idle", PromptSendInput{Item: "nope"}, "no herdr-prompt block"},
-		{"a blocked agent", "blocked", PromptSendInput{Item: "session-store"}, "web agent is blocked"},
+		{"no tier goes to default", "", "w1:p6"},
+		{"a tier [tiers] lists", "basic-implementation", "w1:p2"},
+		{"a tier [tiers] does not list", "design", "w1:p6"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			d := fixtureDeps(t, settled(t), false)
-			h := newFakeHerdr(t, webAgent(c.status))
-			if d.Herdr = h.Bin; c.status == "" {
+			src := settled(t)
+			if c.tier != "" {
+				src = edited(t, grill, grill+" Tier: `"+c.tier+"`.")
+			}
+			h := newFakeHerdr(t, mixed()...)
+			d := sendDeps(t, src, h)
+			path := filepath.Join(d.Config.Vault.Repo, d.Config.Vault.Dir, fixtureDate+".md")
+
+			var out bytes.Buffer
+			if err := RunVerb(t.Context(), All(d), "send", []byte(`{"item":"session-store"}`), &out); err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{`"item": "session-store"`, `"to": "web"`, `"pane": "` + c.pane + `"`,
+				`"path": "` + path + `"`, `"changed": true`, `"committed": true`} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output lacks %s:\n%s", want, out.String())
+				}
+			}
+			if want := "[workspace][list]\n[agent][list]\n[agent][prompt][" + c.pane + "][/grill-with-docs https://github.com/acme/web/issues/14\n\n" +
+				send.Closing(send.Item("session-store"), path) + "]\n"; h.calls(t) != want {
+				t.Errorf("herdr got\n%s\nwant\n%s", h.calls(t), want)
+			}
+			const button = "_item=session-store) ^session-store"
+			d.checkNote(t, strings.Replace(src, button, "_item=session-store) <!-- qm pane="+c.pane+" --> ^session-store", 1))
+		})
+	}
+}
+
+// TestPromptSendKeepsFreshMarker leaves a fresh dispatch's marker as it is: its worker stays
+// the item's agent, so refresh still closes its tab and removes its checkout (#146).
+func TestPromptSendKeepsFreshMarker(t *testing.T) {
+	t.Parallel()
+	const button = "_item=session-store) ^session-store"
+	src := edited(t, button, "_item=session-store) <!-- qm pane=w1:p3 ws=/ws/acme/web/issue-14 --> ^session-store")
+	h := newFakeHerdr(t, mixed()...)
+	d := sendDeps(t, src, h)
+	out, err := d.promptSend(t.Context(), PromptSendInput{Item: "session-store"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Pane != "w1:p6" || out.Changed {
+		t.Errorf("sent to %q, note changed %v; want w1:p6 and the note unchanged", out.Pane, out.Changed)
+	}
+	if calls := h.calls(t); !strings.Contains(calls, "[agent][prompt]") {
+		t.Errorf("herdr was not prompted:\n%s", calls)
+	}
+	d.checkNote(t, src)
+}
+
+// TestPromptSendRefuses checks prompt_send keeps send's validation, and prompts no agent and
+// leaves the note as it was when it refuses.
+func TestPromptSendRefuses(t *testing.T) {
+	t.Parallel()
+	busy := []herdr.Agent{
+		herdrAgent("claude", "", "working", "/src/web", 1),
+		herdrAgent("claude", "", "blocked", "/src/web", 2),
+		herdrAgent("claude", "", "unknown", "/src/web", 3),
+		herdrAgent("claude", "web-14", "idle", "/ws/acme/web/issue-14", 4),
+		herdrAgent("omp", "", "idle", "/src/web", 5),
+	}
+	none := `no available agent of harness claude in herdr workspace "web": none of kind claude in /src/web is idle or done`
+	for _, c := range []struct {
+		name   string
+		agents []herdr.Agent
+		in     PromptSendInput
+		want   string
+	}{
+		{"no herdr", nil, PromptSendInput{Item: "session-store"}, "herdr not found"},
+		{"a bad date", mixed(), PromptSendInput{Date: "today", Item: "session-store"}, "not a date"},
+		{"a bad id", mixed(), PromptSendInput{Item: "../x"}, "not an item id"},
+		{"no note", mixed(), PromptSendInput{Date: "2026-10-15", Item: "session-store"}, "no note"},
+		{"no prompt", mixed(), PromptSendInput{Item: "nope"}, "no herdr-prompt block"},
+		{"no available agent", busy, PromptSendInput{Item: "session-store"}, none},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			h := newFakeHerdr(t, c.agents...)
+			d := sendDeps(t, settled(t), h)
+			if c.agents == nil {
 				d.Herdr = ""
 			}
 			if _, err := d.promptSend(t.Context(), c.in); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -74,6 +144,25 @@ func TestPromptSendRefuses(t *testing.T) {
 			if calls := h.calls(t); strings.Contains(calls, "[agent][prompt]") {
 				t.Errorf("herdr was prompted:\n%s", calls)
 			}
+			d.checkNote(t, settled(t))
 		})
 	}
+}
+
+// TestTaskDispatchSession dispatches a ref in session mode through the send path prompt_send
+// takes: the harness of the item's tier, and its pane recorded.
+func TestTaskDispatchSession(t *testing.T) {
+	t.Parallel()
+	queue := "- Wave 2 after the stack lands.\n"
+	item := "- ⬜ [#20](https://github.com/acme/web/issues/20): rename the store · Tier: `basic-implementation` ^rename\n"
+	h := newFakeHerdr(t, mixed()...)
+	d := sendDeps(t, edited(t, queue, item+queue), h)
+	res, err := d.taskDispatch(t.Context(), TaskDispatchInput{Ref: "acme/web#20"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pane != "w1:p2" || res.Item != "rename" || !res.Committed {
+		t.Errorf("result %+v", res)
+	}
+	d.checkNote(t, edited(t, queue, strings.Replace(item, " ^rename", " <!-- qm pane=w1:p2 --> ^rename", 1)+queue))
 }

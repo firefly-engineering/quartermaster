@@ -135,6 +135,7 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 - ⬜ [#13](https://github.com/o/r/issues/13): gh fails ^gh-fails
 - 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone
 - ✅ [#15](https://github.com/o/r/issues/15): done already, a session send <!-- qm pane=w1:p15 --> ^done
+- 🔄 [#17](https://github.com/o/r/issues/17): a session send, its agent gone <!-- qm pane=w1:p17 --> ^session
 - 🔄 no ref, nothing to check ^plain
 - 🔄 mentions [#16](https://github.com/o/r/issues/16) after its text ^mention
 
@@ -144,7 +145,7 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 
 #### ⏳ Sent to other repos
 
-- ⏳ [infra#40](https://github.com/o/infra/issues/40): open the port → infra, **sent**, asked 10:00 ^port
+- ⏳ [infra#40](https://github.com/o/infra/issues/40): open the port → infra, **sent**, asked 10:00 <!-- qm pane=w5:p1 --> ^port
 - ⏳ [infra#41](https://github.com/o/infra/issues/41): a second ask → infra, **to send** ^unsent
 - 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third
 - ⏳ [infra#43](https://github.com/o/infra/issues/43): a fourth ask → infra, **sent** ^fourth
@@ -167,6 +168,7 @@ func TestGatherAndApply(t *testing.T) {
 		"o/r#12":     {out: issue("CLOSED", "", "")},
 		"o/r#13":     {err: errors.New("gh api graphql: HTTP 502")},
 		"o/r#14":     {out: issue("CLOSED", "COMPLETED", "")},
+		"o/r#17":     {out: issue("OPEN", "", "")},
 		"o/infra#40": {out: issue("OPEN", "", "")},
 		"o/infra#41": {out: issue("OPEN", "", "")},
 		"o/infra#42": {out: issue("CLOSED", "COMPLETED", byPR)},
@@ -177,7 +179,6 @@ func TestGatherAndApply(t *testing.T) {
 			Stderr: []byte(`{"id":"1","error":{"code":"pane_not_found","message":"pane w1:p7 not found"}}`)}},
 		"pane get w1:p8": {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p8","agent":null,"agent_status":"unknown"}}}`},
 		"pane get w1:p9": {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p9","agent":"claude","agent_status":"working"}}}`},
-		"workspace list": {out: `{"id":"1","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"r"},{"workspace_id":"w5","label":"infra"}]}}`},
 		"agent list": {out: `{"id":"1","result":{"type":"agent_list","agents":[` +
 			`{"workspace_id":"w1","pane_id":"w1:p9","agent_status":"working"},` +
 			`{"workspace_id":"w5","pane_id":"w5:p1","agent_status":"idle"}]}}`},
@@ -222,6 +223,7 @@ func TestGatherAndApply(t *testing.T) {
 		"no-reason": "o/r#12 is closed with no reason recorded",
 		"gh-fails":  "gh: gh api graphql: HTTP 502",
 		"unsent":    "o/infra#41 is open; not sent yet",
+		"session":   "o/r#17 is open",
 	}
 	got := map[string]string{}
 	for _, s := range skipped {
@@ -237,9 +239,12 @@ func TestGatherAndApply(t *testing.T) {
 			t.Errorf("^%s skipped unexpectedly: %q", id, got[id])
 		}
 	}
-	// A terminal item with no fresh dispatch, an item with no ref and one whose ref is not its leading link ask nothing.
+	// A terminal item with no fresh dispatch, an item with no ref and one whose ref is not its
+	// leading link ask nothing; nor does a session send's pane (no ws=): its agent leaving is
+	// no worker exiting, so its item stays IN_PROGRESS.
 	for _, c := range append(gh.calls, herdr.calls...) {
-		if c == "o/r#15" || c == "o/r#16" || c == "pane get w1:p15" || c == "pane get w1:p10" || c == "pane get w1:p14" {
+		if c == "o/r#15" || c == "o/r#16" || c == "pane get w1:p15" || c == "pane get w1:p10" || c == "pane get w1:p14" ||
+			c == "pane get w1:p17" {
 			t.Errorf("asked %q", c)
 		}
 	}
@@ -262,8 +267,8 @@ func TestGatherAndApply(t *testing.T) {
 			"- ✅ [#11](https://github.com/o/r/issues/11): waits, issue closed — closed by https://github.com/o/r/pull/31 ^waits-closed"},
 		{"- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone",
 			"- ✅ [#14](https://github.com/o/r/issues/14): closed, its pane gone too — closed as completed: https://github.com/o/r/issues/0 <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone"},
-		{"→ infra, **sent**, asked 10:00 ^port",
-			"→ infra, **acked**, asked 10:00, https://github.com/o/infra/pull/77, https://github.com/o/infra/actions/runs/9 ^port"},
+		{"→ infra, **sent**, asked 10:00 <!-- qm pane=w5:p1 --> ^port",
+			"→ infra, **acked**, asked 10:00, https://github.com/o/infra/pull/77, https://github.com/o/infra/actions/runs/9 <!-- qm pane=w5:p1 --> ^port"},
 		{"- 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third",
 			"- ✅ [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **done** — closed by https://github.com/o/r/pull/31 ^third"},
 		{"- ⏳ [infra#43](https://github.com/o/infra/issues/43): a fourth ask → infra, **sent** ^fourth",
@@ -443,21 +448,21 @@ func TestCommand(t *testing.T) {
 	}
 }
 
-// TestReplyRoutes reads a reply from the workspace a ##### item's prompt names, over the label
-// after its arrow, and from the pane a list item's dispatch marker names.
+// TestReplyRoutes reads a reply from the pane the send recorded in the item's marker, whatever
+// workspace its prompt or arrow names, and reads none for an item that records no pane.
 func TestReplyRoutes(t *testing.T) {
 	t.Parallel()
 	const src = "# Worklog — 2026-10-18\n\n## ⏳ o/r\n\n### ⏳ What remains\n\n#### ⏳ Sent to other repos\n\n" +
 		"##### ⏳ open the port → other, **sent**\n\n" +
-		"Body. [▶ send to infra](obsidian://shell-commands/?vault=w&execute=abc&_date=2026-10-18&_item=port) ^port\n\n" +
+		"Body. [▶ send to infra](obsidian://shell-commands/?vault=w&execute=abc&_date=2026-10-18&_item=port) <!-- qm pane=w5:p2 --> ^port\n\n" +
 		"> [!prompt]- Prompt sent to infra\n> ```herdr-prompt id=port to=infra\n> open the port\n> ```\n\n" +
-		"- ⏳ rotate the key → infra, **acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9:p2 ws=/ws --> ^key\n"
+		"- ⏳ rotate the key → infra, **acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9:p2 ws=/ws --> ^key\n" +
+		"- ⏳ sent before panes were recorded → infra, **sent** ^old\n"
 	read := func(id, links string) reply { return reply{out: paneText(id, "do the thing", "⏺ "+links)} }
 	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
-		"workspace list": {out: `{"result":{"workspaces":[{"workspace_id":"w5","label":"infra"},{"workspace_id":"w6","label":"other"}]}}`},
 		"agent list": {out: `{"result":{"agents":[{"workspace_id":"w5","pane_id":"w5:p1","agent_status":"done"},` +
-			`{"workspace_id":"w6","pane_id":"w6:p1","agent_status":"idle"},{"workspace_id":"w9","pane_id":"w9:p2","agent_status":"idle"}]}}`},
-		"agent read w5:p1 --source recent-unwrapped --lines 400 --format text": read("port", "PR: https://github.com/o/infra/pull/5"),
+			`{"workspace_id":"w5","pane_id":"w5:p2","agent_status":"idle"},{"workspace_id":"w9","pane_id":"w9:p2","agent_status":"idle"}]}}`},
+		"agent read w5:p2 --source recent-unwrapped --lines 400 --format text": read("port", "PR: https://github.com/o/infra/pull/5"),
 		"agent read w9:p2 --source recent-unwrapped --lines 400 --format text": read("key", "https://github.com/o/infra/pull/1 and https://github.com/o/infra/pull/2"),
 	}}
 	n, err := note.Parse([]byte(src))
@@ -465,8 +470,11 @@ func TestReplyRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n).Apply([]byte(src))
-	if err != nil || len(skipped) != 0 || len(applied) != 2 {
+	if err != nil || len(applied) != 2 {
 		t.Fatalf("applied %+v skipped %+v err %v", applied, skipped, err)
+	}
+	if want := []Skipped{{Item: "old", Reason: "no pane recorded to read a reply from"}}; !slices.Equal(skipped, want) {
+		t.Errorf("skipped %+v, want %+v", skipped, want)
 	}
 	want := strings.NewReplacer(
 		"##### ⏳ open the port → other, **sent**\n", "##### ⏳ open the port → other, **acked**, https://github.com/o/infra/pull/5\n",
