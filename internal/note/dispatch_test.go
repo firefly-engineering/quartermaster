@@ -63,8 +63,8 @@ func TestParseDispatch(t *testing.T) {
 // one, or one in a code span, which is code, not HTML.
 func TestParseDispatchIgnoresOtherComments(t *testing.T) {
 	t.Parallel()
-	for _, c := range []string{"<!-- a note -->", "<!-- qm -->", "<!-- qm pane=p -->", "<!-- qm pane=p ws=/x extra -->",
-		"<!-- qm pane=p pane=q ws=/x -->", "<!-- qmx pane=p ws=/x -->", "<!-- qm ws=/x -->",
+	for _, c := range []string{"<!-- a note -->", "<!-- qm -->", "<!-- qm pane= -->", "<!-- qm pane=p ws=/x extra -->",
+		"<!-- qm pane=p pane=q ws=/x -->", "<!-- qmx pane=p ws=/x -->", "<!-- qm ws=/x ws=/y -->", "<!-- qm pane= ws=/x -->",
 		"<!-- qm pane=p ws=/x tab=t -->", "`<!-- qm pane=p ws=/x -->`"} {
 		src := []byte(strings.Replace(dispatchNote, "<!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 -->", c, 1))
 		n, err := Parse(src)
@@ -77,10 +77,26 @@ func TestParseDispatchIgnoresOtherComments(t *testing.T) {
 	}
 }
 
+// TestDispatchMarker renders a marker and parses it back, with either part absent too: a
+// finished dispatch whose tab refresh closed keeps only its ws.
 func TestDispatchMarker(t *testing.T) {
 	t.Parallel()
-	if got := (Renderer{}).DispatchMarker(Dispatch{Pane: "w1:p3", Workspace: "/ws/o/r/issue-11"}); got != "<!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 -->" {
-		t.Errorf("marker %q", got)
+	for d, want := range map[Dispatch]string{
+		{Pane: "w1:p3", Workspace: "/ws/o/r/issue-11"}: "<!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 -->",
+		{Workspace: "/ws/o/r/issue-11"}:                "<!-- qm ws=/ws/o/r/issue-11 -->",
+		{Pane: "w1:p3"}:                                "<!-- qm pane=w1:p3 -->",
+	} {
+		got := (Renderer{}).DispatchMarker(d)
+		if got != want {
+			t.Errorf("marker %q, want %q", got, want)
+		}
+		n, err := Parse([]byte(strings.Replace(dispatchNote, "<!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 -->", got, 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if it := n.Item("d11"); it.Dispatch == nil || *it.Dispatch != d {
+			t.Errorf("%s parses as %+v", got, it.Dispatch)
+		}
 	}
 }
 
@@ -109,7 +125,35 @@ func TestSetDispatch(t *testing.T) {
 	if want := strings.Replace(dispatchNote, "pane=w1:p4 ws=/ws/o/r/issue-13", "pane=w2:p1 ws=/ws/o/r/issue-12", 1); string(out) != want {
 		t.Errorf("##### item:\n%s", out)
 	}
-	for _, bad := range []Dispatch{{}, {Pane: "p"}, {Pane: "a b", Workspace: "/x"}, {Pane: "p", Workspace: "/a b"},
+	// Its pane dropped, the marker keeps its ws.
+	n, _ = Parse(src)
+	out, err = SetDispatch(n, src, "d11", Dispatch{Workspace: "/ws/o/r/issue-11"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(dispatchNote, "<!-- qm pane=w1:p3 ws=", "<!-- qm ws=", 1); string(out) != want {
+		t.Errorf("pane dropped:\n%s", out)
+	}
+	// An empty dispatch removes the marker, with the space it was written with, in either form.
+	for _, c := range []struct{ id, marker string }{
+		{"d11", " <!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 -->"},
+		{"d13", " <!-- qm pane=w1:p4 ws=/ws/o/r/issue-13 -->"},
+	} {
+		n, _ = Parse(src)
+		out, err = SetDispatch(n, src, c.id, Dispatch{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := strings.Replace(dispatchNote, c.marker, "", 1); string(out) != want {
+			t.Errorf("%s marker removed:\n%s", c.id, out)
+		}
+	}
+	// An item with no marker is left as it is.
+	n, _ = Parse(src)
+	if out, err = SetDispatch(n, src, "d12", Dispatch{}); err != nil || string(out) != dispatchNote {
+		t.Errorf("no marker to remove: %v\n%s", err, out)
+	}
+	for _, bad := range []Dispatch{{Pane: "a b", Workspace: "/x"}, {Pane: "p", Workspace: "/a b"},
 		{Pane: "p", Workspace: "/a-->"}, {Pane: "p", Workspace: "relative"}} {
 		if _, err := SetDispatch(n, src, "d12", bad); err == nil {
 			t.Errorf("%+v: no error", bad)
@@ -180,7 +224,7 @@ func TestRenderDispatch(t *testing.T) {
 			}
 		}
 	}
-	if _, err := testRenderer.Item(ItemUnit{ID: "a", Icon: IconTodo, Title: "x", Dispatch: &Dispatch{Pane: "p"}}); err == nil {
+	if _, err := testRenderer.Item(ItemUnit{ID: "a", Icon: IconTodo, Title: "x", Dispatch: &Dispatch{Workspace: "x"}}); err == nil {
 		t.Error("an invalid marker renders")
 	}
 }

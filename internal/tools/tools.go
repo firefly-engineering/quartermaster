@@ -183,24 +183,32 @@ func All(d Deps) []Tool {
 				"(spec §11): a merged PR or an issue closed as completed moves its item to DONE with the PR or " +
 				"commit; an issue closed as not planned or a duplicate, to DROPPED; a dispatched IN_PROGRESS " +
 				"item whose pane is gone or whose agent exited, to WAITING (\"worker exited\"), never DONE; a " +
-				"reply with links to an item sent to another repo marks it acked. Also ticks paired checkboxes " +
+				"reply with links to an item sent to another repo marks it acked. On a DONE or DROPPED item's fresh " +
+				"dispatch, it closes the finished worker's tab, then, on a later refresh, removes its checkout, never " +
+				"forced. Also ticks paired checkboxes " +
 				"and derives icons. Returns what it changed and every item it checked and left, with why.",
 			Run: d.refresh,
 		},
 		Def[PromptSendInput, PromptSendOutput]{
 			Name: "prompt_send", Verb: "send",
-			Description: "Send a work item's prompt block to the one agent in the herdr workspace its to= names, " +
-				"as `worklog send` does, with the closing line asking it to update the item. Refuses a " +
-				"blocked agent. Does not write the note.",
+			Description: "Send a work item's prompt block to the herdr workspace its to= names, as `worklog send` does, " +
+				"with the closing line asking it to update the item. The item's tier picks the harness through [tiers] " +
+				"(default when it has none); the prompt goes to the first idle or done agent of the harness's kind there " +
+				"whose cwd is in the project's checkout. With none, it spawns one of the harness in a new tab there, which " +
+				"stays as the session. Records the pane on the item's marker (pane=), unless the marker records a fresh " +
+				"dispatch (ws=), which it keeps, and leaves the item's state.",
 			Run: d.promptSend,
 		},
 		Def[TaskDispatchInput, TaskDispatchOutput]{
 			Name: "task_dispatch", Verb: "dispatch",
-			Description: "Start work on a ref, owner/repo#N. Mode session (the default) sends its work item's prompt, " +
-				"or /implement <url>, to the project's herdr session, and leaves the note alone. Mode fresh creates or " +
-				"reuses the ref's workspace (jj workspace, else git worktree, under dispatch.workspace_root), starts " +
-				"harness.worker in a new herdr tab there and prompts it, then records the pane and workspace on the " +
-				"ref's work item and moves it to IN_PROGRESS.",
+			Description: "Start work on a ref, owner/repo#N, or a work item by id: a batch, which has no ref, or an " +
+				"item dispatched as its ref. Mode session (the default) sends the work item's prompt, or /implement <url>, " +
+				"to the project's herdr session as prompt_send does, and records the pane on the work item. Mode fresh " +
+				"creates or reuses the ref's workspace, or the batch's, named after its item id (jj workspace, else git " +
+				"worktree, under dispatch.workspace_root), starts the harness [tiers] maps the item's tier to (default " +
+				"when it has none) in a new herdr tab there and prompts it, with /implement <url> or the batch's prompt, " +
+				"then records the pane and workspace on the work item and moves it to IN_PROGRESS. Dispatched fresh " +
+				"again, it first closes its previous worker's tab, and refuses while that worker is working or blocked.",
 			Run: d.taskDispatch,
 		},
 	}

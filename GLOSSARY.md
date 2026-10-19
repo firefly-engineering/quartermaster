@@ -36,12 +36,12 @@ The ordered list of the user's next actions, at most five, each pointing at a **
 
 ## Project
 
-A GitHub repo, `owner/repo`, worked on that day. Has one section in the note and one herdr
-**session**.
+A GitHub repo, `owner/repo`, worked on that day. Has one section in the note.
 
 ## Part
 
-A dated chunk of a project's day: a human session, an agent batch, or a land.
+A dated chunk of a project's day: a human session, an agent batch, or a land. An agent
+batch Part records the run of a **batch**, or of one ticket's `/implement`.
 
 ## Bucket
 
@@ -53,6 +53,11 @@ A fixed-name group under a project's *What remains*: *Decisions for you*, *Your 
 An addressable entry in a bucket or Part, with an **item id** (`^<id>`) and a **state**.
 Agent-tracked ones carry a status icon. A **manual action** carries a task checkbox
 instead and belongs to the user.
+
+## Batch
+
+A work item covering several tickets, run by one `/mass-implement` on one **harness**. It
+has no ref, and its tier is any one of its tickets' tiers.
 
 ## Route
 
@@ -70,26 +75,31 @@ prompt.
 
 ## Session
 
-The agent pane in a project's herdr workspace, which receives that project's prompts. The
-workspace is the one with a pane in the project's checkout, else the one labelled with the
-repo's name ([spec §9.2](docs/spec.md#92-task_dispatch)).
+An available agent of a **harness**'s kind in the project's herdr workspace and checkout,
+picked for each prompt rather than fixed. Its workspace may be created on demand, and the
+tool never closes it ([ADR 0011](docs/adr/0011-a-work-items-tier-routes-it-to-a-harness.md)).
 
 ## Dispatch
 
-Starting work on a ref, by prompting the project's session (`session`) or by creating an
-isolated workspace and a new agent (`fresh`).
+Starting work on a ref or a work item, by prompting a session (`session`) or by creating an
+isolated workspace and a new agent (`fresh`). Its mode is independent of the **tier**.
 
 ## Harness
 
-An agent program and how it is launched: its herdr agent kind, arguments and model, such as
-claude, or omp on a GLM model. A prompt reaches a harness through its **tier**, never by
-naming it.
+An agent program and how it is launched, named in config: its herdr agent kind, arguments
+and model, such as claude, or omp on a GLM model. One per kind. A prompt reaches a harness
+through its **tier**, never by naming it.
 
 ## Tier
 
-The class of work a prompt belongs to, such as design and decisions or well-specified
-implementation. Config maps each tier to one **harness**. A route gives a work item its
-tier, and the item may override it. _Avoid_: lane.
+The class of work a work item belongs to, such as design or well-specified implementation,
+from a closed list the worklog skill owns. Config maps each tier to one **harness**. A route
+gives the default tier, and the item may override it. _Avoid_: lane.
+
+## Escalation
+
+Raising a work item's **tier** after its worker reports it stuck, so its next dispatch goes
+to a stronger harness.
 
 ## Ref
 

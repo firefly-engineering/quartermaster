@@ -22,17 +22,16 @@ const (
 type line struct {
 	ref    note.Ref // the issue or PR its leading link names; the zero Ref for none
 	status string   // its sent status, "" for none
-	label  string   // the workspace label after its `→`, "" for none
 }
 
 // parseLine reads work item it as internal/note parsed it: its ref, the GitHub issue or PR its
 // title's leading link names (a link further on is something it mentions, which proves nothing
-// about it), and its sent status and label (note.Sent).
+// about it), and its sent status (note.Sent).
 func parseLine(it *note.Item) line {
 	var l line
 	l.ref, _ = note.ParseRef(it.Ref, "")
 	if it.Sent != nil {
-		l.status, l.label = it.Sent.Status, it.Sent.To
+		l.status = it.Sent.Status
 	}
 	return l
 }

@@ -75,11 +75,19 @@ dir = "worklog"                           # Obsidian vault, relative to repo
 name = "worklog"                          # Obsidian vault name, for obsidian:// URIs
 
 [dispatch]
-workspace_root = "~/.local/share/quartermaster/worklog/workspaces"  # <root>/<owner>/<repo>/issue-<n>
+workspace_root = "~/.local/share/quartermaster/worklog/workspaces"  # <root>/<owner>/<repo>/issue-<n>, or <item-id> for a batch
 
-[harness.worker]                # default harness for task_dispatch mode=fresh
-kind = "omp"                    # a herdr agent kind
+[harness.claude]                # a named harness: a herdr agent kind and its arguments
+kind = "claude"
+
+[harness.glm]
+kind = "omp"
 args = ["--model", "glm-5"]
+
+[tiers]                         # a work item's tier to a harness name
+default = "claude"              # every tier not listed, and every item with no tier
+basic-implementation = "glm"
+refactoring = "glm"
 
 [projects]
 root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<repo>
@@ -89,6 +97,23 @@ root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<re
 # path = "~/work/IaC"           # its checkout, instead of <root>/<owner>/<repo>
 # workspace = "infra"           # its herdr workspace label, instead of finding it (§9.2)
 ```
+
+A **harness** is `[harness.<name>]`: a herdr agent `kind` and its `args`. `[tiers]` maps a
+work item's tier to a harness name; a tier it does not list, and an item with no tier, go
+to `default` ([ADR 0011]). The defaults are the harnesses and tiers above. A user file's
+`[harness.*]` replaces the whole built-in harness set, and its `[tiers]` the built-in tiers;
+fields never merge inside a table. After merging, each of these is a load error:
+
+- `[tiers]` has no `default`;
+- a `[tiers]` key is neither `default` nor a tier of the list cut from the worklog skill's
+  `## Tiers` table ([ADR 0005]); the error lists the valid ones;
+- a `[tiers]` value names a harness that is not defined;
+- a harness has no `kind`, or two harnesses share one (the error names both);
+- a harness name does not match `[a-z][a-z0-9_-]*`;
+- `[harness.worker]`: "`[harness.worker]` is gone: name your harnesses and map tiers to
+  them in `[tiers]`". `worker` is a reserved name.
+
+A harness no tier names is allowed.
 
 A **project** is keyed by `owner/repo`. Every ref the server handles is `owner/repo#N`
 ([ADR 0007]); a bare `#N` is accepted only where a project is already in scope.
@@ -118,22 +143,29 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Project section | `## <icon> <owner/repo>` |
 | Part | `### <icon> Part N — <kind>: <title>`, where the kind is `Human session`, `Agent batch` or `Land`, and nothing else |
 | Bucket | `#### <icon> <bucket name>` under `### <icon> What remains` |
-| Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>`. Its ref, cost and route are read as the renderer writes them, below |
+| Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>`. Its ref, cost, route and tier are read as the renderer writes them, below |
 | Anchor | a paragraph in a Part or bucket ending with `^<id>`: a link target, with no state |
-| Prompt block | a ```` ```herdr-prompt id=<item-id> to=<label> ```` fence, inside a `> [!prompt]-` callout |
+| Prompt block | a ```` ```herdr-prompt id=<item-id> to=<owner/repo> ```` or ```` to=<label> ```` fence, inside a `> [!prompt]-` callout. `owner/repo` names a project, whose herdr workspace §9.2 resolves, opening it if need be; a bare label names a herdr workspace, only looked up ([§9.1]) |
+| Dispatch marker | an HTML comment `<!-- qm pane=<id> ws=<path> -->` before a work item's `^<item-id>`: the herdr pane its prompt was last sent to, by a send ([§9.1]) or a `fresh` dispatch ([§9.2]), and the `fresh` dispatch's workspace. A send records `pane=` alone, except on an item whose marker has `ws=`, which it leaves as it is |
 | Manual action | a task list item `- [ ]` / `- [x]`, or an ordered one `1. [ ]` in *Next* |
 | Carry-over | the table under `## Carry-over` |
 | Process | the list under `## Process` |
 
 A work item's ref is the link opening its title, before the title text: `[#N](<url>): <title>`,
-read as `owner/repo#N` from its GitHub issue or PR URL. A list item writes its cost and route
-on its line, `` <title> · <cost> · Route: `<route>` ``, then its sent status and summary; they
-are read from the end of its title before those: the route is the code span ending it, after
-` · Route: `, and the cost what lies between the first ` · ` and the route. So a list item's
+read as `owner/repo#N` from its GitHub issue or PR URL. A list item writes its cost, route and
+tier on its line, `` <title> · <cost> · Route: `<route>` · Tier: `<tier>` ``, then its sent
+status and summary; they are read from the end of its title before those: the tier is the code
+span ending it, after ` · Tier: `, the route the code span ending what is left, after
+` · Route: `, and the cost what lies between the first ` · ` and those. So a list item's
 title holds no ` · `, and the renderer refuses one that does. A `#####` item ends its body,
-before its button, with the sentences `` Cost: <cost>. Route: `<route>`. ``. A body ending with
-a bare `<cost>.`, as written before the `Cost:` marker, reads as prose: the item has no cost
-until it is rewritten. Each is absent when the item has none.
+before its button, with the sentences `` Cost: <cost>. Route: `<route>`. Tier: `<tier>`. ``,
+read from the end the same way. A body ending with a bare `<cost>.`, as written before the
+`Cost:` marker, reads as prose: the item has no cost until it is rewritten. Each is absent
+when the item has none.
+
+The tier is the class of the item's work, one of the closed list in the worklog skill's tier
+table ([ADR 0011]). It routes the item's prompts to a harness through config; the note never
+names the harness.
 
 Item and anchor ids are lowercase letters, digits and `-`, unique within a note. Every
 `[[#^<id>|details]]` link in *Next* names a work item or an anchor. A section the note lacks
@@ -188,7 +220,9 @@ summary must name the evidence: the commit, run or result. `WAITING` may complet
 same terms, when what it waited on is done: an issue closed or a PR merged, named in its
 summary. An item sent to another repo closes this way, with no unblock first. `DONE` and `DROPPED` are
 terminal but for that restatement; reopening is a new item. A transition carries a `summary`
-(PR URL, commit, reason), rendered into the item's line or paragraph.
+(PR URL, commit, reason), rendered into the item's line or paragraph. `refresh` closing a
+terminal item's `fresh` dispatch tab and dropping its `pane=`, then removing its checkout and
+dropping `ws=` ([§9.2]), is not a transition: its state stays.
 
 ### 4.4 Manual actions
 
@@ -222,17 +256,17 @@ transition, writes, and commits one jj change. It does not run `refresh` first
 | `day_open` | Create today's note from the template, with every open item of the previous note as a carry-over row. Its front matter lists the projects of the rows it carries. A note prepared ahead, one that exists and is not empty, is kept: it gains a carry-over row for each open item of the previous note it does not carry yet, its status line is rewritten as `open`, and its front matter's projects list gains the carried projects; nothing else is written. It already carries an item with an `^<id>` when it holds that id anywhere (a work item, a manual action, or a carry-over row linking `^<id>`), and one without an id when a carry-over row's item is that item's row as rendered. Only the previous note is collected. A prepared note that does not parse is refused, naming its errors. | `session_init_plan` |
 | `day_read` | Return the note as structured data: status, objectives, Next, items by project and bucket, states. Read-only. | — |
 | `objective_set` | Add, refine (stamping `(refined HH:MM UTC: <reason>)`) or settle an objective. | `session_init_plan` |
-| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status, ref, cost and route, and the parser reads them back ([§4.1]); nothing else parses the title. An update keeps a ref, cost or route left out or `""`, as it keeps the repo, bucket and sent status; an explicit `null` clears one, dropping the ref's link from the title or that part of the item. On create, and in `carryover_verdict`'s keep, a `null` is absent. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. An update rewrites the item whole, so it refuses to drop a prompt left out; an explicit `"prompt": null` drops the prompt and its ▶ button, in its bucket and on its *Next* line, and the item stays a `#####` item only when the update gives a body. When the item as written is `TODO`, its route starts with `/` and it has no prompt, it has no ▶ button to send that command: the result's `warnings` names the item and its route. The write goes through all the same. | — |
+| `item_upsert` | Create or update a work item in a bucket: title, ref, cost, route, tier, optional prompt (`to`, text), and for *Sent to other repos* its sent status (`to send`, `sent`, `acked`, `done`). The renderer writes the status, ref, cost, route and tier, and the parser reads them back ([§4.1]); nothing else parses the title. A tier outside the list the binary cuts from the embedded skill's tier table ([ADR 0005], [ADR 0011]) is refused, naming the valid ones. An update keeps a ref, cost, route or tier left out or `""`, as it keeps the repo, bucket and sent status; an explicit `null` clears one, dropping the ref's link from the title or that part of the item. On create, and in `carryover_verdict`'s keep, a `null` is absent. Creating a project section adds its `owner/repo` to the front matter's `projects:` list, once. An update rewrites the item whole, so it refuses to drop a prompt left out; an explicit `"prompt": null` drops the prompt and its ▶ button, in its bucket and on its *Next* line, and the item stays a `#####` item only when the update gives a body. When the item as written is `TODO`, its route starts with `/` and it has no prompt, it has no ▶ button to send that command: the result's `warnings` names the item and its route. The write goes through all the same. | — |
 | `item_transition` | Move a work item through [§4.3]: `{item, to, summary, part?}`. With `part: N` and a move to `DONE` or `DROPPED`, the item leaves its bucket and *Next* in the same commit, and becomes a plain line in Part N with its summary, without its id, button or prompt. Without `part` it stays in its bucket. A move to the item's own state, in any state, rewrites only its summary and needs one. With `part: N`, a move to its own `DONE` or `DROPPED` state files the item into Part N as above, and keeps its last summary when none is given. | `task_update_state` |
 | `part_write` | Create or rewrite one Part whole: number, kind, title, icon (🔄, 🔍 or ✅, written, never derived) and body. The body may carry anchors. | — |
 | `action_upsert` | Create, reword or move a manual action, a checkbox with an id. Ticking it is `item_transition`; nothing unticks it ([§4.4]). | — |
 | `process_set` | Add, reword or settle a *Process* entry. | — |
 | `next_set` | Replace *Next* with an ordered list of item ids; the server renders each line, button and details link. A work item's line takes the entry's `cost`, else the item's cost, else none; nothing is read back from the line *Next* held. A manual action's or an anchor's line takes its cost from the entry only. The result's `warnings` holds one line for each listed work item that is `TODO`, with a route starting with `/` and no prompt, so no ▶ button; manual actions and anchors never warn. The write goes through all the same. | — |
 | `status_set` | Rewrite the status line. | — |
-| `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. A keep with no title, on a row linking a work item as `[[<prev>#^<id>\|^<id>]]`, takes that item's title from the note the link names, without its ref link, cost, route, sent status and summary, and its ref, cost and route unless given; any other row's text is the title. The row stays as written. | — |
-| `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). | — |
-| `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send`. | — |
-| `task_dispatch` | Start work on a ref ([§9.2]). | `task_dispatch` |
+| `carryover_verdict` | Record keep / defer / drop on a carry-over row; keep moves it into its project's bucket. A keep with no title, on a row linking a work item as `[[<prev>#^<id>\|^<id>]]`, takes that item's title from the note the link names, without its ref link, cost, route, tier, sent status and summary, and its ref, cost, route and tier unless given; any other row's text is the title. The row stays as written. | — |
+| `refresh` | Reconcile: GitHub state of every ref, herdr state of every dispatched item, ticked checkboxes. Applies only transitions the evidence proves ([§11]). On a `DONE` or `DROPPED` item with a `fresh` dispatch marker, it also closes the dispatch's herdr tab once its worker is finished, and drops `pane=` from the marker; on a later `refresh`, with `ws=` alone left, it removes the dispatch's checkout and drops `ws=`, and the marker with it ([§9.2]). It reports what it closed, removed or dropped as applied, and a close or removal it skipped or that failed as skipped, with why; neither failure fails another step. | — |
+| `prompt_send` | Send a work item's prompt block to its session; the tool form of `worklog send` ([§9.1]). It records the prompted pane on the item's `qm` marker and leaves its state. | — |
+| `task_dispatch` | Start work on a ref, or on a work item by id, such as a batch, which has no ref ([§9.2]). Exactly one of the two is given. | `task_dispatch` |
 
 Times come from the clock (UTC). A tool that records an event the user timed takes an
 explicit `at`; nothing estimates a time.
@@ -276,20 +310,59 @@ the installed skill cannot drift ([ADR 0005]).
 The Obsidian Shell commands plugin runs `worklog send <vault> <date> <item-id>` when
 a button is clicked. Any web page can open an `obsidian://` URI, so the command takes only
 a date and an id and validates both: the date parses as ISO, the id matches §4.1, the note
-exists under the vault. It reads the prompt from the note's `herdr-prompt` block (through
-callout `>` markers), resolves `to` to exactly one herdr workspace with exactly one agent,
-refuses an agent whose status is not `idle`, `done` or `working` (a `blocked` agent shows
-an approval prompt that typed text could answer), and runs
-`herdr agent prompt <pane> <text>` with no shell in between. It appends the closing line
-the skill relies on (`send.Closing`): update work item `^<id>`, or `owner/repo#N` for a
-prompt no block holds, in the note at its path, and refresh *Next*. `refresh` reads an
-item's reply from its own closing line, up to the next closing line in the pane ([§11]).
+exists under the vault, and the vault is the configured one (`vault.repo` and `vault.dir`,
+§3), where the send is recorded. ▶ buttons, `prompt_send` and `task_dispatch` `session`
+(§9.2) share one send path ([ADR 0011]):
+
+1. Read the prompt from the item's `herdr-prompt` block (through callout `>` markers) and
+   resolve `to`. An `owner/repo` names the project, whose checkout is §3's and whose herdr
+   workspace is §9.2's, created when it has none. Anything else is a bare label: it resolves
+   to exactly one herdr workspace with that label, and never creates one, for workspaces
+   outside any project. The project whose session that is gives the checkout (§3): the
+   project whose `workspace` override is the label, else the project of the item's ref or
+   of its section whose repo is named as the label and has no override. No such project is
+   an error asking for the override. The worklog skill writes the `owner/repo` form.
+2. Resolve the harness from the item's tier through `[tiers]`, or `[tiers] default` when
+   the item has none (§3).
+3. Pick the agent: the first in `herdr agent list` order that is in the workspace, of the
+   harness's `kind`, `idle` or `done`, and whose cwd is the checkout or under it, compared
+   by whole path components (§9.2). A `working` agent would queue the prompt behind its
+   turn, and a `blocked` one shows an approval prompt that typed text could answer, so
+   neither is sent to, nor is an `unknown` one. A `fresh` dispatch's agent works in its own
+   checkout, so it is never picked. An agent started by hand counts when it matches.
+4. With no available agent, none at all or only busy ones of the kind, spawn one of the
+   harness. In a workspace step 1 just created, it takes the workspace's initial shell pane;
+   in any other, `herdr tab create` in the workspace with its cwd at the checkout, labelled
+   with the agent's name and `--no-focus`. Then `herdr agent start <name> --kind <kind> --pane
+   <pane> -- <args>`. Only the harness the prompt needs starts. The name is the first of
+   `<repo>-<harness>`, `<repo>-<harness>-2`, `<repo>-<harness>-3`, … that no live agent has,
+   in any workspace, sanitised and fitted to 32 characters as a `fresh` agent's is (§9.2
+   step 4). The tool never closes a session spawn, nor a workspace it created: it is the
+   session from then on, and keeps its warm context. A spawn that fails is an error; a tab or
+   workspace created before the agent fails to start is left in place and named.
+5. Run `herdr agent prompt <pane> <text>` with no shell in between, the text ending with the
+   closing line the skill relies on (`send.Closing`): update work item `^<id>`, or
+   `owner/repo#N` for a prompt no block holds, in the note at its path, and refresh *Next*.
+6. Record the pane on the item, through the engine ([§7]): its `qm` marker becomes
+   `<!-- qm pane=<id> -->`, replacing any marker it had. A marker with `ws=` is a `fresh`
+   dispatch's (§9.2) and stays as it is: its worker remains the item's agent, and `refresh`
+   closes its tab and removes its checkout by that marker, so replacing it would orphan both
+   and defeat a re-dispatch's guards ([#146](https://github.com/firefly-engineering/quartermaster/issues/146)).
+   The result reports the note unchanged. The item's state is left alone. A failure here
+   reports the pane prompted.
+
+`refresh` reads an item's reply from the pane its marker records, from its own closing
+line up to the next closing line in the pane ([§11]).
 
 Behaviour is a strict port of `worklog-send`; its self-check becomes the Go test suite.
 
 ### 9.2 `task_dispatch`
 
-Input: `{ref: "owner/repo#N", mode: "session" | "fresh", instruction?}`.
+Input: `{ref: "owner/repo#N" | item: "<item-id>", mode: "session" | "fresh", instruction?}`,
+with exactly one of `ref` and `item`. An item with a ref is dispatched as its ref. A **batch**,
+an item with no ref, is dispatched in the project whose section holds it, with its own prompt:
+one with no prompt is refused, and so is an id starting with `issue-`, which would name a
+ref's checkout, or with `-`, which jj and git would read as a flag.
 
 The **project's herdr workspace** is resolved at use, from herdr's live state, the first of:
 
@@ -298,39 +371,89 @@ The **project's herdr workspace** is resolved at use, from herdr's live state, t
    a directory under it, compared by whole path components once cleaned, so `/a/bc` is not
    under `/a/b`. Panes of two workspaces there is an error naming both and asking for an
    override;
-3. the workspace labelled with the repo's name (`herdr workspace list`).
+3. the workspace labelled with the repo's name (`herdr workspace list`);
+4. none of these: `herdr workspace create --cwd <checkout> --label <label> --no-focus`, the
+   label the `workspace` override when set, else the repo's name, so step 1 or 3 finds it
+   next time. A set override labelling no workspace creates one with that label. A missing
+   checkout is an error, and nothing is cloned. Panes of two workspaces in the checkout stay
+   step 2's error: a third workspace would not settle it. Nothing locks against two
+   concurrent resolves each creating one; the next resolve reports both through step 2's
+   error. The tool never closes a workspace it created.
 
-No match is an error asking for an override. A `herdr-prompt` block's `to=` still names a
-workspace by its label (§9.1).
+A `herdr-prompt` block's `to=owner/repo` resolves here; a bare label is only looked up
+(§9.1).
 
-- **`session`** (default): build the prompt from the ref's work item (or `/implement <url>`
-  when none exists) and send it to the session, as in §9.1: the block's `to=` for an item
-  with a prompt, else the project's herdr workspace.
+- **`session`** (default): build the prompt from the work item (or `/implement <url>`
+  when a ref has none) and send it through §9.1's send path: to the block's `to=` for an
+  item with a prompt, else to the project's herdr workspace and checkout. The item's tier
+  picks the harness, and the item records the pane; a ref with no work item goes to
+  `[tiers] default` and records nothing.
 - **`fresh`**: an isolated workspace and a new agent:
   1. `gh issue view` for title and body.
-  2. Resolve the project's herdr workspace, which only reads, then create the workspace at
-     `<workspace_root>/<owner>/<repo>/issue-<N>` from the project's checkout:
-     `jj workspace add` when the checkout has `.jj`, else `git worktree add -b issue-<N>`
+  2. Resolve the project's herdr workspace, which creates it only when it has none, then
+     create the workspace at `<workspace_root>/<owner>/<repo>/issue-<N>` from the project's
+     checkout: `jj workspace add` when the checkout has `.jj`, else `git worktree add -b issue-<N>`
      ([ADR 0004]). An existing workspace for the ref is reused, never clobbered.
+
+     A dispatch again, as after an escalation (step 9), reuses that checkout, so the new agent
+     starts on the last one's work. Before creating anything, the project's herdr workspace
+     included, when the item's marker records
+     `pane=` and `ws=`, it closes the previous agent's tab under step 7's guards, which also
+     frees its name. It refuses, "its worker is still running", while that agent is
+     `working` or `blocked`, so two agents never write in one checkout. It refuses as well
+     when the tab stays for any other reason, as a renamed agent, or the close fails. A pane
+     already gone, or a marker with no `ws=`, closes nothing.
   3. `herdr tab create` in the project's herdr workspace, cwd at the new workspace, labelled
      with the agent's name (step 4).
-  4. `herdr agent start <name> --kind <harness.kind> --pane <pane> -- <args>`. herdr agent
+  4. `herdr agent start <name> --kind <kind> --pane <pane> -- <args>`, the `kind` and `args`
+     of the harness `[tiers]` maps the item's tier to, or of `default` when the item has no
+     tier (§3). herdr agent
      names are unique among all live agents and match `[a-z][a-z0-9_-]{0,31}`, so the name is
-     the first of `<repo>-<N>`, `<repo>-<N>-2`, `<repo>-<N>-3`, … that no live agent has in
+     the first of `<repo>-<N>`, `<repo>-<N>-2`, `<repo>-<N>-3`, … (`<repo>-<item-id>`, … for a
+     batch) that no live agent has in
      `herdr agent list` (its `name` field), read with step 2's read-only checks. `<repo>` is
      the repo part of `owner/repo`; the owner stays out. The name is lowercased, every
      character outside `[a-z0-9_-]` becomes `-`, and it is prefixed `a` unless it starts with a
      letter (`1password` → `a1password-5`). Only the repo part is cut to fit 32 characters;
      `-<N>` and `-<k>` never are. An agent taking the name before `agent start` makes herdr
      refuse it, a herdr failure like any other. The workspace's directory, jj workspace name
-     and git branch stay `issue-<N>`.
-  5. `herdr agent prompt` with the issue and the instruction.
+     and git branch stay `issue-<N>`. A batch's are its item id:
+     `<workspace_root>/<owner>/<repo>/<item-id>`, `git worktree add -b <item-id>`.
+  5. `herdr agent prompt` with `/implement <url>`, or a batch's prompt, and the instruction.
   6. Record the pane id and workspace path on the work item (an HTML comment
      `<!-- qm pane=<id> ws=<path> -->` on the item's line), and transition it to
      `IN_PROGRESS`.
+  7. Once the item is `DONE` or `DROPPED`, each `refresh` closes the agent's tab
+     (`herdr tab close`, the tab id read from `herdr pane get`) and drops `pane=` from the
+     marker, so tabs do not pile up. `ws=` stays, for step 8. It closes the tab when both hold:
+     - the agent is `idle` or `done`, or no agent runs in the pane any more;
+     - the agent still bears its dispatch name, `<repo>-<N>` or a batch's `<repo>-<item-id>`
+       with its counter, as step 4 gives it for the marker's `ws=` path.
 
-herdr 0.9.5 has no single "create a pane running a command" call, so dispatch composes
-`tab create`, `agent start` and `agent prompt`.
+     A `working` or `blocked` agent, or one in any other status, is left for the next
+     `refresh`. Renaming the agent in herdr keeps its tab, and `pane=` stays: that is how the
+     developer keeps one. A pane already gone just has `pane=` dropped. Only a marker with
+     `ws=` records a `fresh` dispatch, so a session's pane is never closed.
+  8. Once `pane=` is dropped, the next `refresh` removes the workspace from the project's
+     checkout, as step 2 made it, and drops `ws=`; the marker, then empty, goes. jj: snapshot
+     it (`jj -R <ws> status`), `jj workspace forget issue-<N>` in the checkout, then delete
+     its directory. git: `git worktree remove <ws>`, never `--force`, so git refuses a dirty
+     tree. A directory already gone just has `ws=` dropped, once git has run
+     `git worktree prune` or jj has forgotten the workspace. A removal that fails (a dirty
+     tree, a permission error, a failed forget) keeps `ws=`, and the next `refresh` retries.
+     The `issue-<N>` branch is never deleted, merged or not: committed work stays
+     recoverable.
+  9. A worker that can't finish moves its item to `WAITING` with its summary
+     `question: …` (only a human can answer) or `stuck: …` (the work is beyond it). The
+     claude agent reading the note escalates a `stuck:` item from a non-claude tier: it raises
+     the tier to `complex-implementation` and queues a ▶ whose prompt asks the session agent
+     to dispatch it `fresh` again, here, with an instruction naming the reused checkout. A
+     human always starts that dispatch; nothing re-dispatches on its own. The worklog skill
+     owns the rules ([ADR 0005]). `refresh` stays evidence-only: it infers "worker exited" from
+     herdr and never reads a worker's text.
+
+herdr 0.9.5 has no single "create a pane running a command" call, so dispatch, like a
+session's spawn (§9.1), composes `tab create`, `agent start` and `agent prompt`.
 
 ## 10. Packaging
 
@@ -366,12 +489,17 @@ own way; the README shows the snippets for `programs.agentSkills`,
 
 | Failure | Effect | Handling |
 |---|---|---|
-| Worker crashes | Item stays 🔄 | `refresh` asks herdr for the recorded pane. Gone, or the agent exited, with no transition recorded: move to `WAITING` with "worker exited". Never to `DONE`. |
+| Worker crashes | Item stays 🔄 | `refresh` asks herdr for a `fresh` dispatch's recorded pane (a marker with `ws=`). Gone, or the agent exited, with no transition recorded: move to `WAITING` with "worker exited". Never to `DONE`. A session's pane, recorded by a send with no `ws=`, is the user's agent, not the item's worker: its leaving moves nothing ([§9.1]). |
+| Closing a finished `fresh` dispatch's tab fails | Tab stays, `pane=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. A tab already gone counts as closed ([§9.2]). |
+| Removing a finished `fresh` dispatch's checkout fails (dirty git tree, permission error, failed forget) | Checkout stays, `ws=` stays | `refresh` reports the failure as a skipped item and carries on; the next `refresh` retries. It never forces a removal. A checkout already gone counts as removed ([§9.2]). |
+| `fresh` dispatch again while the previous worker runs | Two agents would write in one checkout | Refused, "its worker is still running", while the marker's agent is `working` or `blocked`; nothing is created and the item stays. Dispatch again once it is `idle` or `done` ([§9.2]). |
+| Worker can't finish | Item moves to `WAITING`, `question: …` or `stuck: …` | `question:` goes to the developer. `stuck:` from a non-claude tier is escalated once to `complex-implementation`, re-dispatched by a human; `stuck:` at a claude tier goes to the developer ([§9.2]). |
 | Process dies holding the lock | — | The OS frees an `flock` with the descriptor. |
 | Obsidian writes mid-mutation | Lost edit | Hash check and retry ([§7]); jj history for the narrow window left. |
 | Workspace for a ref already exists | `add` fails | Reuse it if it is the ref's; otherwise fail with its path. `git worktree prune` before a git add. |
 | Unparseable note (hand edit broke a structure) | — | Mutating tools refuse, naming the unit and line; `day_read` returns what it could parse plus the errors. Never rewrite what failed to parse. |
-| herdr not running or label ambiguous | Send fails | Fail with the reason; the item stays **to send**. |
+| herdr not running, label ambiguous or missing, or no checkout to open a project's workspace at | Send fails | Fail with the reason; the item stays **to send**. |
+| Reply to a sent item | `refresh` marks it **acked** with the reply's links | `refresh` reads the reply from the pane the item's `qm` marker records, once its agent is `idle` or `done`. An item that records no pane, such as one sent before sends recorded them, is skipped with why ([§9.1]). |
 | Another prompt sent to the same pane | Its reply's links credited to the earlier item | A reply runs from the line after its item's full closing-line prefix, up to the next closing line for any work item or ref; a mention of `work item ^<id>` in reply prose matches neither. A later prompt's own body, before its closing line, still counts as the earlier reply: a prompt cannot open with a marker, since a slash command must come first ([#90](https://github.com/firefly-engineering/quartermaster/issues/90)). |
 
 ## 12. Open questions
@@ -393,6 +521,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [ADR 0007]: adr/0007-refs-are-owner-repo-number.md
 [ADR 0008]: adr/0008-mutating-tools-do-not-refresh.md
 [ADR 0010]: adr/0010-a-suite-member-may-be-skill-only.md
+[ADR 0011]: adr/0011-a-work-items-tier-routes-it-to-a-harness.md
 [§4]: #4-the-note
 [§4.1]: #41-addressable-units
 [§4.3]: #43-transitions
@@ -401,6 +530,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [§7]: #7-concurrency-and-persistence
 [§8]: #8-mcp-prompts
 [§9]: #9-sending-and-dispatch
+[§9.1]: #91-worklog-send--buttons
 [§9.2]: #92-task_dispatch
 [§10]: #10-packaging
 [§10.1]: #101-home-manager-module

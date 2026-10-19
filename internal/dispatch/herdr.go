@@ -3,31 +3,19 @@ package dispatch
 import (
 	"context"
 
+	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/herdr"
+	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
-// herdr 0.9.5 has no call that creates a pane running a command, so an agent starts in three
-// (spec §9.2), each checked against `herdr <cmd> --help`:
-//
-//	herdr tab create --workspace <id> --cwd <path> --label <text> --no-focus
-//	herdr agent start <name> --kind <kind> --pane <id> [-- <agent-args>...]
-//	herdr agent prompt <pane> <text>
-
-// agent starts the configured worker, named name, in a new tab of herdr workspace id, at ws,
-// and prompts it. pane is the tab's pane once created, even when a later step fails.
-func (d Dispatcher) agent(ctx context.Context, id, ws, name, prompt string) (pane string, err error) {
-	h := d.herdr()
-	if pane, err = h.TabCreate(ctx, id, ws, name); err != nil {
-		return "", err
-	}
-	w := d.Config.Harness.Worker
-	if err := h.AgentStart(ctx, name, w.Kind, pane, w.Args); err != nil {
+// agent starts harness h, named name, in a new tab of herdr workspace id, at ws, as a
+// session's spawn does (send.Start), and prompts it. pane is the tab's pane once created, even
+// when a later step fails.
+func (d Dispatcher) agent(ctx context.Context, h config.Harness, id, ws, name, prompt string) (pane string, err error) {
+	if pane, err = send.Start(ctx, d.herdr(), h, id, ws, name); err != nil {
 		return pane, err
 	}
-	if err := h.AgentPrompt(ctx, pane, prompt); err != nil {
-		return pane, err
-	}
-	return pane, nil
+	return pane, d.herdr().AgentPrompt(ctx, pane, prompt)
 }
 
 // agentNames are the names of herdr's live agents. An agent not started or renamed through

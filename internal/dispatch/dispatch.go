@@ -1,9 +1,12 @@
-// Package dispatch starts work on a ref (spec §9.2): task_dispatch's logic.
+// Package dispatch starts work on a ref or a work item (spec §9.2): task_dispatch's logic.
 //
 // Mode session prompts the project's herdr session through package send, the path of
-// `worklog send`, and leaves the note alone. Mode fresh gives the ref a workspace of its
-// own (ADR 0004), starts an agent there under herdr, then records the agent's pane and
-// workspace on the ref's work item and moves it to IN_PROGRESS, through the engine.
+// `worklog send`, which records the prompted pane on the work item. Mode fresh gives the ref,
+// or a batch, a workspace of its own (ADR 0004), starts an agent there under herdr, then
+// records the agent's pane and workspace on the work item and moves it to IN_PROGRESS, through
+// the engine. Dispatched fresh again, as after an escalation, it reuses the workspace, and
+// first closes its previous agent's tab under the guards refresh closes a finished one's with
+// (CloseTab), or refuses while that agent runs.
 //
 // The order is the failure contract: workspace, then agent, then note. A herdr failure leaves
 // the workspace in place and the item as it was; a note failure after the agent started
@@ -41,7 +44,7 @@ const tool = "task_dispatch"
 // summary is the one a fresh dispatch writes on the item it moves to IN_PROGRESS.
 const summary = "dispatched to a fresh agent"
 
-// Dispatcher dispatches refs. The caller resolves every field.
+// Dispatcher dispatches refs and work items. The caller resolves every field.
 type Dispatcher struct {
 	Config         config.Config
 	Engine         *engine.Engine // the note's only writer
@@ -51,19 +54,61 @@ type Dispatcher struct {
 
 // Result is a dispatch's outcome.
 type Result struct {
-	Ref, Mode string
-	Item      string // the ref's work item; "" when it has none (session only)
+	Ref       string // the ref; "" for a batch
+	Mode      string
+	Item      string // the work item; "" when a ref has none (session only)
 	Path      string // the note's path
 	To        string // the herdr workspace label prompted
 	Pane      string // the herdr pane prompted
-	Workspace string // fresh: the ref's workspace
+	Workspace string // fresh: the ref's or the batch's workspace
 	Reused    bool   // fresh: the workspace existed already
+	Closed    string // fresh: the herdr tab of the item's previous worker, closed first; "" for none
 	Note      engine.Result
 }
 
 // Dispatch starts work on ref, whose work item, if any, is in the note of date, in mode
 // (Session when ""). instruction, when not blank, is added to the prompt.
 func (d Dispatcher) Dispatch(ctx context.Context, date string, ref note.Ref, mode, instruction string) (Result, error) {
+	return d.dispatch(ctx, date, mode, instruction, func(n *note.Note) (job, error) {
+		it, err := item(n, ref)
+		return job{ref: &ref, repo: ref.Repo, item: it}, err
+	})
+}
+
+// DispatchItem starts work on work item id, in the note of date, as Dispatch does. An item
+// with a ref is dispatched as its ref. A batch, an item with none, is dispatched in its
+// project's section, with its prompt; its fresh workspace, jj workspace, git branch and agent
+// are named after id.
+func (d Dispatcher) DispatchItem(ctx context.Context, date, id, mode, instruction string) (Result, error) {
+	return d.dispatch(ctx, date, mode, instruction, func(n *note.Note) (job, error) {
+		it := n.Item(id)
+		if it == nil {
+			return job{}, fmt.Errorf("no work item ^%s", id)
+		}
+		if s, ok := note.StateOf(it.Icon); ok && (s == note.Done || s == note.Dropped) {
+			return job{}, fmt.Errorf("^%s is %s", it.ID, s)
+		}
+		if it.Ref != "" {
+			ref, err := note.ParseRef(it.Ref, "")
+			return job{ref: &ref, repo: ref.Repo, item: it}, err
+		}
+		switch {
+		case it.Prompt == nil || send.Text(it.Prompt) == "":
+			return job{}, fmt.Errorf("^%s has no ref and no prompt to start it with: item_upsert its prompt", id)
+		case strings.HasPrefix(id, "-") || strings.HasPrefix(id, wsPrefix):
+			return job{}, fmt.Errorf("^%s names a batch's workspace and branch, so it cannot start with - or %s", id, wsPrefix)
+		}
+		for _, p := range n.Projects {
+			if it.Start >= p.Start && it.Start < p.End {
+				return job{repo: p.Repo, item: it}, nil
+			}
+		}
+		return job{}, fmt.Errorf("^%s is in no project section", id)
+	})
+}
+
+// dispatch starts work on the job find picks from the note of date.
+func (d Dispatcher) dispatch(ctx context.Context, date, mode, instruction string, find func(*note.Note) (job, error)) (Result, error) {
 	if mode == "" {
 		mode = Session
 	}
@@ -82,18 +127,60 @@ func (d Dispatcher) Dispatch(ctx context.Context, date string, ref note.Ref, mod
 		return Result{}, err
 	}
 	n, _ := note.Parse(src) // a write refuses a note that does not parse; finding the item need not
-	it, err := item(n, ref)
+	j, err := find(n)
 	if err != nil {
 		return Result{}, err
 	}
-	res := Result{Ref: ref.String(), Mode: mode, Path: path}
-	if it != nil {
-		res.Item = it.ID
+	res := Result{Mode: mode, Path: path}
+	if j.ref != nil {
+		res.Ref = j.ref.String()
+	}
+	if j.item != nil {
+		res.Item = j.item.ID
 	}
 	if mode == Session {
-		return d.session(ctx, date, ref, it, instruction, res)
+		return d.session(ctx, date, j, instruction, res)
 	}
-	return d.fresh(ctx, date, ref, it, instruction, res)
+	return d.fresh(ctx, date, j, instruction, res)
+}
+
+// job is what a dispatch starts work on: a ref and its work item, if any, or a batch, a work
+// item with no ref.
+type job struct {
+	ref  *note.Ref  // nil for a batch
+	repo string     // the project, owner/repo
+	item *note.Item // nil for a ref with none
+}
+
+// name names a fresh dispatch's workspace directory, jj workspace and git branch: issue-<N>,
+// or a batch's item id.
+func (j job) name() string {
+	if j.ref == nil {
+		return j.item.ID
+	}
+	return wsPrefix + strconv.Itoa(j.ref.N)
+}
+
+// suffix ends the name of a fresh dispatch's agent, `<repo>-<suffix>`: the issue's number, or
+// a batch's item id.
+func (j job) suffix() string {
+	if j.ref == nil {
+		return j.item.ID
+	}
+	return strconv.Itoa(j.ref.N)
+}
+
+// prompt starts a fresh dispatch's work: `/implement <url>`, or a batch's own prompt, with
+// instruction after it.
+func (j job) prompt(instruction string) string {
+	if j.ref != nil {
+		return implement(*j.ref, instruction)
+	}
+	text := send.Text(j.item.Prompt)
+	if instruction = strings.TrimSpace(instruction); instruction != "" {
+		text += "\n\n" + instruction
+	}
+	return text
 }
 
 // item is ref's one open work item in n, or nil when it has none.
@@ -117,82 +204,93 @@ func item(n *note.Note, ref note.Ref) (*note.Item, error) {
 	return it, nil
 }
 
-// session sends the item's prompt to its workspace, or `/implement <url>` to the project's.
-func (d Dispatcher) session(ctx context.Context, date string, ref note.Ref, it *note.Item, instruction string, res Result) (Result, error) {
-	s := send.Sender{Herdr: d.Herdr, Env: d.Env}
+// session sends the item's prompt to its workspace, or `/implement <url>` to the project's, as
+// `worklog send` does: to an available agent of the item's harness, whose pane the item records.
+// A batch always has a prompt, so only a ref reaches the second.
+func (d Dispatcher) session(ctx context.Context, date string, j job, instruction string, res Result) (Result, error) {
+	ref, it := j.ref, j.item
+	s := send.Sender{Config: d.Config, Engine: d.Engine, Herdr: d.Herdr, Env: d.Env}
 	var sent send.Sent
 	var err error
 	if it != nil && it.Prompt != nil {
 		sent, err = s.SendItem(ctx, filepath.Dir(res.Path), date, it.ID, instruction)
 	} else {
-		var to send.Workspace
-		if to, err = d.herdrWorkspace(ctx, ref.Repo); err != nil {
-			return Result{}, err
+		p := send.Prompt{
+			Repo: j.repo, Checkout: d.Config.Projects.Project(j.repo).Path,
+			Text: implement(*ref, instruction), Date: date, Ref: ref.String(),
 		}
-		what := ref.String()
 		if it != nil {
-			what = send.Item(it.ID)
+			p.Tier, p.Item = it.Tier, it.ID
 		}
-		sent, err = s.Deliver(ctx, to, implement(ref, instruction), what, res.Path)
+		sent, err = s.Deliver(ctx, p)
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	res.To, res.Pane = sent.To, sent.Pane
+	res.To, res.Pane, res.Note = sent.To, sent.Pane, sent.Note
 	return res, nil
 }
 
-// fresh creates or reuses the ref's workspace, starts an agent in it, and records both on the
-// item.
-func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *note.Item, instruction string, res Result) (Result, error) {
+// fresh creates or reuses the job's workspace, starts an agent of the harness the item's tier
+// routes to in it, and records both on the item.
+func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction string, res Result) (Result, error) {
+	it := j.item
 	if it == nil {
-		return Result{}, fmt.Errorf("no work item for %s in %s: a fresh dispatch records its agent on one, so item_upsert it first", ref, res.Path)
+		return Result{}, fmt.Errorf("no work item for %s in %s: a fresh dispatch records its agent on one, so item_upsert it first", j.ref, res.Path)
 	}
 	if from, _ := note.StateOf(it.Icon); from != note.InProgress {
 		if err := note.Transition(from, note.InProgress, summary); err != nil {
 			return Result{}, fmt.Errorf("^%s: %w", it.ID, err)
 		}
 	}
-	checkout := d.Config.Projects.Project(ref.Repo).Path
+	checkout := d.Config.Projects.Project(j.repo).Path
+	_, harness := d.Config.HarnessFor(it.Tier)
 	switch {
 	case checkout == "":
-		return Result{}, fmt.Errorf("neither projects.root nor projects.%q.path is set: a fresh dispatch needs the checkout", ref.Repo)
-	case d.Config.Harness.Worker.Kind == "":
-		return Result{}, errors.New("harness.worker.kind is not set: a fresh dispatch needs the herdr agent kind to start")
+		return Result{}, fmt.Errorf("neither projects.root nor projects.%q.path is set: a fresh dispatch needs the checkout", j.repo)
+	case harness.Kind == "":
+		return Result{}, fmt.Errorf("[tiers] routes ^%s to no harness: a fresh dispatch needs the herdr agent kind to start", it.ID)
 	case d.Config.Dispatch.WorkspaceRoot == "":
 		return Result{}, errors.New("dispatch.workspace_root is not set")
 	case d.Herdr == "":
 		return Result{}, errors.New("herdr not found on PATH")
 	}
-	wsName := "issue-" + strconv.Itoa(ref.N)
-	owner, repo, _ := strings.Cut(ref.Repo, "/")
+	wsName := j.name()
+	owner, repo, _ := strings.Cut(j.repo, "/")
 	ws := filepath.Join(d.Config.Dispatch.WorkspaceRoot, owner, repo, wsName)
 	// The marker must be writable before anything is made that it would record.
 	if err := (note.Dispatch{Pane: "-", Workspace: ws}).Check(); err != nil {
 		return Result{}, fmt.Errorf("dispatch.workspace_root: %w", err)
 	}
 	if fi, err := os.Stat(checkout); err != nil || !fi.IsDir() {
-		return Result{}, fmt.Errorf("no checkout of %s at %s: clone it there, or set projects.%q.path", ref.Repo, checkout, ref.Repo)
+		return Result{}, fmt.Errorf("no checkout of %s at %s: clone it there, or set projects.%q.path", j.repo, checkout, j.repo)
 	}
-	// Finding the herdr workspace only reads, so it goes before anything is made.
-	herdrWS, err := d.herdrWorkspace(ctx, ref.Repo)
+	// A dispatch again starts its worker where the last one stopped: that one's tab goes before
+	// anything is created, so two agents never write in one checkout, a refusal leaves nothing
+	// behind, and its name is free again.
+	var err error
+	if res.Closed, err = d.closePrevious(ctx, it); err != nil {
+		return Result{}, err
+	}
+	// The project's herdr workspace, created when it has none, goes before the checkout is made.
+	herdrWS, _, err := send.ProjectWorkspace(ctx, d.herdr(), d.Config.Projects, j.repo)
 	if err != nil {
 		return Result{}, err
 	}
-	// So does naming the agent. Another agent may take the name before it starts: herdr then
-	// refuses it, as any other herdr failure.
+	// Naming the agent only reads, after the close that frees the name. Another agent may take
+	// the name before it starts: herdr then refuses it, as any other herdr failure.
 	taken, err := d.agentNames(ctx)
 	if err != nil {
 		return Result{}, err
 	}
-	agentName := AgentName(repo, strconv.Itoa(ref.N), taken)
+	agentName := send.AgentName(repo, j.suffix(), taken)
 	if res.Reused, err = d.workspace(ctx, checkout, ws, wsName); err != nil {
 		return Result{}, err
 	}
 	res.Workspace = ws
 
-	prompt := implement(ref, instruction) + "\n\n" + send.Closing(send.Item(it.ID), res.Path)
-	pane, err := d.agent(ctx, herdrWS.ID, ws, agentName, prompt)
+	prompt := j.prompt(instruction) + "\n\n" + send.Closing(send.Item(it.ID), res.Path)
+	pane, err := d.agent(ctx, harness, herdrWS.ID, ws, agentName, prompt)
 	if err != nil {
 		left := "workspace " + ws + " is left in place"
 		if pane != "" {
@@ -213,6 +311,28 @@ func (d Dispatcher) fresh(ctx context.Context, date string, ref note.Ref, it *no
 			pane, ws, it.ID, err)
 	}
 	return res, nil
+}
+
+// closePrevious closes the herdr tab of the worker a fresh dispatch of it started before, under
+// CloseTab's guards, and returns the tab it closed. A marker with no ws= records a session
+// send's pane, never closed. It refuses while that worker is working or blocked, and while its
+// tab stays for any other reason.
+func (d Dispatcher) closePrevious(ctx context.Context, it *note.Item) (string, error) {
+	prev := it.Dispatch
+	if prev == nil || prev.Pane == "" || prev.Workspace == "" {
+		return "", nil
+	}
+	h := d.herdr()
+	tab, err := CloseTab(ctx, h, h.AgentList, prev.Pane, prev.Workspace)
+	var kept *Kept
+	switch {
+	case errors.As(err, &kept) && kept.Running():
+		return "", fmt.Errorf("^%s: its worker is still running: %s in pane %s is %s; dispatch it again once it is idle or done",
+			it.ID, kept.Name, kept.Pane, kept.Status)
+	case err != nil:
+		return "", fmt.Errorf("^%s: not dispatched again: %w", it.ID, err)
+	}
+	return tab, nil
 }
 
 // record writes d on work item id and moves it to IN_PROGRESS, unless it is there already.

@@ -26,6 +26,11 @@ func wantDefaults() Config {
 	return Config{
 		Vault:    Vault{Dir: "worklog", Name: "worklog"},
 		Dispatch: Dispatch{WorkspaceRoot: "/home/u/.local/share/quartermaster/worklog/workspaces"},
+		Harness: map[string]Harness{
+			"claude": {Kind: "claude"},
+			"glm":    {Kind: "omp", Args: []string{"--model", "glm-5"}},
+		},
+		Tiers:    map[string]string{"default": "claude", "basic-implementation": "glm", "refactoring": "glm"},
 		Projects: Projects{Root: "/home/u/src/github.com", Repos: map[string]Project{}},
 	}
 }
@@ -41,9 +46,20 @@ name = "wl"
 [dispatch]
 workspace_root = "/ws"
 
-[harness.worker]
+[harness.opus]
+kind = "claude"
+args = ["--model", "opus"]
+
+[harness.kimi]
 kind = "omp"
-args = ["--model", "glm-5"]
+args = ["--model", "kimi"]
+
+[harness.spare]
+kind = "codex"
+
+[tiers]
+default = "opus"
+research = "kimi"
 
 [projects]
 root = "~/code"
@@ -73,7 +89,12 @@ workspace = "IaC"
 			want: func(c *Config) {
 				c.Vault = Vault{Repo: "/home/u/src/github.com/sigma/worklog", Dir: "notes", Name: "wl"}
 				c.Dispatch.WorkspaceRoot = "/ws"
-				c.Harness.Worker = Worker{Kind: "omp", Args: []string{"--model", "glm-5"}}
+				c.Harness = map[string]Harness{
+					"opus":  {Kind: "claude", Args: []string{"--model", "opus"}},
+					"kimi":  {Kind: "omp", Args: []string{"--model", "kimi"}},
+					"spare": {Kind: "codex"},
+				}
+				c.Tiers = map[string]string{"default": "opus", "research": "kimi"}
 				c.Projects = Projects{Root: "/home/u/code", Repos: map[string]Project{
 					"arbora-partners/trunk": {Path: "/home/u/src/github.com/arbora-partners/trunk", Workspace: "trunk"},
 					"arbora-partners/IaC":   {Path: "/abs/IaC", Workspace: "IaC"},
@@ -86,6 +107,27 @@ workspace = "IaC"
 			want: func(c *Config) {
 				c.Projects = Projects{Root: "/src", Repos: map[string]Project{"o/r": {Workspace: "w"}}}
 			},
+		},
+		{
+			name: "user harness and tiers tables replace the built-in ones whole",
+			defaultFile: "[harness.claude]\nkind = \"claude\"\nargs = [\"--fast\"]\n[harness.glm_5-x]\nkind = \"omp\"\n" +
+				"[tiers]\ndefault = \"claude\"\nbasic-implementation = \"glm_5-x\"\n",
+			want: func(c *Config) {
+				c.Harness = map[string]Harness{"claude": {Kind: "claude", Args: []string{"--fast"}}, "glm_5-x": {Kind: "omp"}}
+				c.Tiers = map[string]string{"default": "claude", "basic-implementation": "glm_5-x"}
+			},
+		},
+		{
+			name:        "a harness without args keeps none, not the built-in ones",
+			defaultFile: "[harness.claude]\nkind = \"claude\"\n[harness.glm]\nkind = \"omp\"\n",
+			want: func(c *Config) {
+				c.Harness = map[string]Harness{"claude": {Kind: "claude"}, "glm": {Kind: "omp"}}
+			},
+		},
+		{
+			name:        "a user tiers table replaces the built-in tiers whole",
+			defaultFile: "[tiers]\ndefault = \"glm\"\ndesign = \"claude\"\n",
+			want:        func(c *Config) { c.Tiers = map[string]string{"default": "glm", "design": "claude"} },
 		},
 		{
 			name:        "keys the user file omits keep their defaults",
@@ -280,6 +322,61 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{`"roots"`, "root or owner/repo"},
 		},
 		{
+			name: "harness.worker is gone",
+			file: "[harness.worker]\nkind = \"omp\"\n",
+			want: []string{"[harness.worker] is gone: name your harnesses and map tiers to them in [tiers]"},
+		},
+		{
+			name: "tiers without default",
+			file: "[tiers]\ndesign = \"claude\"\n",
+			want: []string{"[tiers]", "default"},
+		},
+		{
+			name: "a tier not in the skill's list",
+			file: "[tiers]\ndefault = \"claude\"\nlane = \"glm\"\n",
+			want: []string{`"lane"`, "default", "research", "basic-implementation", "security-review"},
+		},
+		{
+			name: "a tier naming an undefined harness",
+			file: "[tiers]\ndefault = \"claude\"\ndesign = \"gpt\"\n",
+			want: []string{"tiers.design", `"gpt"`, "not defined"},
+		},
+		{
+			name: "built-in tiers naming a harness the user's set dropped",
+			file: "[harness.claude]\nkind = \"claude\"\n",
+			want: []string{"tiers.basic-implementation", `"glm"`, "not defined"},
+		},
+		{
+			name: "two harnesses of one kind",
+			file: "[harness.claude]\nkind = \"claude\"\n[harness.glm]\nkind = \"omp\"\n[harness.kimi]\nkind = \"omp\"\n",
+			want: []string{`"glm"`, `"kimi"`, `"omp"`},
+		},
+		{
+			name: "a harness without a kind",
+			file: "[harness.claude]\nkind = \"claude\"\n[harness.glm]\nargs = [\"x\"]\n",
+			want: []string{"harness.glm.kind"},
+		},
+		{
+			name: "a harness name starting with a digit",
+			file: "[harness.1claude]\nkind = \"claude\"\n[tiers]\ndefault = \"1claude\"\n",
+			want: []string{`"1claude"`, "[a-z][a-z0-9_-]*"},
+		},
+		{
+			name: "a harness name with an upper-case letter",
+			file: "[harness.Claude]\nkind = \"claude\"\n[tiers]\ndefault = \"Claude\"\n",
+			want: []string{`"Claude"`, "[a-z][a-z0-9_-]*"},
+		},
+		{
+			name: "a harness name with a dot",
+			file: "[harness.\"c.l\"]\nkind = \"claude\"\n[tiers]\ndefault = \"c.l\"\n",
+			want: []string{`"c.l"`, "[a-z][a-z0-9_-]*"},
+		},
+		{
+			name: "unknown key in a harness",
+			file: "[harness.claude]\nkind = \"claude\"\nmodel = \"opus\"\n",
+			want: []string{"unknown key", "harness.claude.model"},
+		},
+		{
 			name:   "--vault ~ with no home directory",
 			file:   "[dispatch]\nworkspace_root = \"/ws\"\n",
 			noHome: true,
@@ -307,6 +404,28 @@ func TestLoadErrors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHarnessFor(t *testing.T) {
+	t.Parallel()
+	c := Config{
+		Harness: map[string]Harness{"claude": {Kind: "claude"}, "glm": {Kind: "omp", Args: []string{"--model", "glm-5"}}},
+		Tiers:   map[string]string{"default": "claude", "refactoring": "glm"},
+	}
+	for _, tc := range []struct {
+		tier, want string
+	}{
+		{"refactoring", "glm"},
+		{"design", "claude"},
+		{"", "claude"},
+	} {
+		if name, h := c.HarnessFor(tc.tier); name != tc.want || h.Kind != c.Harness[tc.want].Kind {
+			t.Errorf("%q: %q %+v, want %q", tc.tier, name, h, tc.want)
+		}
+	}
+	if name, h := (Config{}).HarnessFor("design"); name != "" || h.Kind != "" {
+		t.Errorf("no tiers: %q %+v", name, h)
 	}
 }
 

@@ -32,12 +32,19 @@ type RefreshOutput struct {
 // that write also ticks paired checkboxes and derives icons, as every write does, so a refresh
 // that proves nothing still settles the note.
 func (d Deps) refresh(ctx context.Context, in RefreshInput) (RefreshOutput, error) {
-	return d.refreshWith(ctx, in, refresh.Reconciler{
-		GH: refresh.Command("gh", d.GH, d.Env), Herdr: herdr.New(d.Herdr, d.Env),
-	})
+	return d.refreshWith(ctx, in, d.reconciler())
 }
 
-// refreshWith is refresh asking GitHub and herdr through rec, which tests stand fakes in.
+// reconciler asks GitHub, herdr, jj and git through the commands d resolved.
+func (d Deps) reconciler() refresh.Reconciler {
+	return refresh.Reconciler{
+		GH: refresh.Command("gh", d.GH, d.Env), Herdr: herdr.New(d.Herdr, d.Env),
+		JJ: refresh.Command("jj", d.JJ, d.Env), Git: refresh.Command("git", d.Git, d.Env),
+		Projects: d.Config.Projects,
+	}
+}
+
+// refreshWith is refresh asking GitHub, herdr, jj and git through rec, which tests stand fakes in.
 func (d Deps) refreshWith(ctx context.Context, in RefreshInput, rec refresh.Reconciler) (RefreshOutput, error) {
 	vault, err := d.vault()
 	if err != nil {
@@ -95,6 +102,14 @@ func headline(applied []refresh.Applied) string {
 		}
 		if a.Status != "" {
 			part += " " + a.Status
+		}
+		switch {
+		case a.Workspace != "":
+			part += " checkout removed"
+		case a.Tab != "":
+			part += " tab " + a.Tab + " closed"
+		case a.Pane != "":
+			part += " pane " + a.Pane + " dropped"
 		}
 		parts = append(parts, part)
 	}

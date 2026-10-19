@@ -21,6 +21,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
+	"github.com/firefly-engineering/quartermaster/internal/engine"
 	qmsend "github.com/firefly-engineering/quartermaster/internal/send"
 	"github.com/firefly-engineering/quartermaster/internal/server"
 	"github.com/firefly-engineering/quartermaster/internal/tools"
@@ -81,18 +82,25 @@ func run(args []string, stdout, stderr io.Writer, h host) int {
 		if len(args) != 4 {
 			return usage(stderr)
 		}
-		return send(args[1:], stdout, stderr, h.lookPath, h.environ)
+		return send(args[1:], stdout, stderr, h)
 	}
 	return usage(stderr)
 }
 
-// send runs the ▶ button handler (spec §9.1) with herdr found by lookPath and given env. A
-// herdr not found stays "", which Send reports only once the date and id are valid.
-func send(args []string, stdout, stderr io.Writer, lookPath func(string) (string, error), env []string) int {
-	herdr, _ := lookPath("herdr")
-	sent, err := qmsend.Sender{Herdr: herdr, Env: env}.Send(context.Background(), args[0], args[1], args[2])
+// send runs the ▶ button handler (spec §9.1) with the default configuration, and herdr and jj
+// found by h. A herdr not found stays "", which Send reports only once the date and id are
+// valid.
+func send(args []string, stdout, stderr io.Writer, h host) int {
+	cfg, err := config.Load(config.Options{Home: h.home, DefaultPath: defaultConfigPath(h.getenv, h.home)})
 	if err == nil {
-		_, err = fmt.Fprintln(stdout, sent)
+		d := deps(cfg, h)
+		e := &engine.Engine{Repo: cfg.Vault.Repo, Dir: cfg.Vault.Dir, JJ: d.JJ, Env: d.Env}
+		var sent qmsend.Sent
+		sent, err = qmsend.Sender{Config: cfg, Engine: e, Herdr: d.Herdr, Env: d.Env}.
+			Send(context.Background(), args[0], args[1], args[2])
+		if err == nil {
+			_, err = fmt.Fprintln(stdout, sent)
+		}
 	}
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "worklog send:", err)

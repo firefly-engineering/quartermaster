@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/firefly-engineering/quartermaster/internal/config"
+	"github.com/firefly-engineering/quartermaster/internal/engine"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 )
 
@@ -64,11 +66,13 @@ func writeHerdr(t *testing.T, path, script string) {
 }
 
 // listing is a herdr stand-in answering `workspace list` and `agent list` with spaces and
-// agents, and recording `agent prompt <pane> <text>` in sentFile.
+// agents, `tab create` with pane new:p1, and recording `agent prompt <pane> <text>` in sentFile.
 func listing(spaces, agents, sentFile string) string {
 	return `case "$1 $2" in
   "workspace list") echo '` + spaces + `' ;;
   "agent list") echo '` + agents + `' ;;
+  "tab create") echo '{"result":{"root_pane":{"pane_id":"new:p1"}}}' ;;
+  "agent start") ;;
   "agent prompt") printf '%s\n%s' "$3" "$4" > '` + sentFile + `' ;;
   *) echo "unexpected: $*" >&2; exit 3 ;;
 esac
@@ -85,7 +89,8 @@ func mustJSON(t *testing.T, v any) string {
 }
 
 // setup returns a vault holding the note and a Sender wired to a fake herdr: workspaces
-// trunk (wZ) and IaC (wX), one agent in each, trunk's with status.
+// trunk (wZ) and IaC (wX), the sessions of projects o/trunk and o/iac, with a claude agent in
+// each checkout, trunk's with status.
 func setup(t *testing.T, status string) (vault string, s Sender) {
 	t.Helper()
 	vault = t.TempDir()
@@ -93,13 +98,24 @@ func setup(t *testing.T, status string) (vault string, s Sender) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	s = Sender{Herdr: filepath.Join(bin, "herdr")}
+	s = Sender{
+		Config: config.Config{
+			Harness: map[string]config.Harness{"claude": {Kind: "claude"}, "glm": {Kind: "omp"}},
+			Tiers:   map[string]string{config.DefaultTier: "claude", "basic-implementation": "glm"},
+			Projects: config.Projects{Repos: map[string]config.Project{
+				"o/trunk": {Path: "/src/trunk", Workspace: "trunk"},
+				"o/iac":   {Path: "/src/iac", Workspace: "IaC"},
+			}},
+		},
+		Engine: &engine.Engine{Repo: vault},
+		Herdr:  filepath.Join(bin, "herdr"),
+	}
 	spaces := mustJSON(t, map[string]any{"result": map[string]any{"workspaces": []map[string]string{
 		{"workspace_id": "wZ", "label": "trunk"}, {"workspace_id": "wX", "label": "IaC"},
 	}}})
 	agents := mustJSON(t, map[string]any{"result": map[string]any{"agents": []map[string]string{
-		{"workspace_id": "wZ", "pane_id": "wZ:p6", "agent_status": status},
-		{"workspace_id": "wX", "pane_id": "wX:p9", "agent_status": "idle"},
+		{"agent": "claude", "workspace_id": "wZ", "pane_id": "wZ:p6", "cwd": "/src/trunk", "agent_status": status},
+		{"agent": "claude", "workspace_id": "wX", "pane_id": "wX:p9", "cwd": "/src/iac/sub", "agent_status": "idle"},
 	}}})
 	writeHerdr(t, s.Herdr, listing(spaces, agents, sentFile(s)))
 	return vault, s
@@ -137,8 +153,12 @@ func TestSendOneLinePrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (Sent{ID: "batch-c", To: "trunk", Pane: "wZ:p6", Path: filepath.Join(vault, "2026-10-16.md")}); got != want {
-		t.Fatalf("got %+v, want %+v", got, want)
+	if want := (Sent{ID: "batch-c", To: "trunk", Pane: "wZ:p6", Path: filepath.Join(vault, "2026-10-16.md")}); got.ID != want.ID ||
+		got.To != want.To || got.Pane != want.Pane || got.Path != want.Path || !got.Note.Changed {
+		t.Fatalf("got %+v, want %+v, recorded", got, want)
+	}
+	if b, err := os.ReadFile(got.Path); err != nil || !strings.Contains(string(b), "_item=batch-c) <!-- qm pane=wZ:p6 --> ^batch-c") {
+		t.Fatalf("the note does not record the pane: %v\n%s", err, b)
 	}
 	if got.String() != "sent batch-c to trunk (wZ:p6)" {
 		t.Fatalf("message %q", got.String())
@@ -165,35 +185,43 @@ func TestSendItemWithInstruction(t *testing.T) {
 	}
 }
 
-// TestDeliver sends a given text to a workspace's agent, closed with the worklog line about
-// what it names, through the same checks as Send.
+// TestDeliver sends a given text to a session's agent, closed with the worklog line about
+// the ref it names, through the same checks as Send, and records no pane for a ref with no item.
 func TestDeliver(t *testing.T) {
 	t.Parallel()
-	_, s := setup(t, "idle")
-	got, err := s.Deliver(context.Background(), Workspace{ID: "wX", Label: "IaC"}, "/implement https://github.com/o/r/issues/3", "o/r#3", "/v/2026-10-16.md")
+	vault, s := setup(t, "idle")
+	p := Prompt{To: Workspace{ID: "wX", Label: "IaC"}, Repo: "o/iac", Checkout: "/src/iac", Text: "/implement https://github.com/o/r/issues/3",
+		Date: "2026-10-16", Ref: "o/r#3"}
+	got, err := s.Deliver(context.Background(), p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (Sent{ID: "o/r#3", To: "IaC", Pane: "wX:p9", Path: "/v/2026-10-16.md"}); got != want {
+	path := filepath.Join(vault, "2026-10-16.md")
+	if want := (Sent{ID: "o/r#3", To: "IaC", Pane: "wX:p9", Path: path}); got.ID != want.ID || got.To != want.To ||
+		got.Pane != want.Pane || got.Path != want.Path || got.Note.Changed {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	want := "wX:p9\n/implement https://github.com/o/r/issues/3\n\nWhen this is done, update the worklog with the worklog skill: " +
-		"o/r#3 in /v/2026-10-16.md. Record the outcome and refresh Next."
+		"o/r#3 in " + path + ". Record the outcome and refresh Next."
 	if out := sent(t, s); out != want {
 		t.Fatalf("sent %q", out)
 	}
 	_, s = setup(t, "blocked")
-	if _, err := s.Deliver(context.Background(), Workspace{ID: "wZ", Label: "trunk"}, "go", "o/r#3", "/v/n.md"); err == nil || !strings.Contains(err.Error(), "blocked") {
-		t.Fatalf("a blocked agent: %v", err)
+	p.To, p.Repo, p.Checkout = Workspace{ID: "wZ", Label: "trunk"}, "o/trunk", "/src/trunk"
+	if got, err := s.Deliver(context.Background(), p); err != nil || got.Pane != "new:p1" {
+		t.Fatalf("a blocked agent: %+v, %v, want a spawn's pane", got, err)
 	}
-	for _, bad := range [][2]string{{"", "go"}, {"wZ", " "}} {
-		if _, err := s.Deliver(context.Background(), Workspace{ID: bad[0], Label: "trunk"}, bad[1], "o/r#3", "/v/n.md"); err == nil {
-			t.Errorf("%q: no error", bad)
+	_, s = setup(t, "idle")
+	for _, bad := range []Prompt{{To: Workspace{Label: "trunk"}, Repo: p.Repo, Text: "go"}, {To: p.To, Repo: p.Repo, Text: " "},
+		{To: p.To, Text: "go"}, {To: p.To, Repo: p.Repo, Text: "go", Date: "2026-10-16"}} {
+		if _, err := s.Deliver(context.Background(), bad); err == nil {
+			t.Errorf("%+v: no error", bad)
 		}
 	}
 	assertNothingSent(t, s)
 }
 
+// TestSendKeepsRelativeIndent also finds the agent under its checkout, in a subdirectory.
 func TestSendKeepsRelativeIndent(t *testing.T) {
 	t.Parallel()
 	vault, s := setup(t, "idle")
@@ -205,14 +233,21 @@ func TestSendKeepsRelativeIndent(t *testing.T) {
 	}
 }
 
-func TestSendSendableStatuses(t *testing.T) {
+// TestSendAvailableStatuses sends only to an idle or done agent: a working one would queue the
+// prompt, and a blocked one could take it as an answer, so a new agent gets it instead.
+func TestSendAvailableStatuses(t *testing.T) {
 	t.Parallel()
-	for _, status := range []string{"idle", "done", "working"} {
-		t.Run(status, func(t *testing.T) {
+	for _, c := range []struct {
+		status, pane string
+	}{{"idle", "wZ:p6"}, {"done", "wZ:p6"}, {"working", "new:p1"}, {"blocked", "new:p1"}, {"unknown", "new:p1"}} {
+		t.Run(c.status, func(t *testing.T) {
 			t.Parallel()
-			vault, s := setup(t, status)
+			vault, s := setup(t, c.status)
 			if _, err := s.Send(context.Background(), vault, "2026-10-16", "batch-c"); err != nil {
 				t.Fatal(err)
+			}
+			if out := sent(t, s); !strings.HasPrefix(out, c.pane+"\n") {
+				t.Fatalf("sent %q, want to %s", out, c.pane)
 			}
 		})
 	}
@@ -221,23 +256,21 @@ func TestSendSendableStatuses(t *testing.T) {
 func TestSendRefuses(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name, date, id, status, want string
+		name, date, id, want string
 	}{
-		{"an id with shell syntax", "2026-10-16", "x;rm", "idle", "not an item id"},
-		{"an uppercase id", "2026-10-16", "Batch-c", "idle", "not an item id"},
-		{"an empty id", "2026-10-16", "", "idle", "not an item id"},
-		{"a path for a date", "../etc", "batch-c", "idle", "not a date"},
-		{"an impossible date", "2026-02-30", "batch-c", "idle", "not a date"},
-		{"a date with no note", "2026-10-17", "batch-c", "idle", "no note"},
-		{"an id with no item", "2026-10-16", "missing", "idle", "no herdr-prompt block"},
-		{"an item with no prompt", "2026-10-16", "bare", "idle", "no herdr-prompt block"},
-		{"a blocked agent", "2026-10-16", "batch-c", "blocked", "trunk agent is blocked; answer it first"},
-		{"an unknown status", "2026-10-16", "batch-c", "starting", "trunk agent is starting"},
+		{"an id with shell syntax", "2026-10-16", "x;rm", "not an item id"},
+		{"an uppercase id", "2026-10-16", "Batch-c", "not an item id"},
+		{"an empty id", "2026-10-16", "", "not an item id"},
+		{"a path for a date", "../etc", "batch-c", "not a date"},
+		{"an impossible date", "2026-02-30", "batch-c", "not a date"},
+		{"a date with no note", "2026-10-17", "batch-c", "no note"},
+		{"an id with no item", "2026-10-16", "missing", "no herdr-prompt block"},
+		{"an item with no prompt", "2026-10-16", "bare", "no herdr-prompt block"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			vault, s := setup(t, tt.status)
+			vault, s := setup(t, "idle")
 			_, err := s.Send(context.Background(), vault, tt.date, tt.id)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err %v, want it to mention %q", err, tt.want)
@@ -245,29 +278,33 @@ func TestSendRefuses(t *testing.T) {
 			assertNothingSent(t, s)
 		})
 	}
+	vault, s := setup(t, "idle")
+	if _, err := s.Send(context.Background(), t.TempDir(), "2026-10-16", "batch-c"); err == nil || !strings.Contains(err.Error(), "not the configured one") {
+		t.Errorf("another vault: %v", err)
+	}
+	s.Config.Projects.Repos = nil
+	if _, err := s.Send(context.Background(), vault, "2026-10-16", "batch-c"); err == nil ||
+		err.Error() != `no project's session is in herdr workspace "trunk": set projects."<owner>/<repo>".workspace = "trunk"` {
+		t.Errorf("no project: %v", err)
+	}
+	assertNothingSent(t, s)
 }
 
-// A label must name exactly one workspace, and that workspace exactly one agent.
+// A label must name exactly one workspace.
 func TestSendRefusesAmbiguity(t *testing.T) {
 	t.Parallel()
-	const one = `{"result":{"workspaces":[{"workspace_id":"a","label":"trunk"}]}}`
 	tests := []struct {
-		name, spaces, agents, want string
+		name, spaces, want string
 	}{
-		{"no workspace", `{"result":{"workspaces":[]}}`, `{"result":{"agents":[]}}`,
-			`0 herdr workspaces labelled "trunk"`},
+		{"no workspace", `{"result":{"workspaces":[]}}`, `0 herdr workspaces labelled "trunk"`},
 		{"two workspaces", `{"result":{"workspaces":[{"workspace_id":"a","label":"trunk"},{"workspace_id":"b","label":"trunk"}]}}`,
-			`{"result":{"agents":[]}}`, `2 herdr workspaces labelled "trunk"`},
-		{"no agent", one, `{"result":{"agents":[{"workspace_id":"b","pane_id":"b:1","agent_status":"idle"}]}}`,
-			`0 agents in workspace "trunk"; expected one`},
-		{"two agents", one, `{"result":{"agents":[{"workspace_id":"a","pane_id":"a:1","agent_status":"idle"},{"workspace_id":"a","pane_id":"a:2","agent_status":"idle"}]}}`,
-			`2 agents in workspace "trunk"; expected one`},
+			`2 herdr workspaces labelled "trunk"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			vault, s := setup(t, "idle")
-			writeHerdr(t, s.Herdr, listing(tt.spaces, tt.agents, sentFile(s)))
+			writeHerdr(t, s.Herdr, listing(tt.spaces, `{"result":{"agents":[]}}`, sentFile(s)))
 			_, err := s.Send(context.Background(), vault, "2026-10-16", "batch-c")
 			if err == nil || err.Error() != tt.want {
 				t.Fatalf("err %v, want %q", err, tt.want)
@@ -320,6 +357,28 @@ func TestDedent(t *testing.T) {
 	for _, tt := range tests {
 		if got := dedent(tt.in); got != tt.want {
 			t.Errorf("dedent(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestWithin(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		root, dir string
+		want      bool
+	}{
+		{"/a/b", "/a/b", true},
+		{"/a/b", "/a/b/", true},
+		{"/a/b/", "/a/b/c/d", true},
+		{"/a/b", "/a/bc", false},
+		{"/a/b", "/a", false},
+		{"/a/b", "/a/b/../c", false},
+		{"/a/b", "a/b", false},
+		{"/a/b", "", false},
+		{"/", "/x", true},
+	} {
+		if got := Within(c.root, c.dir); got != c.want {
+			t.Errorf("Within(%q, %q) = %v, want %v", c.root, c.dir, got, c.want)
 		}
 	}
 }

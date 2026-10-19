@@ -201,7 +201,7 @@ type Item struct {
 	ID       string
 	Icon     Icon
 	Title    string // the source after the icon, its lines joined by one space, without the `^<id>` or a list item's dispatch marker
-	Bare     string // its title as item_upsert takes it: Title without its ref link, cost, route, sent status and summary
+	Bare     string // its title as item_upsert takes it: Title without its ref link, cost, route, tier, sent status and summary
 	Heading  bool
 	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
 	Prompt   *Prompt
@@ -210,17 +210,18 @@ type Item struct {
 	Ref      string    // the issue or PR its title's leading link names, as owner/repo#N; "" without one
 	Cost     string    // what it costs the user, as `20 min`; "" without one
 	Route    string    // the next skill that moves it, as `/implement`; "" without one
+	Tier     string    // the class of its work, which routes its prompts (ADR 0011), as `design`; "" without one
 
 	idAt   int    // the offset of the `^` of its `^<id>`
 	marker Span   // its dispatch marker's own bytes, when it has one
-	lead   string // its title as written before its cost, route, sent status and summary
+	lead   string // its title as written before its cost, route, tier, sent status and summary
 }
 
 // Prompt is a work item's `> [!prompt]-` callout and the `herdr-prompt` block inside it.
 type Prompt struct {
 	Span        // the whole callout
 	ID   string // the block's id=, always its work item's id
-	To   string // the block's to=: a herdr workspace label
+	To   string // the block's to=: a project's owner/repo, or a herdr workspace label
 	Body string // the block's content, without the callout's `>` markers
 }
 

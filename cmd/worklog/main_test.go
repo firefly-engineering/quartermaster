@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -55,22 +56,39 @@ func TestSendUsage(t *testing.T) {
 
 func TestSendNoHerdr(t *testing.T) {
 	t.Parallel()
+	h := testHost(t)
+	repo := t.TempDir()
+	vault := filepath.Join(repo, "worklog")
+	cfg := filepath.Join(h.home, ".config", "quartermaster", "worklog.toml")
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, []byte("[vault]\nrepo = "+strconv.Quote(repo)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var out, errb bytes.Buffer
-	lookPath := func(string) (string, error) { return "", errors.New("not found") }
 	// The inputs are validated before herdr is needed.
-	code := send([]string{t.TempDir(), "2026-10-16", "x;rm"}, &out, &errb, lookPath, nil)
+	code := send([]string{vault, "2026-10-16", "x;rm"}, &out, &errb, h)
 	if code != 1 || errb.String() != "worklog send: not an item id: \"x;rm\"\n" {
 		t.Fatalf("code %d, stderr %q", code, errb.String())
 	}
-	vault := t.TempDir()
 	note := "# Worklog — 2026-10-16\n\n## ⬜ o/r\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n" +
 		"##### ⬜ Go\n\nGo. ^a\n\n> [!prompt]- Prompt\n> ```herdr-prompt id=a to=t\n> go\n> ```\n"
+	if err := os.MkdirAll(vault, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(vault, "2026-10-16.md"), []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	errb.Reset()
-	code = send([]string{vault, "2026-10-16", "a"}, &out, &errb, lookPath, nil)
+	code = send([]string{vault, "2026-10-16", "a"}, &out, &errb, h)
 	if code != 1 || errb.String() != "worklog send: herdr not found on PATH\n" {
+		t.Fatalf("code %d, stderr %q", code, errb.String())
+	}
+	// The vault the button names must be the configured one, where the send records its pane.
+	errb.Reset()
+	code = send([]string{t.TempDir(), "2026-10-16", "a"}, &out, &errb, h)
+	if code != 1 || !strings.Contains(errb.String(), "is not the configured one") {
 		t.Fatalf("code %d, stderr %q", code, errb.String())
 	}
 }

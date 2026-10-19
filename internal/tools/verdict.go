@@ -93,9 +93,10 @@ func (d Deps) carryOverVerdict(ctx context.Context, in CarryOverVerdictInput) (C
 }
 
 // oldItem fills f, keep's fields with no title, from the work item row links in the note it
-// came from, `[[<prev>#^<id>|^<id>]]`: its title without its ref link, cost, route, sent status
-// and summary, and its ref, cost and route unless f gives them. A row with no work item behind
-// it, as an objective, a manual action or a Process entry, gives its own text as the title.
+// came from, `[[<prev>#^<id>|^<id>]]`: its title without its ref link, cost, route, tier, sent
+// status and summary, and its ref, cost, route and tier unless f gives them. A row with no work
+// item behind it, as an objective, a manual action or a Process entry, gives its own text as the
+// title.
 func (d Deps) oldItem(row note.CarryOverRow, f ItemFields) (ItemFields, error) {
 	f.Title = row.Item
 	if row.Ref == "" || !note.IsDate(row.RefNote) {
@@ -122,5 +123,6 @@ func (d Deps) oldItem(row note.CarryOverRow, f ItemFields) (ItemFields, error) {
 	}
 	f.Title = it.Bare
 	f.Ref, f.Cost, f.Route = kept(f.Ref, it.Ref, false), kept(f.Cost, it.Cost, false), kept(f.Route, it.Route, false)
+	f.Tier = kept(f.Tier, it.Tier, false)
 	return f, nil
 }

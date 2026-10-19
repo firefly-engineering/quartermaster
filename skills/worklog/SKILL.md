@@ -31,7 +31,7 @@ Without it, stop and say so: never edit the note by hand instead.
 | `day_open` | create today's note, with the previous note's open items as carry-over rows |
 | `day_read` | read a note: status, objectives, *Next*, items by project and bucket, states, parse errors |
 | `objective_set` | add, refine, progress or settle an objective |
-| `item_upsert` | create or rewrite a work item: title, ref, cost, route, body, prompt and button label, and in *Sent to other repos* its `sent` status; a rewrite keeps a ref, cost or route left out, and `null` clears one |
+| `item_upsert` | create or rewrite a work item: title, ref, cost, route, tier, body, prompt and button label, and in *Sent to other repos* its `sent` status; a rewrite keeps a ref, cost, route or tier left out, and `null` clears one |
 | `item_transition` | move a work item to a new state with a summary, or to its own state to rewrite only the summary, or tick a manual action; with `part`, file a done or dropped item into that Part, by a move there or to its own state |
 | `part_write` | create or rewrite one Part whole: number, kind, title, icon and body |
 | `action_upsert` | create, reword or move a manual action: a checkbox with an id |
@@ -40,8 +40,8 @@ Without it, stop and say so: never edit the note by hand instead.
 | `status_set` | rewrite the status line |
 | `carryover_verdict` | record keep, defer or drop on a carry-over row |
 | `refresh` | reconcile the note with GitHub and herdr |
-| `prompt_send` | send a work item's prompt to its herdr session; leaves the note alone |
-| `task_dispatch` | start work on a ref, in its project's session or in a fresh agent |
+| `prompt_send` | send a work item's prompt to an available agent of its tier's harness in its herdr session; records the pane on the item and leaves its state |
+| `task_dispatch` | start work on a ref or a work item, in its project's session or in a fresh agent |
 
 `prompt_send` is the tool form of the ▶ button's `worklog send`: see
 [Buttons](#buttons). The server lists each tool's input schema. Every tool but `day_open`
@@ -165,9 +165,9 @@ A human session that turns open questions into agent-ready work.
 1. Build the **decision list**: every HITL item in scope (`ready-for-human`,
    `needs-triage`, `needs-info`, open questions in tickets). Order it by what each
    decision unblocks. Write each with `item_upsert` in *Decisions for you*: a one-line
-   question, a rough cost, and its [route](#routes). One that goes through a button gets
-   a prompt. Open the session's *Part N — Human session* with `part_write`, 🔄, at the
-   project's next free N.
+   question, a rough cost, its [route](#routes) and its [tier](#tiers). One that goes
+   through a button gets a prompt. Open the session's *Part N — Human session* with
+   `part_write`, 🔄, at the project's next free N.
 2. Work through the list with the user, one decision at a time. A quick one is settled
    inline; a larger one goes to its route's skill, through a button. Record each decision
    where it belongs: a ticket comment, an ADR or spec PR, or a relabel to
@@ -179,21 +179,25 @@ A human session that turns open questions into agent-ready work.
    now `ready-for-agent`, move it into *Agent queue* with `item_upsert` instead.
 3. Close the Part with `part_write`, ✅: one line and a link per decision, the filed
    lines included (`day_read` returns its `body`). Rebuild the
-   **Agent queue** with `item_upsert`: the `ready-for-agent` tickets, their dependency
-   order, and the batch as one work item whose prompt carries the batch's global context.
+   **Agent queue** with `item_upsert`: the `ready-for-agent` tickets, each with its tier,
+   their dependency order, and for several tickets the **batch** as one work item whose
+   prompt carries its global context.
 
 Done when every decision taken is recorded outside the note, and *Next* leads with the
-batch's ▶ button.
+agent work's ▶ button.
 
 ### AFK
 
-A batch runs through `/implement` for one ticket, or `/mass-implement` for several.
-Both are user-invoked, so the batch starts from the ▶ button in *Next*, which sends the
-command to the project's session. For example:
+Agent work runs through `/implement` for one ticket, or through `/mass-implement` for
+several, as a **batch**. Both are user-invoked, so the work starts from the ▶ button in
+*Next*, which sends the command to the project's session. For example:
 `/mass-implement arbora-partners/trunk #883 #871 — global context: <epic URL>`. When the
 user asks you to start it, send it yourself (see [Buttons](#buttons)). For one ticket,
-`task_dispatch` also works: mode `session` sends its prompt to the project's session, and
-mode `fresh` gives it its own workspace and agent, and moves it to `IN_PROGRESS`.
+`task_dispatch` also works, and for a batch, given its item id as `item`: pass it the
+item's tier's default mode from [Tiers](#tiers). Mode `session` sends its prompt to the project's session, and mode
+`fresh` gives it its own workspace and agent, and moves it to `IN_PROGRESS`. An item whose
+tier defaults to `fresh` keeps its ▶ button: the button runs it in the session, which the
+user may choose.
 
 A batch takes every ticket it can reach, not only the ones unblocked today: each
 `ready-for-agent` ticket whose blockers are all merged or in the same batch.
@@ -201,7 +205,7 @@ A batch takes every ticket it can reach, not only the ones unblocked today: each
 it instead of waiting for the next one. Leave a ticket out only when it also waits on a
 human decision, another repo or a date.
 
-Move each ticket in the batch to `IN_PROGRESS`, and record a *Part N — Agent batch* with
+Move each ticket of the run to `IN_PROGRESS`, and record a *Part N — Agent batch* with
 `part_write`, 🔄, its title marked **running**. When it reports back, rewrite the Part with
 `part_write` as a table with one row per ticket: PR, then outcome (`built`, **part only**,
 or back to HITL with the reason), and its icon 🔍 while the PRs wait on review. Then:
@@ -209,6 +213,8 @@ or back to HITL with the reason), and its icon 🔍 while the PRs wait on review
 - Move each built ticket to `IN_REVIEW`, its PR as the summary.
 - Move each ticket that went back to HITL into *Decisions for you* with `item_upsert`,
   and to `WAITING` with the question it blocks on.
+- A worker that stopped on its own item, `WAITING` with `question:` or `stuck:`, follows
+  [Escalation](#escalation).
 - Write each new ticket into its bucket.
 - List each review finding left as a judgement call in the Part's body.
 
@@ -270,7 +276,7 @@ that skill's command. Write it as the item's `route`.
 | Shape | Route |
 |---|---|
 | Fog: a new idea or requirement too big for one session | `/wayfinder`. Its decision tickets join the decision list, and the objective links the map |
-| One plan or design to stress-test | `/grill-with-docs` when the outcome should land as an ADR or glossary term, otherwise `/grill-me` |
+| One plan or design to stress-test | `/grill-with-docs` when the outcome should land as an ADR or glossary term, otherwise `/grilling` |
 | A raw or under-specified ticket | `/triage` |
 | A settled discussion with no tickets yet | `/to-spec`, then `/to-tickets` |
 | A question only someone outside the session can answer | `/to-questionnaire`, then *Outside input: chase* |
@@ -280,16 +286,86 @@ that skill's command. Write it as the item's `route`.
 | Work another repo owns | [Other repos](#other-repos) |
 
 A route changes as the item moves. A grilled ticket becomes `ready-for-agent`. An
-implemented one goes back to `/grill-me` when the batch finds a gap.
+implemented one goes back to `/grilling` when its run finds a gap.
+
+## Tiers
+
+Every open item with a route also carries a **tier**: the class of its work, which picks
+the harness that runs its prompts
+([ADR 0011](https://github.com/firefly-engineering/quartermaster/blob/main/docs/adr/0011-a-work-items-tier-routes-it-to-a-harness.md)).
+The developer's config maps each tier to a harness; the note never names one. Write it as
+the item's `tier`, from this table only.
+
+| Tier | Means | Default mode | Default for |
+|---|---|---|---|
+| `research` | gather facts from primary sources and write them up | `session` | `/research` |
+| `architecture` | shape modules, seams and interfaces across a system | `session` | — |
+| `design` | settle a decision, a plan or a ticket's shape with the user | `session` | `/grill-with-docs`, `/grilling`, `/triage` |
+| `complex-implementation` | implement a ticket that leaves a call open or spans modules | `fresh` | — |
+| `basic-implementation` | implement a well-specified ticket within one module | `fresh` | `/implement` |
+| `refactoring` | restructure code without changing what it does | `fresh` | — |
+| `troubleshooting` | find the cause of a bug or a regression | `session` | `/diagnose` |
+| `quality-review` | review a change for correctness and the repo's standards | `session` | `/code-review` |
+| `security-review` | review a change for security holes | `session` | `/security-review` |
+
+Give an item its route's default tier. Raise an `/implement` item to
+`complex-implementation` when its ticket leaves a call open or spans modules. A route the
+table does not list gets the tier that best fits its work. A batch takes any one of its
+tickets' tiers. When the user overrides a tier, by asking or by editing the note, keep
+theirs.
+
+The default mode is what to pass `task_dispatch` as `mode`. The tier and the mode are
+independent: the tier picks who does the work, the mode where it happens.
+
+## Escalation
+
+A worker is an agent a prompt started on a work item: its prompt ends with the closing line
+naming the item. A worker that can't finish moves its item to `WAITING` with
+`item_transition`, and its summary says why, in one of two forms:
+
+- `question: <the question>` when only a human can answer it: a decision, an access or a
+  fact the ticket does not give.
+- `stuck: <what it tried, and where it stopped>` when the work is beyond it.
+
+A `worker exited` summary is `refresh`'s, not the worker's: it only knows the agent is gone.
+Read what the worker left before you treat it as either.
+
+When you read a worker's report, act on it once:
+
+- `question:` goes to *Decisions for you* with `item_upsert`, the question as its title.
+  Its tier stays: a missing decision is not a capability gap.
+- `stuck:` from a tier the developer's config does not route to claude, by default
+  `basic-implementation` or `refactoring` (`[tiers]` in `worklog.toml`), is **escalated**:
+  1. `item_upsert` raises its tier to `complex-implementation`, and gives it a prompt to
+     the session agent that dispatches it fresh again: call `task_dispatch` with its ref (a
+     batch's item id as `item`), mode `fresh`, and as `instruction` the note on the reused checkout, "A
+     `basic-implementation` worker stopped here: <reason>. Its work is in `<ws>`; continue
+     from it." The marker's `ws=` is the checkout. The prompt also says to leave the item
+     to its new worker: `task_dispatch` moves it to `IN_PROGRESS`, and the session must not
+     mark it done. The button label names the run, as `re-dispatch in trunk`.
+  2. `item_transition` keeps it `WAITING`, the old tier and the reason as its summary:
+     `escalated from basic-implementation; stuck: <reason>`.
+  3. `next_set` puts it in *Next*, with its ▶ button.
+
+  The user starts it: nothing re-dispatches on its own. Asked to dispatch it, call
+  `task_dispatch` as that prompt says. It reuses the checkout, closes the last worker's
+  tab first, and refuses ("its worker is still running") while that worker is `working`
+  or `blocked`.
+- `stuck:` at a claude tier, `complex-implementation` included, goes to the user: to
+  *Decisions for you* with `item_upsert`, its route `/grill-with-docs` when the answer
+  should land as an ADR or glossary term, otherwise `/triage`.
+
+An item escalates once. Its next `stuck:` is at `complex-implementation`, a claude tier, so
+it goes to the user; escalation never loops.
 
 ## Buttons
 
 A ▶ button runs `worklog send`, which types a work item's prompt into a herdr
-session: the user's agent for a project, in the herdr workspace labelled with the
-project's name (`trunk`, `IaC`). Nothing is pasted by hand.
+session: the user's agent for a project, in the project's herdr workspace. Nothing is
+pasted by hand.
 
-Give a work item a prompt with `item_upsert`: `prompt.to` is the workspace label,
-`prompt.text` the prompt, and `button` the label. The server renders the item, its
+Give a work item a prompt with `item_upsert`: `prompt.to` is the project the prompt goes
+to, as `owner/repo` (`arbora-partners/trunk`), `prompt.text` the prompt, and `button` the label. The server renders the item, its
 button and its prompt block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
 `next_set` repeats the button on the item's line in *Next*.
@@ -317,10 +393,12 @@ The judgement stays here:
 When the note shows prompts but no buttons, the vault lacks the Shell commands setup.
 Point the user at [`buttons-setup.md`](buttons-setup.md) once.
 
-To send a prompt yourself, call `prompt_send` with the item's id. It does not touch the
-note: record the send yourself. It fails if herdr is not found, if the workspace is missing
-or has no single agent, or if that agent is `blocked` on an approval; leave the item as it
-was and say why.
+To send a prompt yourself, call `prompt_send` with the item's id. It records the pane it
+sent to on the item, unless the item was dispatched `fresh` (its marker keeps that worker),
+and nothing else: record the send yourself. When no agent of the item's harness there is
+`idle` or `done`, it starts one in a new tab, and when the project has no herdr workspace,
+it opens one at the project's checkout. It fails if herdr is not found or the checkout is
+missing; leave the item as it was and say why.
 
 ## Other repos
 
@@ -330,8 +408,8 @@ own session over herdr. It is tracked in the **originating** project's *Sent to 
 repos* bucket, because that project is waiting on it.
 
 1. Write the work item with `item_upsert` under *Sent to other repos*, with `sent: to send`
-   and a prompt to the other repo's workspace label. The server writes
-   `→ <workspace label>, **to send**` after its title. The prompt says what
+   and a prompt to the other repo's `owner/repo`. The server writes
+   `→ <owner/repo>, **to send**` after its title. The prompt says what
    is needed and why, links the ticket it unblocks, says how the result is verified, and
    asks for a reply with links (issue, PR, run). Give it no `ref` yet: `refresh` closes
    an item when its ref closes, and the ticket it unblocks is not that event. Once the

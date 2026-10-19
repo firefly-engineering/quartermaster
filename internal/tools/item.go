@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/skills"
 )
 
 // ItemFields are a work item as item_upsert writes it, and as carryover_verdict's keep does.
@@ -22,6 +23,7 @@ type ItemFields struct {
 	Ref    *string      `json:"ref,omitempty" jsonschema:"the issue or PR it is about, owner/repo#N, or #N in its project; rendered as a full link. On update unchanged when absent; null clears it"`
 	Cost   *string      `json:"cost,omitempty" jsonschema:"what it costs the user, as: 20 min. On update unchanged when absent; null clears it"`
 	Route  *string      `json:"route,omitempty" jsonschema:"the next skill that moves it, as: /implement. On update unchanged when absent; null clears it"`
+	Tier   *string      `json:"tier,omitempty" jsonschema:"the class of its work, from the worklog skill's tier table, as: design; picks the harness its prompts go to. On update unchanged when absent; null clears it"`
 	Body   string       `json:"body,omitempty" jsonschema:"prose under its heading, with no blank line; makes it a ##### item"`
 	Prompt *PromptInput `json:"prompt,omitempty" jsonschema:"the prompt its ▶ button sends; makes it a ##### item. An item_upsert update of an item with a prompt refuses an absent one; null drops its prompt and its ▶ buttons, in its bucket and on Next, and it stays a ##### item only with a body"`
 	Button string       `json:"button,omitempty" jsonschema:"the ▶ label, as: grill in trunk; with a prompt, send to <to> when absent"`
@@ -29,20 +31,21 @@ type ItemFields struct {
 	SentTo string       `json:"sent_to,omitempty" jsonschema:"the herdr workspace label its ask goes to, written after the →; unchanged when absent, else the prompt's to"`
 
 	// null holds the fields given as an explicit JSON null, which decodes as an absent one does.
-	// An update drops a null prompt and its buttons, and clears a null ref, cost or route.
-	null struct{ prompt, ref, cost, route bool }
+	// An update drops a null prompt and its buttons, and clears a null ref, cost, route or tier.
+	null struct{ prompt, ref, cost, route, tier bool }
 }
 
 // PromptInput is a work item's herdr-prompt block.
 type PromptInput struct {
-	To   string `json:"to" jsonschema:"the herdr workspace label of the session it goes to"`
+	To   string `json:"to" jsonschema:"the project whose session it goes to, owner/repo, whose herdr workspace is opened if need be; or a herdr workspace label, only looked up"`
 	Text string `json:"text" jsonschema:"the self-contained prompt"`
 }
 
 // ItemUpsertInput is item_upsert's input. An update rewrites the item from these fields; its
 // state, summary and place, unless repo or bucket move it, stay as they are, and so do its ref,
-// cost and route when absent or "". It refuses to drop a ##### item's body and prompt by leaving
-// them out; an explicit null prompt drops the prompt, and a null ref, cost or route clears it.
+// cost, route and tier when absent or "". It refuses to drop a ##### item's body and prompt by
+// leaving them out; an explicit null prompt drops the prompt, and a null ref, cost, route or tier
+// clears it.
 type ItemUpsertInput struct {
 	Date string `json:"date,omitempty" jsonschema:"the note's date, YYYY-MM-DD; today (UTC) when absent"`
 	ItemFields
@@ -50,7 +53,7 @@ type ItemUpsertInput struct {
 }
 
 // UnmarshalJSON decodes in, refusing unknown fields, and tells an explicit null prompt, ref,
-// cost or route from an absent one, which decode alike into a nil pointer.
+// cost, route or tier from an absent one, which decode alike into a nil pointer.
 func (in *ItemUpsertInput) UnmarshalJSON(b []byte) error {
 	type plain ItemUpsertInput // in's fields, without this method
 	dec := json.NewDecoder(bytes.NewReader(b))
@@ -59,14 +62,14 @@ func (in *ItemUpsertInput) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	var raw struct {
-		Prompt, Ref, Cost, Route json.RawMessage
+		Prompt, Ref, Cost, Route, Tier json.RawMessage
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
 	isNull := func(m json.RawMessage) bool { return string(m) == "null" }
 	in.null.prompt, in.null.ref = isNull(raw.Prompt), isNull(raw.Ref)
-	in.null.cost, in.null.route = isNull(raw.Cost), isNull(raw.Route)
+	in.null.cost, in.null.route, in.null.tier = isNull(raw.Cost), isNull(raw.Route), isNull(raw.Tier)
 	return nil
 }
 
@@ -166,7 +169,16 @@ func itemOutput(n *note.Note, id string) ItemOutput {
 func unit(f ItemFields, repo string, icon note.Icon, summary string) (note.ItemUnit, error) {
 	u := note.ItemUnit{
 		ID: f.ID, Icon: icon, Title: strings.TrimSpace(f.Title), Repo: repo, Cost: value(f.Cost), Route: value(f.Route),
-		Summary: summary, Body: f.Body, Heading: f.Body != "" || f.Prompt != nil,
+		Tier: value(f.Tier), Summary: summary, Body: f.Body, Heading: f.Body != "" || f.Prompt != nil,
+	}
+	if u.Tier != "" {
+		tiers, err := skills.Tiers()
+		if err != nil {
+			return note.ItemUnit{}, err
+		}
+		if !slices.Contains(tiers, u.Tier) {
+			return note.ItemUnit{}, fmt.Errorf("^%s: unknown tier %q: want one of %s", f.ID, u.Tier, strings.Join(tiers, ", "))
+		}
 	}
 	if s := value(f.Ref); s != "" {
 		ref, err := note.ParseRef(s, repo)
@@ -262,9 +274,10 @@ func updateItem(n *note.Note, src []byte, r note.Renderer, it *note.Item, f Item
 	if f.Bucket == "" {
 		f.Bucket = b.Name
 	}
-	// Its ref, cost and route stay when absent, as its repo and bucket do; a null clears one.
+	// Its ref, cost, route and tier stay when absent, as its repo and bucket do; a null clears one.
 	f.Ref, f.Cost, f.Route = kept(f.Ref, it.Ref, f.null.ref), kept(f.Cost, it.Cost, f.null.cost),
 		kept(f.Route, it.Route, f.null.route)
+	f.Tier = kept(f.Tier, it.Tier, f.null.tier)
 	if strings.TrimSpace(f.Title) == "" {
 		return nil, "", fmt.Errorf("^%s: an update rewrites the item, so it needs its title", f.ID)
 	}

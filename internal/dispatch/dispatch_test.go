@@ -12,7 +12,9 @@ import (
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/engine"
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
 const date = "2026-10-18"
@@ -48,7 +50,8 @@ const testNote = "# Worklog — " + date + "\n" + `
 // `[arg]` runs, one call per line. A file named fail-<verb> in its directory makes that call
 // fail; a file named clobber makes `agent start` overwrite the note whose path it holds. Files
 // named workspaces, panes and agents, when present, are the answers of `workspace list`,
-// `pane list` and `agent list`.
+// `pane list` and `agent list`; newFixture writes agents. Every pane `pane get` asks about is
+// gone: a dispatch again finds its previous worker exited.
 const fakeHerdr = `#!/bin/sh
 dir=$(dirname "$0")
 for a in "$@"; do printf '[%s]' "$a" >> "$dir/calls"; done
@@ -58,8 +61,8 @@ case "$1 $2" in
   "workspace list") if [ -e "$dir/workspaces" ]; then cat "$dir/workspaces"; else
     echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"r"},{"workspace_id":"w2","label":"iac"}]}}'; fi ;;
   "pane list") if [ -e "$dir/panes" ]; then cat "$dir/panes"; else echo '{"result":{"panes":[]}}'; fi ;;
-  "agent list") if [ -e "$dir/agents" ]; then cat "$dir/agents"; else
-    echo '{"result":{"agents":[{"workspace_id":"w1","pane_id":"w1:p1","agent_status":"idle"},{"workspace_id":"w2","pane_id":"w2:p1","agent_status":"idle"}]}}'; fi ;;
+  "agent list") cat "$dir/agents" ;;
+  "pane get") echo '{"error":{"code":"pane_not_found","message":"pane not found"}}' >&2; exit 1 ;;
   "tab create") echo '{"result":{"tab":{"tab_id":"w1:t5"},"root_pane":{"pane_id":"w1:p7"}}}' ;;
   "agent start") if [ -e "$dir/clobber" ]; then read -r p < "$dir/clobber"; printf '# Worklog — 2026-10-18\n' > "$p"; fi ;;
   "agent prompt") ;;
@@ -109,14 +112,20 @@ func newFixture(t *testing.T) *fixture {
 
 	herdr := filepath.Join(f.bin, "herdr")
 	writeHerdr(t, herdr)
+	// An idle omp agent, of harness glm, in o/r's checkout and in o/iac's.
+	write(t, filepath.Join(f.bin, "agents"), `{"result":{"agents":[`+
+		`{"agent":"omp","workspace_id":"w1","pane_id":"w1:p1","cwd":"`+f.jjRepo+`","agent_status":"idle"},`+
+		`{"agent":"omp","workspace_id":"w2","pane_id":"w2:p1","cwd":"/src/iac","agent_status":"idle"}]}}`)
 	f.d = Dispatcher{
 		Config: config.Config{
 			Dispatch: config.Dispatch{WorkspaceRoot: f.root},
-			Harness:  config.Harness{Worker: config.Worker{Kind: "omp", Args: []string{"--model", "glm-5"}}},
-			// o/r's workspace is found by its label, r; o/g's is set.
+			Harness:  map[string]config.Harness{"glm": {Kind: "omp", Args: []string{"--model", "glm-5"}}},
+			Tiers:    map[string]string{config.DefaultTier: "glm"},
+			// o/r's workspace is found by its label, r; o/g's and o/iac's are set.
 			Projects: config.Projects{Repos: map[string]config.Project{
-				"o/r": {Path: f.jjRepo},
-				"o/g": {Path: f.gitRepo, Workspace: "r"},
+				"o/r":   {Path: f.jjRepo},
+				"o/g":   {Path: f.gitRepo, Workspace: "r"},
+				"o/iac": {Path: "/src/iac", Workspace: "iac"},
 			}},
 		},
 		Engine: &engine.Engine{Repo: vaultRepo, Dir: "worklog"},
@@ -451,6 +460,8 @@ func TestFreshNoteFails(t *testing.T) {
 	}
 }
 
+// TestSession sends to an available agent of the item's harness, as `worklog send` does, and
+// records its pane on the item.
 func TestSession(t *testing.T) {
 	t.Parallel()
 	t.Run("the item's prompt, to its workspace", func(t *testing.T) {
@@ -460,7 +471,7 @@ func TestSession(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Pane != "w2:p1" || res.To != "iac" || res.Item != "d13" {
+		if res.Pane != "w2:p1" || res.To != "iac" || res.Item != "d13" || !res.Note.Changed {
 			t.Errorf("result %+v", res)
 		}
 		want := "[workspace][list]\n[agent][list]\n[agent][prompt][w2:p1][Please do it.\n\nToday.\n\nWhen this is done, update the " +
@@ -468,8 +479,8 @@ func TestSession(t *testing.T) {
 		if got := f.calls(t); got != want {
 			t.Errorf("herdr calls:\n%s\nwant:\n%s", got, want)
 		}
-		if f.noteSrc(t) != testNote {
-			t.Error("the note changed")
+		if src := f.noteSrc(t); !strings.Contains(src, "_item=d13) <!-- qm pane=w2:p1 --> ^d13\n") || strings.Count(src, "<!-- qm ") != 1 {
+			t.Errorf("note:\n%s", f.noteSrc(t))
 		}
 	})
 	t.Run("/implement, to the project's session", func(t *testing.T) {
@@ -493,6 +504,28 @@ func TestSession(t *testing.T) {
 			if got := f.calls(t); got != want {
 				t.Errorf("herdr calls:\n%s\nwant:\n%s", got, want)
 			}
+		}
+		if src := f.noteSrc(t); !strings.Contains(src, "dispatch <!-- qm pane=w1:p1 --> ^d11\n") || strings.Count(src, "<!-- qm ") != 1 {
+			t.Errorf("note:\n%s", f.noteSrc(t))
+		}
+	})
+	t.Run("no available agent spawns one", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		write(t, filepath.Join(f.bin, "agents"), `{"result":{"agents":[`+
+			`{"agent":"claude","workspace_id":"w1","pane_id":"w1:p1","cwd":"`+f.jjRepo+`","agent_status":"idle"},`+
+			`{"agent":"omp","name":"r-glm","workspace_id":"w1","pane_id":"w1:p2","cwd":"`+f.jjRepo+`","agent_status":"working"},`+
+			`{"agent":"omp","workspace_id":"w1","pane_id":"w1:p3","cwd":"`+f.root+`/o/r/issue-9","agent_status":"idle"}]}}`)
+		res, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Session, "")
+		if err != nil || res.Pane != "w1:p7" {
+			t.Fatalf("%+v, %v", res, err)
+		}
+		if want := "[tab][create][--workspace][w1][--cwd][" + f.jjRepo + "][--label][r-glm-2][--no-focus]\n" +
+			"[agent][start][r-glm-2][--kind][omp][--pane][w1:p7][--][--model][glm-5]\n[agent][prompt][w1:p7]["; !strings.Contains(f.calls(t), want) {
+			t.Errorf("herdr calls:\n%s\nwant:\n%s", f.calls(t), want)
+		}
+		if src := f.noteSrc(t); !strings.Contains(src, "<!-- qm pane=w1:p7 --> ^d11\n") {
+			t.Errorf("note:\n%s", src)
 		}
 	})
 }
@@ -518,8 +551,8 @@ func TestRefuses(t *testing.T) {
 		t.Errorf("no note: %v", err)
 	}
 	g := f.d
-	g.Config.Harness.Worker.Kind = ""
-	if _, err := g.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, ""); err == nil || !strings.Contains(err.Error(), "harness.worker.kind") {
+	g.Config.Tiers = nil
+	if _, err := g.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, ""); err == nil || !strings.Contains(err.Error(), "no harness") {
 		t.Errorf("no harness: %v", err)
 	}
 	// A workspace the marker cannot record is refused before it is made.
@@ -537,7 +570,8 @@ func TestRefuses(t *testing.T) {
 }
 
 // TestHerdrWorkspace resolves a project's herdr workspace: the override, else the one
-// workspace with a pane in the checkout, else the one labelled with the repo's name.
+// workspace with a pane in the checkout, else the one labelled with the repo's name, else none,
+// and it has no checkout to create one at. The tools tests cover creation.
 func TestHerdrWorkspace(t *testing.T) {
 	t.Parallel()
 	const spaces = `{"result":{"workspaces":[` +
@@ -566,7 +600,7 @@ func TestHerdrWorkspace(t *testing.T) {
 			name:     "an override labelling no workspace",
 			repo:     "o/r",
 			override: config.Project{Workspace: "gone"},
-			errs:     []string{`projects."o/r".workspace`, `0 herdr workspaces labelled "gone"`},
+			errs:     []string{"no checkout of it at /src/o/r", `projects."o/r".path`},
 		},
 		{
 			name:  "a pane in the checkout wins over the label",
@@ -610,7 +644,7 @@ func TestHerdrWorkspace(t *testing.T) {
 			name:  "no pane and no label",
 			repo:  "o/nothing",
 			panes: panes(pane("w3", "/src/o/r")),
-			errs:  []string{"no herdr workspace for o/nothing", "/src/o/nothing", `"nothing"`, `projects."o/nothing".workspace`},
+			errs:  []string{"no herdr workspace for o/nothing", "no checkout of it at /src/o/nothing", "nothing is cloned"},
 		},
 		{
 			name: "two workspaces labelled with the repo's name",
@@ -621,16 +655,14 @@ func TestHerdrWorkspace(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			bin := t.TempDir()
-			herdr := filepath.Join(bin, "herdr")
-			writeHerdr(t, herdr)
+			exe := filepath.Join(bin, "herdr")
+			writeHerdr(t, exe)
 			write(t, filepath.Join(bin, "workspaces"), spaces)
 			if c.panes != "" {
 				write(t, filepath.Join(bin, "panes"), c.panes)
 			}
-			d := Dispatcher{Herdr: herdr, Config: config.Config{Projects: config.Projects{
-				Root: "/src", Repos: map[string]config.Project{c.repo: c.override},
-			}}}
-			got, err := d.herdrWorkspace(context.Background(), c.repo)
+			projects := config.Projects{Root: "/src", Repos: map[string]config.Project{c.repo: c.override}}
+			got, _, err := send.ProjectWorkspace(context.Background(), herdr.New(exe, nil), projects, c.repo)
 			if c.want == "" {
 				if err == nil {
 					t.Fatalf("got %+v, want an error", got)
@@ -651,28 +683,6 @@ func TestHerdrWorkspace(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestWithin(t *testing.T) {
-	t.Parallel()
-	for _, c := range []struct {
-		root, dir string
-		want      bool
-	}{
-		{"/a/b", "/a/b", true},
-		{"/a/b", "/a/b/", true},
-		{"/a/b/", "/a/b/c/d", true},
-		{"/a/b", "/a/bc", false},
-		{"/a/b", "/a", false},
-		{"/a/b", "/a/b/../c", false},
-		{"/a/b", "a/b", false},
-		{"/a/b", "", false},
-		{"/", "/x", true},
-	} {
-		if got := within(c.root, c.dir); got != c.want {
-			t.Errorf("within(%q, %q) = %v, want %v", c.root, c.dir, got, c.want)
-		}
 	}
 }
 

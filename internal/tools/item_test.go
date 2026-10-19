@@ -203,11 +203,11 @@ func TestItemUpsertKeepsFields(t *testing.T) {
 	})
 }
 
-// TestItemUpsertNullFieldsMCP: the MCP schema takes a null ref, cost and route, and the server
-// hands it on.
+// TestItemUpsertNullFieldsMCP: the MCP schema takes a null ref, cost, route and tier, and the
+// server hands it on.
 func TestItemUpsertNullFieldsMCP(t *testing.T) {
 	t.Parallel()
-	d := fixtureDeps(t, edited(t, ie11Line, ie11Item), false)
+	d := fixtureDeps(t, edited(t, ie11Line, ie11Tiered), false)
 	s := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 	Register(s, All(d))
 	cs := connect(t, s)
@@ -225,18 +225,18 @@ func TestItemUpsertNullFieldsMCP(t *testing.T) {
 	}
 	props := tools.Tools[i].InputSchema.(map[string]any)["properties"].(map[string]any)
 	if err := remarshal(map[string]any{"properties": map[string]any{
-		"ref": props["ref"], "cost": props["cost"], "route": props["route"],
+		"ref": props["ref"], "cost": props["cost"], "route": props["route"], "tier": props["tier"],
 	}}, &schema); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"ref", "cost", "route"} {
+	for _, f := range []string{"ref", "cost", "route", "tier"} {
 		if p := schema.Properties[f]; !slices.Equal(p.Types, []string{"null", "string"}) || !strings.Contains(p.Description, "null clears it") {
 			t.Errorf("%s schema %+v", f, p)
 		}
 	}
 
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "item_upsert", Arguments: map[string]any{
-		"id": "ie11", "title": "drop IE11?", "ref": nil, "route": nil,
+		"id": "ie11", "title": "drop IE11?", "ref": nil, "route": nil, "tier": nil,
 	}})
 	if err != nil || res.IsError {
 		t.Fatalf("item_upsert: %v %+v", err, res)
@@ -380,4 +380,98 @@ func TestNextSetWarnsWithoutButton(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkWarning(t, out.Warnings, "", "")
+}
+
+// ie11Tiered is ie11Item with a tier.
+const ie11Tiered = "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11? · 5 min · Route: `/grill-with-docs` · Tier: `design` ^ie11\n"
+
+// TestItemUpsertTier: a work item's tier follows its route, in both forms, and item_upsert
+// keeps, clears and validates it against the skill's tier list (#122, ADR 0011).
+func TestItemUpsertTier(t *testing.T) {
+	t.Parallel()
+	const link = "[#16](https://github.com/acme/web/issues/16): "
+	for in, want := range map[string]string{
+		`{"id": "ie11", "title": "drop IE11?", "tier": "design"}`:            ie11Tiered,
+		`{"id": "ie11", "title": "drop IE11?"}`:                              ie11Tiered,
+		`{"id": "ie11", "title": "drop IE11?", "tier": ""}`:                  ie11Tiered,
+		`{"id": "ie11", "title": "drop IE11?", "tier": null}`:                ie11Item,
+		`{"id": "ie11", "title": "drop IE11?", "tier": "research"}`:          strings.Replace(ie11Tiered, "design", "research", 1),
+		`{"id": "ie11", "title": "drop IE11?", "route": null}`:               "- ⬜ " + link + "drop IE11? · 5 min · Tier: `design` ^ie11\n",
+		`{"id": "ie11", "title": "drop IE11?", "cost": null, "route": null}`: "- ⬜ " + link + "drop IE11? · Tier: `design` ^ie11\n",
+	} {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			d := fixtureDeps(t, edited(t, ie11Line, ie11Tiered), false)
+			if _, err := d.itemUpsert(t.Context(), upsertInput(t, in)); err != nil {
+				t.Fatal(err)
+			}
+			d.checkNote(t, edited(t, ie11Line, want))
+		})
+	}
+	t.Run("a list item without one takes one", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, edited(t, ie11Line, ie11Item), false)
+		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "ie11", "title": "drop IE11?", "tier": "design"}`)); err != nil {
+			t.Fatal(err)
+		}
+		d.checkNote(t, edited(t, ie11Line, ie11Tiered))
+	})
+	t.Run("a ##### item writes it after its route, and keeps it", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		const prompt = `"prompt": {"to": "web", "text": "/grill-with-docs https://github.com/acme/web/issues/14"}, "button": "grill in web"`
+		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
+			"body": "Unblocks #15.", "tier": "design", `+prompt+`}`)); err != nil {
+			t.Fatal(err)
+		}
+		tiered := edited(t, "Route: `/grill-with-docs`.\n", "Route: `/grill-with-docs`. Tier: `design`.\n")
+		d.checkNote(t, tiered)
+		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
+			"body": "Unblocks #15.", "cost": null, "route": null, `+prompt+`}`)); err != nil {
+			t.Fatal(err)
+		}
+		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n", "Unblocks #15. Tier: `design`.\n"))
+		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
+			"body": "Unblocks #15.", "tier": null, `+prompt+`}`)); err != nil {
+			t.Fatal(err)
+		}
+		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n", "Unblocks #15.\n"))
+	})
+	t.Run("a create writes it", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, settled(t), false)
+		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "flaky", "repo": "acme/web", "bucket": "Agent queue",
+			"title": "flaky test", "route": "/implement", "tier": "basic-implementation",
+			"prompt": {"to": "web", "text": "/implement https://github.com/acme/web/issues/9"}}`)); err != nil {
+			t.Fatal(err)
+		}
+		if got := d.note(t, fixtureDate); !strings.Contains(got, "Route: `/implement`. Tier: `basic-implementation`.\n") {
+			t.Errorf("note:\n%s", got)
+		}
+	})
+	t.Run("an unknown tier is refused, naming the valid ones", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, edited(t, ie11Line, ie11Item), false)
+		_, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "ie11", "title": "drop IE11?", "tier": "glm"}`))
+		if err == nil {
+			t.Fatal("no error")
+		}
+		for _, s := range []string{`"glm"`, "research", "complex-implementation", "security-review"} {
+			if !strings.Contains(err.Error(), s) {
+				t.Errorf("err %q lacks %s", err, s)
+			}
+		}
+		d.checkNote(t, edited(t, ie11Line, ie11Item))
+	})
+	t.Run("a transition keeps it", func(t *testing.T) {
+		t.Parallel()
+		d := fixtureDeps(t, edited(t, ie11Line, ie11Tiered), false)
+		if _, err := d.itemTransition(t.Context(), ItemTransitionInput{Item: "ie11", To: "WAITING", Summary: "on legal"}); err != nil {
+			t.Fatal(err)
+		}
+		want := strings.Replace(strings.Replace(ie11Tiered, "⬜", "⏳", 1), " ^ie11", " — on legal ^ie11", 1)
+		if got := d.note(t, fixtureDate); !strings.Contains(got, want) {
+			t.Errorf("note:\n%s", got)
+		}
+	})
 }

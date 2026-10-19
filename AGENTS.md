@@ -12,18 +12,19 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | `cmd/worklog/` | the `worklog` binary's entry point |
 | `internal/command/` | runs an external executable directly, with injected env and dir, for herdr, gh, and dispatch's jj and git |
 | `internal/config/` | config loading: defaults, then `worklog.toml`, then flags (spec §3) |
-| `internal/dispatch/` | `task_dispatch`: session mode, and fresh mode in a jj workspace (spec §9.2, ADR 0004) |
+| `internal/dispatch/` | `task_dispatch`: session mode, and fresh mode in a jj workspace (spec §9.2, ADR 0004); the tab-close guards refresh shares |
 | `internal/engine/` | the mutation engine: lock, hash check, rename, jj commit; the only writer of a note (ADR 0006) |
 | `internal/herdr/` | the herdr client: one method per herdr call, each answer's JSON declared once |
 | `internal/note/` | the note parser: every unit of spec §4.1 by source range (ADR 0002) |
-| `internal/refresh/` | `refresh`: reconcile the note from GitHub, herdr and ticked checkboxes (ADR 0003) |
-| `internal/send/` | `worklog send`: deliver a work item's prompt to its herdr session (spec §9.1) |
+| `internal/refresh/` | `refresh`: reconcile the note from GitHub, herdr and ticked checkboxes; close finished `fresh` dispatch tabs and remove their checkouts (ADR 0003, ADR 0011) |
+| `internal/send/` | the one send path for ▶, `prompt_send` and `task_dispatch` session: pick or spawn an agent of the tier's harness, open the project's herdr workspace on demand, record the pane (spec §9.1, §9.2); the agent naming dispatch shares |
 | `internal/server/` | the MCP server (`worklog serve`): the prompts, cut from the embedded skill |
 | `internal/tools/` | every MCP tool and `note` verb, one `Def` each (spec §6) |
 | `skills/worklog/` | the worklog skill: one source for the installed skill and the `workflow_rules` prompt (ADR 0005) |
 | `skills/worktree-build-cache/` | the worktree-build-cache skill: do fresh workspaces reuse the shared caches; skill-only (ADR 0010) |
 | `skills/mass-implement/` | the mass-implement skill: implement a DAG of tickets, then ship a clean PR stack; skill-only (ADR 0010) |
 | `skills/embed.go` | embeds the worklog skill into the binary |
+| `skills/tiers.go` | cuts the tier list from the embedded skill's tier table, for config and `item_upsert` (ADR 0011) |
 | `.claude-plugin/plugin.json` | the skill bundle's manifest |
 | `nix/` | package, skill bundle, home-manager module, checks |
 
