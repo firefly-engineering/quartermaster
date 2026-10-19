@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/firefly-engineering/quartermaster/internal/note"
@@ -53,7 +54,11 @@ Nothing to send. ^bare
 // writeHerdr writes a herdr stand-in at path.
 func writeHerdr(t *testing.T, path, script string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+	// Hold ForkLock so no parallel fork inherits the write fd: golang/go#22315 (ETXTBSY).
+	syscall.ForkLock.RLock()
+	err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755)
+	syscall.ForkLock.RUnlock()
+	if err != nil {
 		t.Fatal(err)
 	}
 }

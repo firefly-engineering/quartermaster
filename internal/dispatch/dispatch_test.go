@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
@@ -106,9 +107,7 @@ func newFixture(t *testing.T) *fixture {
 	f.run(t, f.gitBin, "-C", f.gitRepo, "commit", "--allow-empty", "-m", "init")
 
 	herdr := filepath.Join(f.bin, "herdr")
-	if err := os.WriteFile(herdr, []byte(fakeHerdr), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeHerdr(t, herdr)
 	f.d = Dispatcher{
 		Config: config.Config{
 			Dispatch: config.Dispatch{WorkspaceRoot: f.root},
@@ -131,6 +130,18 @@ func write(t *testing.T, path, s string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeHerdr writes the fakeHerdr stand-in at path.
+func writeHerdr(t *testing.T, path string) {
+	t.Helper()
+	// Hold ForkLock so no parallel fork inherits the write fd: golang/go#22315 (ETXTBSY).
+	syscall.ForkLock.RLock()
+	err := os.WriteFile(path, []byte(fakeHerdr), 0o755)
+	syscall.ForkLock.RUnlock()
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -569,9 +580,7 @@ func TestHerdrWorkspace(t *testing.T) {
 			t.Parallel()
 			bin := t.TempDir()
 			herdr := filepath.Join(bin, "herdr")
-			if err := os.WriteFile(herdr, []byte(fakeHerdr), 0o755); err != nil {
-				t.Fatal(err)
-			}
+			writeHerdr(t, herdr)
 			write(t, filepath.Join(bin, "workspaces"), spaces)
 			if c.panes != "" {
 				write(t, filepath.Join(bin, "panes"), c.panes)
