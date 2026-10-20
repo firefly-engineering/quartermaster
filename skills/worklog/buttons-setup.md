@@ -29,6 +29,13 @@ The ▶ buttons need the community **Shell commands** plugin
    Obsidian started from the Dock does not have the nix profile on `PATH`, so the
    prefix is what finds `worklog` and lets it find `herdr`. No herdr environment variables are
    needed: `herdr` reaches the running session on its own.
+
+   If jj signs commits with an SSH key held in an agent, also prefix
+   `SSH_AUTH_SOCK="<your agent's socket>"`. Without it, `worklog send` fails at the
+   commit with `No private key found`. Every app the Dock starts gets macOS's own
+   `ssh-agent` socket. That agent holds no keys, and `launchctl setenv` cannot replace its
+   socket: SIP keeps the agent running even when it is disabled. `ssh-keygen -Y sign`
+   reads only `SSH_AUTH_SOCK`, never `IdentityAgent` in `~/.ssh/config`.
 5. Pick an output channel. A notification works well: it shows `sent <id> to <workspace>`,
    or the reason it refused.
 
