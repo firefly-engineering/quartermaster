@@ -263,7 +263,9 @@ PATH="/etc/profiles/per-user/$USER/bin:$PATH" worklog send {{vault_path}} {{_dat
 ```
 
 An Obsidian started from the Dock does not have the nix profile on `PATH`; the prefix lets
-it find `worklog` and `herdr`.
+it find `worklog` and `herdr`. If jj signs through an SSH agent, also prefix
+`SSH_AUTH_SOCK="<your agent's socket>"`: a Dock-started Obsidian gets macOS's own agent,
+which holds no keys.
 [`skills/worklog/buttons-setup.md`](skills/worklog/buttons-setup.md) has the steps and why
 the URI carries only a reference. If `data.json` changes outside Obsidian, read
 [After `data.json` changes outside Obsidian](skills/worklog/buttons-setup.md#after-datajson-changes-outside-obsidian)
