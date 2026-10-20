@@ -117,9 +117,14 @@ func free(ws string) error {
 
 // samePath reports whether a and b name one directory, through symlinks.
 func samePath(a, b string) bool {
-	resolve := func(p string) string {
+	// A gone path resolves through its deepest existing parent, as /var is /private/var on macOS.
+	var resolve func(p string) string
+	resolve = func(p string) string {
 		if r, err := filepath.EvalSymlinks(p); err == nil {
 			return r
+		}
+		if dir := filepath.Dir(p); dir != p {
+			return filepath.Join(resolve(dir), filepath.Base(p))
 		}
 		return filepath.Clean(p)
 	}
