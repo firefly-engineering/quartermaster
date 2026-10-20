@@ -15,7 +15,8 @@ disable-model-invocation: true
 
 You are the **orchestrator**. You do not write feature code yourself: you decompose the
 work, drive sub-agents, verify their output, and assemble a mergeable stack. The whole
-run must complete **without live human interaction** (see *Human input* below).
+run must complete **without live human interaction** (see *Human input* below), except
+Phase 3½.
 
 ## Inputs (ask only if genuinely unknowable)
 - **Ticket source**: a **batch** work item listing its tickets, an explicit ticket list, or a
@@ -113,7 +114,8 @@ stack.
   side effect. Have the agent implement everything provable offline, then **file a new
   "needs-info" ticket** capturing exactly what's required and **add it to the original
   ticket's "Blocked by"**. Continue the rest of the DAG. A ticket report's `question: …` is
-  this case: its question becomes the needs-info ticket.
+  this case: its question becomes the needs-info ticket. A call an agent made itself and
+  could ship is not this case: it waits for Phase 3½.
 - **A stuck ticket**: a report's `stuck: …` drops that ticket and every ticket depending on
   it from the batch. Record them as their own work item with `item_upsert`, the batch's
   tier, then `item_transition` it to `WAITING` with the agent's `stuck: …` as its summary;
@@ -141,6 +143,16 @@ its review has to be redone after the rebase.
      another didn't implement. A clean text merge that fails to compile is a semantic conflict;
      the rebuild is what catches it. Fix by conforming the lagging code to the new contract.
 3. Verify the **tip** of the linear stack builds and passes the full suite + invariants.
+
+## Phase 3½: Settle the judgement calls before publishing
+Collect every call the run left open: review findings kept as judgement calls,
+assumptions a ticket didn't settle, a report's "decisions for you", and any shared
+name or default an agent chose. Put them to the user in **one round**, numbered, each
+with your recommendation. Fold each answer into the change it belongs to, then re-run
+Phase 3's step checks from the lowest change touched. Publish only after that: every
+answer that lands after the push re-runs CI on every PR above it.
+This is the run's one live interaction. When no user is present, publish anyway, and
+list the calls in the batch's worklog Part and on each PR.
 
 ## Phase 4: Publish the stack
 1. Push the linear branches.
