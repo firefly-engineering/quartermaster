@@ -427,3 +427,7 @@ section.
 ## Reporting
 
 End each phase with the note's status line, its *Next* list, and the note's path.
+
+*Next* spans every project. An agent working in one repo reports only the *Next* lines of
+that repo's project: map each line's `ref` to its project section through `day_read`.
+A line of another repo is that repo's agent's to report. When none is left, say so.
