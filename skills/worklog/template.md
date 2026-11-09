@@ -11,7 +11,7 @@ Bucket names stay the same from day to day, because the next morning's open read
 | Decisions for you | HITL items: `ready-for-human`, `needs-triage`, `needs-info`, and open questions. Ordered by what each unblocks |
 | Your actions | Manual operations only the user can run |
 | Agent queue | `ready-for-agent` tickets, in dependency order |
-| Sent to other repos | Cross-repo items and their herdr status |
+| Sent to other repos | Cross-repo items and their sent status |
 | Outside input: chase | Waiting on a person outside the session |
 | Waiting | Waiting on a first consumer, a producer, or a date |
 

@@ -2,7 +2,7 @@
 
 quartermaster is a suite of agent tools ([ADR 0009](docs/adr/0009-quartermaster-is-the-suite.md)).
 Its first tool, the `worklog` Go binary, keeps the day's Obsidian worklog note and dispatches its
-work to agents under herdr, served as MCP tools. Read [`docs/spec.md`](docs/spec.md) first;
+work to agents under rex, served as MCP tools. Read [`docs/spec.md`](docs/spec.md) first;
 decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md).
 
 ## Layout

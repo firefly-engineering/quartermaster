@@ -76,20 +76,36 @@ prompt.
 
 ## Session
 
-An available agent of a **harness**'s kind in the project's herdr workspace and checkout,
+An available agent of a **harness**'s kind in the project's **workspace** and checkout,
 picked for each prompt rather than fixed. Its workspace may be created on demand, and the
 tool never closes it ([ADR 0011](docs/adr/0011-a-work-items-tier-routes-it-to-a-harness.md)).
+Not rex's session, which is a workspace.
+
+## Workspace
+
+A rex session: the **tabs** a project's agents run in
+([ADR 0012](docs/adr/0012-rex-is-a-second-multiplexer.md)). Not a jj workspace, which is a
+`fresh` **dispatch**'s checkout.
+
+## Tab
+
+A rex window: one view of a **workspace**, holding its **panes**.
+
+## Pane
+
+A rex block: one terminal in a **tab**, running a shell, or an agent in the foreground of
+its shell.
 
 ## Dispatch
 
 Starting work on a ref or a work item, by prompting a session (`session`) or by creating an
-isolated workspace and a new agent (`fresh`). Its mode is independent of the **tier**.
+isolated checkout and a new agent (`fresh`). Its mode is independent of the **tier**.
 
 ## Harness
 
-An agent program and how it is launched, named in config: its herdr agent kind, arguments
-and model, such as claude, or omp on a GLM model. One per kind. A prompt reaches a harness
-through its **tier**, never by naming it.
+An agent program and how it is launched, named in config: its kind, the program it runs,
+its arguments and model, such as claude, or omp on a GLM model. One per kind. A prompt
+reaches a harness through its **tier**, never by naming it.
 
 ## Tier
 
