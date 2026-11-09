@@ -397,8 +397,9 @@ To send a prompt yourself, call `prompt_send` with the item's id. It records the
 sent to on the item, unless the item was dispatched `fresh` (its marker keeps that worker),
 and nothing else: record the send yourself. When no agent of the item's harness there is
 `idle` or `done`, it starts one in a new tab, and when the project has no herdr workspace,
-it opens one at the project's checkout. It fails if herdr is not found or the checkout is
-missing; leave the item as it was and say why.
+it opens one at the project's checkout. It fails if the multiplexer (herdr, or rex when
+worklog.toml names it) is not found or the checkout is missing; leave the item as it was and
+say why.
 
 ## Other repos
 

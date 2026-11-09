@@ -27,8 +27,9 @@ The ▶ buttons need the community **Shell commands** plugin
    ```
 
    Obsidian started from the Dock does not have the nix profile on `PATH`, so the
-   prefix is what finds `worklog` and lets it find `herdr`. No herdr environment variables are
-   needed: `herdr` reaches the running session on its own.
+   prefix is what finds `worklog` and lets it find the multiplexer worklog.toml names,
+   `herdr` or `rex`, so that executable must be in the profile too. No environment variables
+   of either are needed: each reaches its running server on its own.
 
    If jj signs commits with an SSH key held in an agent, also prefix
    `SSH_AUTH_SOCK="<your agent's socket>"`. Without it, `worklog send` fails at the
