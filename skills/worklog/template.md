@@ -56,7 +56,7 @@ Unblocks <…>. <why that route>. Cost: <cost>. Route: `<skill>`. Tier: `<tier>`
 [▶ <verb> in <workspace>](obsidian://shell-commands/?vault=worklog&execute=<id>&_date=<date>&_item=<item-id>) ^<item-id>
 
 > [!prompt]- Prompt sent to <owner/repo>
-> ```herdr-prompt id=<item-id> to=<owner/repo>
+> ```qm-prompt id=<item-id> to=<owner/repo>
 > <self-contained prompt, e.g. /grill-with-docs https://github.com/<o>/<r>/issues/N — the question and its context>
 > ```
 

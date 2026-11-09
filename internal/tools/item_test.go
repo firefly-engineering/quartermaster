@@ -21,6 +21,10 @@ const (
 	sessionStoreNext = "4. Settle the session store · [[#^session-store|details]]" +
 		" · [▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-16&_item=session-store)\n"
 	vendorNext = "3. [ ] Call the vendor · 10 min\n"
+	// sessionStoreOldFence opens the fixture's session-store prompt block under the name older notes carry;
+	// a rewrite of the item renders it as sessionStoreNewFence (ADR 0012).
+	sessionStoreOldFence = "```herdr-prompt id=session-store to=web\n"
+	sessionStoreNewFence = "```qm-prompt id=session-store to=web\n"
 )
 
 // upsertInput decodes item_upsert's input from JSON, as the CLI and the MCP server do.
@@ -424,18 +428,18 @@ func TestItemUpsertTier(t *testing.T) {
 			"body": "Unblocks #15.", "tier": "design", `+prompt+`}`)); err != nil {
 			t.Fatal(err)
 		}
-		tiered := edited(t, "Route: `/grill-with-docs`.\n", "Route: `/grill-with-docs`. Tier: `design`.\n")
+		tiered := edited(t, "Route: `/grill-with-docs`.\n", "Route: `/grill-with-docs`. Tier: `design`.\n", sessionStoreOldFence, sessionStoreNewFence)
 		d.checkNote(t, tiered)
 		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
 			"body": "Unblocks #15.", "cost": null, "route": null, `+prompt+`}`)); err != nil {
 			t.Fatal(err)
 		}
-		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n", "Unblocks #15. Tier: `design`.\n"))
+		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n", "Unblocks #15. Tier: `design`.\n", sessionStoreOldFence, sessionStoreNewFence))
 		if _, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
 			"body": "Unblocks #15.", "tier": null, `+prompt+`}`)); err != nil {
 			t.Fatal(err)
 		}
-		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n", "Unblocks #15.\n"))
+		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n", "Unblocks #15.\n", sessionStoreOldFence, sessionStoreNewFence))
 	})
 	t.Run("a create writes it", func(t *testing.T) {
 		t.Parallel()

@@ -217,7 +217,18 @@ type Item struct {
 	lead   string // its title as written before its cost, route, tier, sent status and summary
 }
 
-// Prompt is a work item's `> [!prompt]-` callout and the `herdr-prompt` block inside it.
+// PromptFence is the info string's first word on a prompt block: the name the renderer writes.
+// The parser also reads legacyPromptFence, the name older notes carry, and no tool renames it
+// in place (ADR 0012).
+const (
+	PromptFence       = "qm-prompt"
+	legacyPromptFence = "herdr-prompt"
+)
+
+// isPromptFence reports whether lang, a fenced block's language, names a prompt block.
+func isPromptFence(lang string) bool { return lang == PromptFence || lang == legacyPromptFence }
+
+// Prompt is a work item's `> [!prompt]-` callout and the prompt block inside it.
 type Prompt struct {
 	Span        // the whole callout
 	ID   string // the block's id=, always its work item's id

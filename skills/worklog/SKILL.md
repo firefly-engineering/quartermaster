@@ -366,9 +366,11 @@ pasted by hand.
 
 Give a work item a prompt with `item_upsert`: `prompt.to` is the project the prompt goes
 to, as `owner/repo` (`arbora-partners/trunk`), `prompt.text` the prompt, and `button` the label. The server renders the item, its
-button and its prompt block; [`template.md`](template.md) shows the result, and
+button and its `qm-prompt` block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
-`next_set` repeats the button on the item's line in *Next*.
+`next_set` repeats the button on the item's line in *Next*. Older notes hold
+`herdr-prompt` blocks: they are still read and sent, and an `item_upsert` of their item
+writes `qm-prompt`.
 
 A TODO item whose route is a command (`/triage`, `/implement`) needs a prompt: its
 button is how that command gets sent, and without a prompt it has none. `item_upsert`

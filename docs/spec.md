@@ -150,7 +150,7 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Bucket | `#### <icon> <bucket name>` under `### <icon> What remains` |
 | Work item | a `#####` heading under a bucket, never under a Part, whose paragraph ends with `^<item-id>`; or a list item carrying `^<item-id>`. Its ref, cost, route and tier are read as the renderer writes them, below |
 | Anchor | a paragraph in a Part or bucket ending with `^<id>`: a link target, with no state |
-| Prompt block | a ```` ```herdr-prompt id=<item-id> to=<owner/repo> ```` or ```` to=<label> ```` fence, inside a `> [!prompt]-` callout. `owner/repo` names a project, whose herdr workspace §9.2 resolves, opening it if need be; a bare label names a herdr workspace, only looked up ([§9.1]) |
+| Prompt block | a ```` ```qm-prompt id=<item-id> to=<owner/repo> ```` or ```` to=<label> ```` fence, inside a `> [!prompt]-` callout. A ```` ```herdr-prompt ```` fence, the name older notes carry, is still read, and stays as written until a tool rewrites its item ([ADR 0012]). `owner/repo` names a project, whose herdr workspace §9.2 resolves, opening it if need be; a bare label names a herdr workspace, only looked up ([§9.1]) |
 | Dispatch marker | an HTML comment `<!-- qm pane=<id> ws=<path> -->` before a work item's `^<item-id>`: the herdr pane its prompt was last sent to, by a send ([§9.1]) or a `fresh` dispatch ([§9.2]), and the `fresh` dispatch's workspace. A send records `pane=` alone, except on an item whose marker has `ws=`, which it leaves as it is |
 | Manual action | a task list item `- [ ]` / `- [x]`, or an ordered one `1. [ ]` in *Next* |
 | Carry-over | the table under `## Carry-over` |
@@ -320,7 +320,7 @@ exists under the vault, and the vault is the configured one (`vault.repo` and `v
 §3), where the send is recorded. ▶ buttons, `prompt_send` and `task_dispatch` `session`
 (§9.2) share one send path ([ADR 0011]):
 
-1. Read the prompt from the item's `herdr-prompt` block (through callout `>` markers) and
+1. Read the prompt from the item's prompt block (through callout `>` markers) and
    resolve `to`. An `owner/repo` names the project, whose checkout is §3's and whose herdr
    workspace is §9.2's, created when it has none. Anything else is a bare label: it resolves
    to exactly one herdr workspace with that label, and never creates one, for workspaces
@@ -388,7 +388,7 @@ The **project's herdr workspace** is resolved at use, from herdr's live state, t
    concurrent resolves each creating one; the next resolve reports both through step 2's
    error. The tool never closes a workspace it created.
 
-A `herdr-prompt` block's `to=owner/repo` resolves here; a bare label is only looked up
+A prompt block's `to=owner/repo` resolves here; a bare label is only looked up
 (§9.1).
 
 - **`session`** (default): build the prompt from the work item (or `/implement <url>`

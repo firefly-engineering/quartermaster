@@ -61,7 +61,7 @@ func TestRenderWriteUnits(t *testing.T) {
 		}, "##### 🔄 [#14](https://github.com/acme/web/issues/14): which store? — grilling\n\n" +
 			"Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n" +
 			"[▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=nf8lgvkx5s&_date=2026-10-18&_item=store) ^store\n\n" +
-			"> [!prompt]- Prompt sent to web\n> ```herdr-prompt id=store to=web\n> /grill-with-docs u\n> ```\n"},
+			"> [!prompt]- Prompt sent to web\n> ```qm-prompt id=store to=web\n> /grill-with-docs u\n> ```\n"},
 		{"heading item, route alone", func() ([]byte, error) {
 			return r.Item(ItemUnit{ID: "x", Icon: IconTodo, Heading: true, Title: "X", Route: "/triage"})
 		}, "##### ⬜ X\n\nRoute: `/triage`. ^x\n"},

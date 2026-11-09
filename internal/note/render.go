@@ -109,7 +109,7 @@ func SplitSummary(title string) (head, summary string) {
 	return head, summary
 }
 
-// PromptUnit is a work item's herdr-prompt block.
+// PromptUnit is a work item's prompt block.
 type PromptUnit struct {
 	To   string // the project's owner/repo, or a workspace label
 	Body string // the prompt, without callout markers
@@ -899,7 +899,7 @@ const (
 	buttonMark = "▶ "
 )
 
-// prompt renders the collapsed callout holding item id's herdr-prompt block.
+// prompt renders the collapsed callout holding item id's prompt block, as PromptFence.
 func prompt(id string, p PromptUnit) (string, error) {
 	if p.To == "" || strings.ContainsFunc(p.To, isSpace) {
 		return "", fmt.Errorf("prompt to=%q: want owner/repo or a workspace label, with no spaces", p.To)
@@ -910,7 +910,7 @@ func prompt(id string, p PromptUnit) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString("> [!prompt]- Prompt sent to " + p.To + "\n")
-	b.WriteString("> ```herdr-prompt id=" + id + " to=" + p.To + "\n")
+	b.WriteString("> ```" + PromptFence + " id=" + id + " to=" + p.To + "\n")
 	for _, line := range strings.Split(body, "\n") {
 		if strings.HasPrefix(strings.TrimLeft(line, " "), "```") {
 			return "", fmt.Errorf("prompt line %q would close its ``` fence", line)

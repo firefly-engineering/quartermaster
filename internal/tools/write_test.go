@@ -218,7 +218,7 @@ var grant = ItemFields{
 const grantItem = "##### ⬜ [IaC#7](https://github.com/acme/IaC/issues/7): grant the deploy role\n\n" +
 	"Needed for #12. Cost: 10 min. Route: `/implement`.\n" +
 	"[▶ send to IaC](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-16&_item=grant) ^grant\n\n" +
-	"> [!prompt]- Prompt sent to IaC\n> ```herdr-prompt id=grant to=IaC\n> Grant the deploy role.\n> ```\n"
+	"> [!prompt]- Prompt sent to IaC\n> ```qm-prompt id=grant to=IaC\n> Grant the deploy role.\n> ```\n"
 
 func TestItemUpsertCreate(t *testing.T) {
 	t.Parallel()
@@ -282,10 +282,23 @@ func TestItemUpsertUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min.", "Unblocks #15. Cost: 15 min."))
+		d.checkNote(t, edited(t, "Unblocks #15. Cost: 10 min.", "Unblocks #15. Cost: 15 min.", sessionStoreOldFence, sessionStoreNewFence))
 		if !out.Changed || out.Item.Prompt == nil || out.Item.Prompt.To != "web" {
 			t.Errorf("out %+v", out)
 		}
+	})
+	t.Run("its herdr-prompt block comes out as qm-prompt, and another stays as written", func(t *testing.T) {
+		t.Parallel()
+		oldGrant := strings.Replace(grantItem, "```qm-prompt id=grant", "```herdr-prompt id=grant", 1)
+		withGrant := edited(t, sentBucket, "#### ⬜ Sent to other repos\n\n"+oldGrant)
+		d := fixtureDeps(t, withGrant, false)
+		if _, err := d.itemUpsert(t.Context(), ItemUpsertInput{ItemFields: ItemFields{
+			ID: "session-store", Title: "which session store?", Ref: new("#14"), Body: "Unblocks #15.", Cost: new("10 min"),
+			Route: new("/grill-with-docs"), Button: "grill in web", Prompt: &PromptInput{To: "web", Text: "/grill-with-docs https://github.com/acme/web/issues/14"},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		d.checkNote(t, edited(t, sentBucket, "#### ⬜ Sent to other repos\n\n"+oldGrant, sessionStoreOldFence, sessionStoreNewFence))
 	})
 	t.Run("keeping its dispatch marker, in either form", func(t *testing.T) {
 		t.Parallel()
@@ -303,7 +316,7 @@ func TestItemUpsertUpdate(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		d.checkNote(t, withMarker(edited(t, "Unblocks #15. Cost: 10 min.", "Unblocks #15. Cost: 15 min.",
+		d.checkNote(t, withMarker(edited(t, "Unblocks #15. Cost: 10 min.", "Unblocks #15. Cost: 15 min.", sessionStoreOldFence, sessionStoreNewFence,
 			loginStack, "- 🔍 [#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n")))
 	})
 	t.Run("moved to another project's missing bucket", func(t *testing.T) {

@@ -66,7 +66,8 @@ The next skill that moves a work item, such as `/triage`, `/implement` or
 
 ## Prompt
 
-The self-contained text a work item sends to a session, kept in its `herdr-prompt` block.
+The self-contained text a work item sends to a session, kept in its `qm-prompt`
+block (`herdr-prompt` in older notes, still read).
 
 ## Button
 
