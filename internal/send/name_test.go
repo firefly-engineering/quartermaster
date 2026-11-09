@@ -28,8 +28,8 @@ func TestAgentName(t *testing.T) {
 		if got != c.want {
 			t.Errorf("%s: AgentName(%q, %q, %q) = %q, want %q", c.name, c.repo, c.suffix, c.taken, got, c.want)
 		}
-		if !herdrName(got) {
-			t.Errorf("%s: %q is not a herdr agent name", c.name, got)
+		if !validName(got) {
+			t.Errorf("%s: %q is not a valid agent name", c.name, got)
 		}
 		if !IsAgentName(got, c.repo, c.suffix) {
 			t.Errorf("%s: IsAgentName(%q, %q, %q) is false", c.name, got, c.repo, c.suffix)
@@ -37,8 +37,8 @@ func TestAgentName(t *testing.T) {
 	}
 }
 
-// herdrName reports whether s matches herdr's [a-z][a-z0-9_-]{0,31}.
-func herdrName(s string) bool {
+// validName reports whether s matches an agent name's [a-z][a-z0-9_-]{0,31}.
+func validName(s string) bool {
 	if len(s) == 0 || len(s) > 32 || s[0] < 'a' || s[0] > 'z' {
 		return false
 	}

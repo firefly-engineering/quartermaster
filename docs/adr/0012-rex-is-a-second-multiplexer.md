@@ -99,5 +99,3 @@ whitespace, `--` or `>`, so they fit a dispatch marker as they are.
   This is the only text the client inspects.
 - `agent list` costs one call per session plus two per block, about 16 ms each. That is fine
   at tens of panes.
-- Until [#173](https://github.com/firefly-engineering/quartermaster/issues/173) lands, the
-  code still carries herdr's client and the `multiplexer` key as the trial left them.

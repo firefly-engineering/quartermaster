@@ -3,7 +3,7 @@
 //
 // Any web page can open the button's obsidian:// URI, so the only inputs are a date and an
 // item id, both validated. The prompt text comes from the user's own note, and reaches
-// herdr as an argument, never through a shell. The work item's tier picks a harness through
+// rex as an argument, never through a shell. The work item's tier picks a harness through
 // config, and the harness's kind picks the agent, or one is spawned when none is available
 // (ADR 0011). Each send records the agent's pane on the item, through the engine.
 package send
@@ -19,7 +19,6 @@ import (
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/engine"
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 	"github.com/firefly-engineering/quartermaster/internal/rex"
 )
@@ -27,7 +26,7 @@ import (
 // available are the agent statuses a prompt may be typed into. A working agent would queue
 // it behind its turn, and a blocked one shows an approval or question UI that typed text
 // could answer.
-var available = []string{herdr.Idle, herdr.Done}
+var available = []string{rex.Idle, rex.Done}
 
 // tool names the recording of a send's pane in the note's commit message.
 const tool = "send"
@@ -37,11 +36,11 @@ const tool = "send"
 type Sender struct {
 	Config config.Config  // the harnesses, tiers and projects a prompt routes through
 	Engine *engine.Engine // the note's only writer, which records each send's pane
-	Herdr  string         // the path of Config.Multiplexer's executable; "" when it was not found
+	Rex    string         // the path of rex's executable; "" when it was not found
 	Env    []string       // its environment
 }
 
-// Sent is a prompt delivered to a herdr pane.
+// Sent is a prompt delivered to a pane.
 type Sent struct {
 	ID, To, Pane string
 	Path         string        // the note the closing line names
@@ -50,7 +49,7 @@ type Sent struct {
 
 func (s Sent) String() string { return fmt.Sprintf("sent %s to %s (%s)", s.ID, s.To, s.Pane) }
 
-// Send sends work item id's prompt from vault/<date>.md to an available agent in the herdr
+// Send sends work item id's prompt from vault/<date>.md to an available agent in the
 // workspace its block names, spawned when there is none, and records the agent's pane on the
 // item. A block's to=owner/repo names the project, whose workspace is opened if it has none;
 // a bare label names the workspace, only looked up.
@@ -100,12 +99,12 @@ func (s Sender) SendItem(ctx context.Context, vault, date, id, extra string) (Se
 	return s.deliver(ctx, p)
 }
 
-// Workspace is one herdr workspace: its id, and the label messages and Sent.To name it by.
-type Workspace = herdr.Workspace
+// Workspace is one workspace: its id, and the label messages and Sent.To name it by.
+type Workspace = rex.Workspace
 
 // Prompt is one prompt to a project's session.
 type Prompt struct {
-	To       Workspace // the project's herdr workspace; resolved from Repo when zero (ProjectWorkspace)
+	To       Workspace // the project's workspace; resolved from Repo when zero (ProjectWorkspace)
 	Repo     string    // the project, owner/repo, which names an agent spawned for it
 	Checkout string    // the project's checkout, which the agent's cwd is in
 	Tier     string    // the work item's tier, which picks the harness; "" for [tiers] default
@@ -117,9 +116,9 @@ type Prompt struct {
 	root string // the initial shell pane of To, when deliver just created it, which a spawn takes
 }
 
-// Deliver sends p, for which no herdr-prompt block holds the text, as Send sends a block's:
-// to an available agent of p's harness, closed with the line asking it to update p's item, or
-// p's ref when it has none (Closing). With no To, it goes to the project's herdr workspace,
+// Deliver sends p, for which no prompt block holds the text, as Send sends a block's: to an
+// available agent of p's harness, closed with the line asking it to update p's item, or p's
+// ref when it has none (Closing). With no To, it goes to the project's workspace,
 // created if need be (ProjectWorkspace). Sent.ID is p's item, or its ref when it has none.
 func (s Sender) Deliver(ctx context.Context, p Prompt) (Sent, error) {
 	p.Text = strings.TrimSpace(p.Text)
@@ -167,7 +166,7 @@ func (s Sender) deliver(ctx context.Context, p Prompt) (Sent, error) {
 	}
 	if p.To.ID == "" {
 		var err error
-		if p.To, p.root, err = ProjectWorkspace(ctx, s.herdr(), s.Config.Projects, p.Repo); err != nil {
+		if p.To, p.root, err = ProjectWorkspace(ctx, s.client(), s.Config.Projects, p.Repo); err != nil {
 			return Sent{}, err
 		}
 	}
@@ -180,7 +179,7 @@ func (s Sender) deliver(ctx context.Context, p Prompt) (Sent, error) {
 	if p.Item != "" {
 		what = Item(p.Item)
 	}
-	if err := s.herdr().AgentPrompt(ctx, a.Pane, h.Prompt(p.Text)+"\n\n"+Closing(what, path)); err != nil {
+	if err := s.client().AgentPrompt(ctx, a.Pane, h.Prompt(p.Text)+"\n\n"+Closing(what, path)); err != nil {
 		return Sent{}, err
 	}
 	sent := Sent{ID: p.Item, To: p.To.Label, Pane: a.Pane, Path: path}
@@ -194,13 +193,13 @@ func (s Sender) deliver(ctx context.Context, p Prompt) (Sent, error) {
 		if it := n.Item(p.Item); it != nil && it.Dispatch != nil && it.Dispatch.Workspace != "" {
 			// A fresh dispatch's worker stays the item's agent: replacing its marker would
 			// orphan its tab and checkout, which refresh closes and removes by the marker.
-			return src, "send ^" + p.Item + " to herdr pane " + a.Pane, nil
+			return src, "send ^" + p.Item + " to pane " + a.Pane, nil
 		}
 		out, err := note.SetDispatch(n, src, p.Item, note.Dispatch{Pane: a.Pane})
-		return out, "send ^" + p.Item + " to herdr pane " + a.Pane, err
+		return out, "send ^" + p.Item + " to pane " + a.Pane, err
 	})
 	if err != nil {
-		return sent, fmt.Errorf("prompted herdr pane %s, but it is not recorded on ^%s: %w", a.Pane, p.Item, err)
+		return sent, fmt.Errorf("prompted pane %s, but it is not recorded on ^%s: %w", a.Pane, p.Item, err)
 	}
 	return sent, nil
 }
@@ -213,13 +212,13 @@ func Item(id string) string { return "work item ^" + id }
 // after it.
 func PromptTag(id string) string { return ClosingLead + Item(id) + " in " }
 
-// prompt returns the note, item id and the text of its herdr-prompt block. The note need not
+// prompt returns the note, item id and the text of its prompt block. The note need not
 // parse cleanly elsewhere; a parse error is reported only when the block is not found.
 func prompt(src []byte, id string) (n *note.Note, it *note.Item, text string, err error) {
 	n, perr := note.Parse(src)
 	it = n.Item(id)
 	if it == nil || it.Prompt == nil {
-		err := fmt.Errorf("no herdr-prompt block with id=%q", id)
+		err := fmt.Errorf("no prompt block with id=%q", id)
 		if perr != nil {
 			err = fmt.Errorf("%w; the note does not parse: %w", err, perr)
 		}
@@ -262,20 +261,20 @@ func dedent(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// workspace is the one herdr workspace labelled label, among those herdr lists (labelled).
+// workspace is the one workspace labelled label, among those rex lists (labelled).
 func (s Sender) workspace(ctx context.Context, label string) (Workspace, error) {
-	spaces, err := s.herdr().WorkspaceList(ctx)
+	spaces, err := s.client().WorkspaceList(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
 	ws, n := labelled(spaces, label)
 	if n != 1 {
-		return Workspace{}, fmt.Errorf("%d herdr workspaces labelled %q", n, label)
+		return Workspace{}, fmt.Errorf("%d workspaces labelled %q", n, label)
 	}
 	return ws, nil
 }
 
-// project is the owner/repo whose session is in the herdr workspace label names, for item it
+// project is the owner/repo whose session is in the workspace label names, for item it
 // of n: the project whose workspace override is label, else the project of the item's ref or of
 // its section whose repo is named label and has no override.
 func (s Sender) project(n *note.Note, it *note.Item, label string) (string, error) {
@@ -313,17 +312,17 @@ func (s Sender) project(n *note.Note, it *note.Item, label string) (string, erro
 			return repo, nil
 		}
 	}
-	return "", fmt.Errorf("no project's session is in herdr workspace %q: set projects.\"<owner>/<repo>\".workspace = %q", label, label)
+	return "", fmt.Errorf("no project's session is in workspace %q: set projects.\"<owner>/<repo>\".workspace = %q", label, label)
 }
 
 // agent is the agent p goes to for harness name, h: the first in `agent list` order in p's
 // workspace, of h's kind, idle or done, whose cwd is p's checkout or under it. A fresh
 // dispatch's agent works in a checkout of its own, so it is never picked. With none available,
 // busy ones of the kind included, it spawns one.
-func (s Sender) agent(ctx context.Context, p Prompt, name string, h config.Harness) (herdr.Agent, error) {
-	agents, err := s.herdr().AgentList(ctx)
+func (s Sender) agent(ctx context.Context, p Prompt, name string, h config.Harness) (rex.Agent, error) {
+	agents, err := s.client().AgentList(ctx)
 	if err != nil {
-		return herdr.Agent{}, err
+		return rex.Agent{}, err
 	}
 	for _, a := range agents {
 		if a.Workspace == p.To.ID && a.Kind == h.Kind && slices.Contains(available, a.Status) && InCheckout(p.Checkout, a.Cwd) {
@@ -336,9 +335,9 @@ func (s Sender) agent(ctx context.Context, p Prompt, name string, h config.Harne
 // spawn starts an agent of harness name, h, for p, and returns it: in the initial shell pane of
 // p's workspace when deliver just created it, else in a new tab of the workspace at its
 // checkout, without focus. It is named the first free `<repo>-<harness>`
-// among live, all of herdr's agents (AgentName). The tool never closes it: a session keeps its
+// among live, all of rex's agents (AgentName). The tool never closes it: a session keeps its
 // warm context.
-func (s Sender) spawn(ctx context.Context, p Prompt, name string, h config.Harness, live []herdr.Agent) (herdr.Agent, error) {
+func (s Sender) spawn(ctx context.Context, p Prompt, name string, h config.Harness, live []rex.Agent) (rex.Agent, error) {
 	taken := make([]string, len(live))
 	for i, a := range live {
 		taken[i] = a.Name
@@ -346,32 +345,25 @@ func (s Sender) spawn(ctx context.Context, p Prompt, name string, h config.Harne
 	_, repo, _ := strings.Cut(p.Repo, "/")
 	agent := AgentName(repo, name, taken)
 	if p.root != "" {
-		if err := s.herdr().AgentStart(ctx, agent, h.Kind, p.root, h.Args); err != nil {
-			return herdr.Agent{}, fmt.Errorf("%w; herdr workspace %q, created for it, is left in place", err, p.To.Label)
+		if err := s.client().AgentStart(ctx, agent, h.Kind, p.root, h.Args); err != nil {
+			return rex.Agent{}, fmt.Errorf("%w; workspace %q, created for it, is left in place", err, p.To.Label)
 		}
-		return herdr.Agent{Name: agent, Kind: h.Kind, Workspace: p.To.ID, Pane: p.root, Cwd: p.Checkout}, nil
+		return rex.Agent{Name: agent, Kind: h.Kind, Workspace: p.To.ID, Pane: p.root, Cwd: p.Checkout}, nil
 	}
-	pane, err := Start(ctx, s.herdr(), h, p.To.ID, p.Checkout, agent)
+	pane, err := Start(ctx, s.client(), h, p.To.ID, p.Checkout, agent)
 	if err != nil {
 		if pane != "" {
-			err = fmt.Errorf("%w; its herdr tab, pane %s, is left in place", err, pane)
+			err = fmt.Errorf("%w; its tab, pane %s, is left in place", err, pane)
 		}
-		return herdr.Agent{}, err
+		return rex.Agent{}, err
 	}
-	return herdr.Agent{Name: agent, Kind: h.Kind, Workspace: p.To.ID, Pane: pane, Cwd: p.Checkout}, nil
+	return rex.Agent{Name: agent, Kind: h.Kind, Workspace: p.To.ID, Pane: pane, Cwd: p.Checkout}, nil
 }
 
-// herdr 0.9.5 has no call that creates a pane running a command, so an agent starts in two,
-// and is prompted in a third (spec §9.2), each checked against `herdr <cmd> --help`:
-//
-//	herdr tab create --workspace <id> --cwd <path> --label <text> --no-focus
-//	herdr agent start <name> --kind <kind> --pane <id> [-- <agent-args>...]
-//	herdr agent prompt <pane> <text>
-
-// Start starts harness h's agent, named name, in a new tab of herdr workspace ws at cwd,
+// Start starts harness h's agent, named name, in a new tab of workspace ws at cwd,
 // labelled name, without taking focus. pane is the tab's pane once created, even when the
 // agent does not start. A session's spawn and a fresh dispatch both start their agents here.
-func Start(ctx context.Context, c herdr.Mux, h config.Harness, ws, cwd, name string) (pane string, err error) {
+func Start(ctx context.Context, c rex.Client, h config.Harness, ws, cwd, name string) (pane string, err error) {
 	if pane, err = c.TabCreate(ctx, ws, cwd, name); err != nil {
 		return "", err
 	}
@@ -409,12 +401,5 @@ func sameDir(a, b string) bool {
 	return err == nil && fa.IsDir() && os.SameFile(fa, fb)
 }
 
-func (s Sender) herdr() herdr.Mux { return Mux(s.Config, s.Herdr, s.Env) }
-
-// Mux is the multiplexer cfg names (ADR 0012), its executable at path, run with env.
-func Mux(cfg config.Config, path string, env []string) herdr.Mux {
-	if cfg.Multiplexer == config.Rex {
-		return rex.New(path, env)
-	}
-	return herdr.New(path, env)
-}
+// client is the rex client the send calls rex through.
+func (s Sender) client() rex.Client { return rex.New(s.Rex, s.Env) }

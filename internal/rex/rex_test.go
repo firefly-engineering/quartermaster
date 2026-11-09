@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
 )
 
 const (
@@ -104,7 +102,7 @@ func TestAgentList(t *testing.T) {
 			t.Parallel()
 			f := &fakeRex{t: t, status: tt.status, started: true}
 			got, err := Client{Run: f.run}.AgentList(t.Context())
-			want := []herdr.Agent{{Kind: "claude", Name: "web-claude", Workspace: sess, Tab: sess + "/window:w2", Pane: sess + "/" + agent, Cwd: "/src/web", Status: tt.want}}
+			want := []Agent{{Kind: "claude", Name: "web-claude", Workspace: sess, Tab: sess + "/window:w2", Pane: sess + "/" + agent, Cwd: "/src/web", Status: tt.want}}
 			if err != nil || !slices.Equal(got, want) {
 				t.Fatalf("got %+v, %v; want %+v", got, err, want)
 			}
@@ -116,12 +114,12 @@ func TestPaneGetGone(t *testing.T) {
 	t.Parallel()
 	c := Client{Run: (&fakeRex{t: t}).run}
 	for _, id := range []string{sess + "/block:gone", "session:gone/" + shell} {
-		if _, err := c.PaneGet(t.Context(), id); herdr.Code(err) != herdr.PaneNotFound {
-			t.Errorf("PaneGet(%s): %v, code %q", id, err, herdr.Code(err))
+		if _, err := c.PaneGet(t.Context(), id); Code(err) != PaneNotFound {
+			t.Errorf("PaneGet(%s): %v, code %q", id, err, Code(err))
 		}
 	}
 	p, err := c.PaneGet(t.Context(), sess+"/"+shell)
-	if want := (herdr.Pane{ID: sess + "/" + shell, Workspace: sess, Tab: sess + "/window:w1", Cwd: "/src/web"}); err != nil || p != want {
+	if want := (Pane{ID: sess + "/" + shell, Workspace: sess, Tab: sess + "/window:w1", Cwd: "/src/web"}); err != nil || p != want {
 		t.Fatalf("got %+v, %v; want %+v", p, err, want)
 	}
 }
@@ -132,8 +130,8 @@ func TestTabClose(t *testing.T) {
 	if err := c.TabClose(t.Context(), sess+"/window:w2"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.TabClose(t.Context(), sess+"/window:gone"); herdr.Code(err) != herdr.TabNotFound {
-		t.Fatalf("%v, code %q", err, herdr.Code(err))
+	if err := c.TabClose(t.Context(), sess+"/window:gone"); Code(err) != TabNotFound {
+		t.Fatalf("%v, code %q", err, Code(err))
 	}
 }
 
@@ -233,6 +231,25 @@ func TestAgentRead(t *testing.T) {
 func TestBadID(t *testing.T) {
 	t.Parallel()
 	if _, err := (Client{Run: (&fakeRex{t: t}).run}).PaneGet(t.Context(), "w1:p1"); err == nil {
-		t.Fatal("a herdr pane id read as rex's")
+		t.Fatal("a pane id with no session read")
+	}
+}
+
+// TestExitErrorVerb names a failed call by its method or command, never by a flag.
+func TestExitErrorVerb(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"api", "call", "session.list", "{}"}, "rex api call session.list: gone"},
+		{[]string{"capture", "-s", sess, "-b", agent, "--trim", "--unwrap"}, "rex capture: gone"},
+		{[]string{"send-key", "-s", sess, "-b", agent, "enter"}, "rex send-key: gone"},
+		{[]string{"new", "web", "-c", "/src/web", "--json"}, "rex new: gone"},
+		{[]string{"window", "new", "-s", sess, "web", "-c", "/src/web"}, "rex window new: gone"},
+	} {
+		if got := (&ExitError{Args: c.args, Stderr: []byte("gone\n")}).Error(); got != c.want {
+			t.Errorf("%q: %q, want %q", c.args, got, c.want)
+		}
 	}
 }

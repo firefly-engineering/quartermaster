@@ -2,7 +2,7 @@
 // the first tool of the quartermaster suite (ADR 0009).
 //
 // main is the one place that reads the process's environment, home, cwd and clock and finds
-// jj, git, gh and herdr on PATH; it passes what it found down to every package.
+// jj, git, gh and rex on PATH; it passes what it found down to every package.
 package main
 
 import (
@@ -32,7 +32,7 @@ var version = "dev"
 // host is what main reads from the process, gathered once so tests can stand in for it.
 type host struct {
 	getenv   func(string) string
-	environ  []string // handed to jj and herdr
+	environ  []string // handed to jj, git, gh and rex
 	home     string   // "" when unknown
 	cwd      string   // relative --config and --vault resolve against it; "" when unknown
 	lookPath func(string) (string, error)
@@ -87,8 +87,8 @@ func run(args []string, stdout, stderr io.Writer, h host) int {
 	return usage(stderr)
 }
 
-// send runs the ▶ button handler (spec §9.1) with the default configuration, and herdr and jj
-// found by h. A herdr not found stays "", which Send reports only once the date and id are
+// send runs the ▶ button handler (spec §9.1) with the default configuration, and rex and jj
+// found by h. A rex not found stays "", which Send reports only once the date and id are
 // valid.
 func send(args []string, stdout, stderr io.Writer, h host) int {
 	cfg, err := config.Load(config.Options{Home: h.home, DefaultPath: defaultConfigPath(h.getenv, h.home)})
@@ -96,7 +96,7 @@ func send(args []string, stdout, stderr io.Writer, h host) int {
 		d := deps(cfg, h)
 		e := &engine.Engine{Repo: cfg.Vault.Repo, Dir: cfg.Vault.Dir, JJ: d.JJ, Env: d.Env}
 		var sent qmsend.Sent
-		sent, err = qmsend.Sender{Config: cfg, Engine: e, Herdr: d.Herdr, Env: d.Env}.
+		sent, err = qmsend.Sender{Config: cfg, Engine: e, Rex: d.Rex, Env: d.Env}.
 			Send(context.Background(), args[0], args[1], args[2])
 		if err == nil {
 			_, err = fmt.Fprintln(stdout, sent)
@@ -157,13 +157,13 @@ func absolute(p, cwd string) string {
 // deps are the tools' dependencies, from the configuration and the host.
 func deps(cfg config.Config, h host) tools.Deps {
 	// Each "" is fine until a tool needs it: jj for a jj vault or project, git for a git
-	// project, gh for refresh (which reports it missing, per item), herdr to refresh, send or
+	// project, gh for refresh (which reports it missing, per item), rex to refresh, send or
 	// dispatch.
 	jj, _ := h.lookPath("jj")
 	git, _ := h.lookPath("git")
 	gh, _ := h.lookPath("gh")
-	herdr, _ := h.lookPath(cfg.Multiplexer) // herdr or rex (ADR 0012)
-	return tools.Deps{Config: cfg, Now: h.now, JJ: jj, Git: git, GH: gh, Herdr: herdr, Env: h.environ}
+	rex, _ := h.lookPath("rex")
+	return tools.Deps{Config: cfg, Now: h.now, JJ: jj, Git: git, GH: gh, Rex: rex, Env: h.environ}
 }
 
 // serve runs the MCP server on stdin and stdout until the client disconnects.

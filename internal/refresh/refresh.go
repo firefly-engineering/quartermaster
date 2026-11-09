@@ -1,9 +1,9 @@
-// Package refresh reconciles a day's note with GitHub and herdr (ADR 0003, spec §6 and §11):
+// Package refresh reconciles a day's note with GitHub and rex (ADR 0003, spec §6 and §11):
 // it moves a work item only where the evidence proves the move, and says why it left every
 // other item it checked as it was.
 //
 // Refresh runs in two steps, so nothing outside the note runs under the note's lock:
-// [Reconciler.Gather] reads a parsed note and asks gh and herdr about it, and [Plan.Apply],
+// [Reconciler.Gather] reads a parsed note and asks gh and rex about it, and [Plan.Apply],
 // inside the engine's Mutate edit, applies what the evidence proved to the note as it then is,
 // skipping an item that changed meanwhile. Ticked checkboxes need nothing here: every write
 // reconciles them (spec §4.4), and so does refresh's, even when it moves nothing.
@@ -15,10 +15,10 @@
 //     closed as not planned or as a duplicate is DROPPED. An open one, a PR closed unmerged or
 //     an issue closed with no reason proves nothing. A WAITING item completes too, since what
 //     it waited on is done: the merged PR, or what closed the issue, is its summary (§4.3).
-//   - herdr, for an IN_PROGRESS item with a dispatch marker, which no transition has moved
+//   - rex, for an IN_PROGRESS item with a dispatch marker, which no transition has moved
 //     since its dispatch: its pane gone, or no agent in it, is a worker that exited, and the
 //     item goes to WAITING, never DONE.
-//   - herdr, for an item in *Sent to other repos* marked **sent** or **acked**: the agent it
+//   - rex, for an item in *Sent to other repos* marked **sent** or **acked**: the agent it
 //     was sent to, once settled, has replied when its output after the item's prompt holds
 //     GitHub links; the item is marked **acked** and the new links are added to its line. Its
 //     state stays: only GitHub proves the work done, and when it does, the item's status
@@ -26,7 +26,7 @@
 //
 // One step writes outside the note, on a DONE or DROPPED item whose marker records a fresh
 // dispatch (`pane=` and `ws=`): when its pane's agent is idle or done and still bears the name
-// the dispatch gave it, or no agent runs in the pane, Gather closes the pane's herdr tab, and
+// the dispatch gave it, or no agent runs in the pane, Gather closes the pane's tab, and
 // Apply drops `pane=` from the marker; `ws=` stays. A pane already gone just loses `pane=`. A
 // running agent is left for the next refresh, and a renamed one keeps its tab: renaming it is
 // how the developer keeps one. A session send's pane, with no `ws=`, is never closed.
@@ -38,7 +38,7 @@
 // issue-<N> branch is never deleted.
 //
 // Like every package but main, this one reads neither the environment nor the cwd: gh, jj and
-// git come in as Runners, herdr as a herdr.Mux, and the projects' checkouts from the
+// git come in as Runners, rex as a rex.Client, and the projects' checkouts from the
 // configuration.
 package refresh
 
@@ -49,14 +49,14 @@ import (
 	"strings"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
 )
 
 // Reconciler gathers the evidence for a refresh.
 type Reconciler struct {
 	GH       Runner          // runs gh
-	Herdr    herdr.Mux       // calls herdr
+	Rex      rex.Client      // calls rex
 	JJ, Git  Runner          // run jj and git, to remove a finished fresh checkout
 	Projects config.Projects // where that checkout's project is
 }
@@ -71,7 +71,7 @@ type Applied struct {
 	Status  string   `json:"status,omitempty" jsonschema:"an item sent to another repo: the status its reply set"`
 	Links   []string `json:"links,omitempty" jsonschema:"an item sent to another repo: the links from its reply added to its line"`
 	Pane    string   `json:"pane,omitempty" jsonschema:"a finished fresh dispatch: the pane dropped from its marker"`
-	Tab     string   `json:"tab,omitempty" jsonschema:"a finished fresh dispatch: the herdr tab closed with it; absent when it was gone already"`
+	Tab     string   `json:"tab,omitempty" jsonschema:"a finished fresh dispatch: the tab closed with it; absent when it was gone already"`
 	// Workspace is set alone, on the refresh after the one that drops Pane.
 	Workspace string `json:"ws,omitempty" jsonschema:"a finished fresh dispatch whose tab is closed: the checkout removed, or found gone, and dropped from its marker"`
 }
@@ -108,7 +108,7 @@ type gatherer struct {
 	agentsRead bool
 }
 
-// Gather asks GitHub and herdr about every work item of n that is not DONE or DROPPED, in note
+// Gather asks GitHub and rex about every work item of n that is not DONE or DROPPED, in note
 // order, and returns what the answers prove. A DONE or DROPPED item's finished fresh dispatch
 // has its tab closed here, and its pane dropped by Apply; once its pane is dropped, its
 // checkout is removed here, and its ws dropped by Apply.
@@ -202,7 +202,7 @@ func (g *gatherer) item(ctx context.Context, p *Plan, it *note.Item, sent bool) 
 	}
 }
 
-// finished closes the herdr tab of a DONE or DROPPED item's fresh dispatch, when its worker is
+// finished closes the tab of a DONE or DROPPED item's fresh dispatch, when its worker is
 // done with it, and plans dropping its pane from the item's marker. A marker with no ws is not a
 // fresh dispatch's, so its pane is never closed. A marker with a ws alone, its tab closed, has
 // its checkout removed, and plans dropping its ws.

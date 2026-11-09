@@ -1,6 +1,6 @@
-// Package rex drives Rex for send, refresh and dispatch, as package herdr drives herdr: it
-// answers herdr.Mux's calls in herdr's types (ADR 0012). A herdr workspace is a rex session, a
-// tab a window, a pane a block.
+// Package rex drives Rex for send, refresh and dispatch: one method per call they make, and
+// the types they share (ADR 0012). A workspace is a rex session, a tab a window, a pane a
+// block.
 //
 // Every rex call on a block or a window needs its session, so a pane id is
 // `<session_id>/<block_id>` and a tab id `<session_id>/<window_id>`.
@@ -22,8 +22,59 @@ import (
 	"time"
 
 	"github.com/firefly-engineering/quartermaster/internal/command"
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
 )
+
+// The codes Code gives a call on a pane, or a tab, that does not exist.
+const (
+	PaneNotFound = "pane_not_found"
+	TabNotFound  = "tab_not_found"
+)
+
+// The statuses an agent reports: idle or done, its turn over; working, running a turn;
+// blocked, waiting on an approval or a question.
+const (
+	Idle    = "idle"
+	Done    = "done"
+	Working = "working"
+	Blocked = "blocked"
+)
+
+// MaxName is the longest agent name send and dispatch give, as its block's label. A name is
+// [a-z][a-z0-9_-]{0,31}: a NameStart, then NameChars.
+const MaxName = 32
+
+// NameStart reports whether r may start an agent name: [a-z].
+func NameStart(r rune) bool { return r >= 'a' && r <= 'z' }
+
+// NameChar reports whether r may be in an agent name: [a-z0-9_-].
+func NameChar(r rune) bool { return NameStart(r) || r >= '0' && r <= '9' || r == '_' || r == '-' }
+
+// Agent is a pane running a program other than its shell (AgentList).
+type Agent struct {
+	Kind      string // the program in the pane's foreground, as claude or omp
+	Name      string // its block's label: the name send or dispatch gave it, else the developer's
+	Workspace string
+	Tab       string
+	Pane      string
+	Cwd       string
+	Status    string // what the program last reported; "" when it reported nothing
+}
+
+// Workspace is a session: its id, and its label.
+type Workspace struct {
+	ID    string
+	Label string
+}
+
+// Pane is a block: its id, its session's and window's, and what runs in it.
+type Pane struct {
+	ID        string
+	Workspace string
+	Tab       string
+	Cwd       string
+	Kind      string // the agent in the pane, as Agent's Kind; "" for none
+	Status    string
+}
 
 // Runner runs rex with args and returns its standard output. A run that exits non-zero
 // returns an *ExitError. Tests stand in a fake for it.
@@ -39,8 +90,6 @@ type Client struct {
 	// 15s.
 	Patience, PromptPatience time.Duration
 }
-
-var _ herdr.Mux = Client{}
 
 // New is a Client for the executable at path, run directly with no shell and with env as its
 // whole environment. A path of "" is rex not found, which every call reports.
@@ -68,12 +117,12 @@ func (e *ExitError) Error() string { return "rex " + verb(e.Args) + ": " + e.Mes
 // Message is what rex wrote to standard error, else to standard output, trimmed.
 func (e *ExitError) Message() string { return (*command.ExitError)(e).Message() }
 
-// code is the API error code in err, as not_found: rex's CLI ends a failed call's message with
+// apiCode is the API error code in err, as not_found: rex's CLI ends a failed call's message with
 // `(status=404 code=not_found)`. "" when err is not rex's or carries none.
 //
 // shortcut: rex is closed source, with no documented error shape on the CLI; read the token
 // until it has one.
-func code(err error) string {
+func apiCode(err error) string {
 	var exit *ExitError
 	if !errors.As(err, &exit) {
 		return ""
@@ -90,7 +139,16 @@ func code(err error) string {
 	return c
 }
 
-// notFound is err, a call on something that does not exist, answering herdr's code want.
+// Code is the not-found code in err, PaneNotFound or TabNotFound; "" when err is none of these.
+func Code(err error) string {
+	var nf *notFound
+	if errors.As(err, &nf) {
+		return nf.want
+	}
+	return ""
+}
+
+// notFound is err, a call on something that does not exist, which Code reads as want.
 type notFound struct {
 	err  error
 	want string
@@ -98,11 +156,10 @@ type notFound struct {
 
 func (e *notFound) Error() string { return e.err.Error() }
 func (e *notFound) Unwrap() error { return e.err }
-func (e *notFound) Code() string  { return e.want }
 
 // gone wraps err in want when rex says its session or target does not exist.
 func gone(err error, want string) error {
-	if c := code(err); c == "not_found" || c == "session_not_found" {
+	if c := apiCode(err); c == "not_found" || c == "session_not_found" {
 		return &notFound{err: err, want: want}
 	}
 	return err
@@ -134,7 +191,7 @@ type proc struct {
 }
 
 // WorkspaceList is `session.list`: each session's id and label.
-func (c Client) WorkspaceList(ctx context.Context) ([]herdr.Workspace, error) {
+func (c Client) WorkspaceList(ctx context.Context) ([]Workspace, error) {
 	var r struct {
 		Sessions []struct {
 			ID    string `json:"session_id"`
@@ -144,20 +201,20 @@ func (c Client) WorkspaceList(ctx context.Context) ([]herdr.Workspace, error) {
 	if err := c.call(ctx, &r, "session.list", struct{}{}); err != nil {
 		return nil, err
 	}
-	ws := make([]herdr.Workspace, len(r.Sessions))
+	ws := make([]Workspace, len(r.Sessions))
 	for i, s := range r.Sessions {
-		ws[i] = herdr.Workspace{ID: s.ID, Label: s.Label}
+		ws[i] = Workspace{ID: s.ID, Label: s.Label}
 	}
 	return ws, nil
 }
 
-// PaneList is every block of every session, as herdr's panes.
-func (c Client) PaneList(ctx context.Context) ([]herdr.Pane, error) {
+// PaneList is every block of every session, as panes.
+func (c Client) PaneList(ctx context.Context) ([]Pane, error) {
 	spaces, err := c.WorkspaceList(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var panes []herdr.Pane
+	var panes []Pane
 	for _, s := range spaces {
 		blocks, err := c.blocks(ctx, s.ID)
 		if err != nil {
@@ -175,12 +232,12 @@ func (c Client) PaneList(ctx context.Context) ([]herdr.Pane, error) {
 }
 
 // AgentList is every pane running a program other than its shell, named by its block's label.
-func (c Client) AgentList(ctx context.Context) ([]herdr.Agent, error) {
+func (c Client) AgentList(ctx context.Context) ([]Agent, error) {
 	spaces, err := c.WorkspaceList(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var agents []herdr.Agent
+	var agents []Agent
 	for _, s := range spaces {
 		blocks, err := c.blocks(ctx, s.ID)
 		if err != nil {
@@ -192,7 +249,7 @@ func (c Client) AgentList(ctx context.Context) ([]herdr.Agent, error) {
 				return nil, err
 			}
 			if p.Kind != "" {
-				agents = append(agents, herdr.Agent{Kind: p.Kind, Name: p.Label, Workspace: p.Workspace, Tab: p.Tab, Pane: p.ID, Cwd: p.Cwd, Status: p.Status})
+				agents = append(agents, Agent{Kind: p.Kind, Name: p.Label, Workspace: p.Workspace, Tab: p.Tab, Pane: p.ID, Cwd: p.Cwd, Status: p.Status})
 			}
 		}
 	}
@@ -200,11 +257,11 @@ func (c Client) AgentList(ctx context.Context) ([]herdr.Agent, error) {
 }
 
 // PaneGet is the pane id names. A pane, or a session, that does not exist is an error whose
-// herdr.Code is herdr.PaneNotFound.
-func (c Client) PaneGet(ctx context.Context, id string) (herdr.Pane, error) {
+// Code is PaneNotFound.
+func (c Client) PaneGet(ctx context.Context, id string) (Pane, error) {
 	s, b, err := split(id)
 	if err != nil {
-		return herdr.Pane{}, err
+		return Pane{}, err
 	}
 	v, err := c.look(ctx, s, b)
 	return v.Pane, err
@@ -212,7 +269,7 @@ func (c Client) PaneGet(ctx context.Context, id string) (herdr.Pane, error) {
 
 // WorkspaceCreate is `rex new <label> -c <cwd>`: a session with one shell. It returns that
 // shell's pane. rex new shows the session in no app.
-func (c Client) WorkspaceCreate(ctx context.Context, cwd, label string) (herdr.Pane, error) {
+func (c Client) WorkspaceCreate(ctx context.Context, cwd, label string) (Pane, error) {
 	var r struct {
 		Session string `json:"session_id"`
 		Windows []struct {
@@ -221,13 +278,13 @@ func (c Client) WorkspaceCreate(ctx context.Context, cwd, label string) (herdr.P
 		} `json:"initial_windows"`
 	}
 	if err := c.json(ctx, &r, "new", label, "-c", cwd, "--json"); err != nil {
-		return herdr.Pane{}, err
+		return Pane{}, err
 	}
 	if r.Session == "" || len(r.Windows) == 0 || len(r.Windows[0].Blocks) == 0 {
-		return herdr.Pane{}, errors.New("rex new: no block in its answer")
+		return Pane{}, errors.New("rex new: no block in its answer")
 	}
 	w := r.Windows[0]
-	return herdr.Pane{ID: join(r.Session, w.Blocks[0]), Workspace: r.Session, Tab: join(r.Session, w.ID), Cwd: cwd}, nil
+	return Pane{ID: join(r.Session, w.Blocks[0]), Workspace: r.Session, Tab: join(r.Session, w.ID), Cwd: cwd}, nil
 }
 
 // TabCreate is `rex window new`, unfocused, in session workspace at cwd, labelled label. It
@@ -246,14 +303,14 @@ func (c Client) TabCreate(ctx context.Context, workspace, cwd, label string) (st
 }
 
 // TabClose is `session.close_window`: it closes the window and every block in it. A window
-// already gone is an error whose herdr.Code is herdr.TabNotFound.
+// already gone is an error whose Code is TabNotFound.
 func (c Client) TabClose(ctx context.Context, id string) error {
 	s, w, err := split(id)
 	if err != nil {
 		return err
 	}
 	err = c.call(ctx, nil, "session.close_window", map[string]string{"session_id": s, "window_id": w})
-	return gone(err, herdr.TabNotFound)
+	return gone(err, TabNotFound)
 }
 
 // AgentStart labels pane's block name, then types kind and args into its shell and presses
@@ -335,7 +392,7 @@ func (c Client) AgentPrompt(ctx context.Context, pane, text string) error {
 		if err != nil {
 			return err
 		}
-		if v.Status == herdr.Working || v.Status == herdr.Blocked || v.Reported != before.Reported {
+		if v.Status == Working || v.Status == Blocked || v.Reported != before.Reported {
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -398,9 +455,9 @@ func (c Client) blocks(ctx context.Context, session string) ([]block, error) {
 	return r.Blocks, err
 }
 
-// view is a block as herdr's pane, with its label and when its status was reported.
+// view is a block as a Pane, with its label and when its status was reported.
 type view struct {
-	herdr.Pane
+	Pane
 	Label string
 	// Reported is the updated_at of the record Status came from, as rex wrote it, compared only
 	// for change: a report rex records later can only carry a later time, so a different one is
@@ -408,11 +465,11 @@ type view struct {
 	Reported string
 }
 
-// pane reads block b of session as herdr's pane. Its Kind is the name of the program in its
+// pane reads block b of session as a Pane. Its Kind is the name of the program in its
 // foreground when that is not the block's shell, and its Status what that program last
 // reported, "" when it reported nothing.
 func (c Client) pane(ctx context.Context, session string, b block) (view, error) {
-	v := view{Pane: herdr.Pane{ID: join(session, b.ID), Workspace: session, Tab: join(session, b.Window)}, Label: b.Label}
+	v := view{Pane: Pane{ID: join(session, b.ID), Workspace: session, Tab: join(session, b.Window)}, Label: b.Label}
 	var pr struct {
 		Child      *proc  `json:"child"`
 		Foreground *proc  `json:"foreground"`
@@ -451,19 +508,19 @@ func (c Client) pane(ctx context.Context, session string, b block) (view, error)
 }
 
 // look is block blk of session, read as pane does. A block, or a session, that does not exist
-// is an error whose herdr.Code is herdr.PaneNotFound.
+// is an error whose Code is PaneNotFound.
 func (c Client) look(ctx context.Context, session, blk string) (view, error) {
 	blocks, err := c.blocks(ctx, session)
 	if err != nil {
-		return view{}, gone(err, herdr.PaneNotFound)
+		return view{}, gone(err, PaneNotFound)
 	}
 	for _, b := range blocks {
 		if b.ID == blk {
 			v, err := c.pane(ctx, session, b)
-			return v, gone(err, herdr.PaneNotFound)
+			return v, gone(err, PaneNotFound)
 		}
 	}
-	return view{}, &notFound{err: fmt.Errorf("rex: no block %s in session %s", blk, session), want: herdr.PaneNotFound}
+	return view{}, &notFound{err: fmt.Errorf("rex: no block %s in session %s", blk, session), want: PaneNotFound}
 }
 
 // agentRunning reports whether fg, a block's foreground process, is a program other than the
@@ -542,8 +599,13 @@ func (c Client) run(ctx context.Context, args ...string) ([]byte, error) {
 
 // verb is the call args make, as `api call session.list` or `window new`, which errors name it by.
 func verb(args []string) string {
-	if len(args) >= 3 && args[0] == "api" {
+	switch {
+	case len(args) >= 3 && args[0] == "api":
 		return strings.Join(args[:3], " ")
+	case len(args) >= 2 && args[0] == "window":
+		return strings.Join(args[:2], " ")
+	case len(args) >= 1:
+		return args[0]
 	}
-	return strings.Join(args[:min(2, len(args))], " ")
+	return ""
 }

@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
 )
 
-// ProjectWorkspace is the herdr workspace of repo's project (spec §9.2). Its checkout comes
-// from projects, by convention or override (spec §3); the workspace from herdr's live state,
+// ProjectWorkspace is the workspace of repo's project (spec §9.2). Its checkout comes from
+// projects, by convention or override (spec §3); the workspace from rex's live state,
 // the first of:
 //
 //  1. the workspace labelled as the project's override says;
@@ -24,7 +24,7 @@ import (
 // root is the created workspace's initial shell pane, "" when one was found. A missing
 // checkout is an error, and nothing is cloned. Send and dispatch both resolve here; the tool
 // never closes a workspace it created.
-func ProjectWorkspace(ctx context.Context, c herdr.Mux, projects config.Projects, repo string) (ws Workspace, root string, err error) {
+func ProjectWorkspace(ctx context.Context, c rex.Client, projects config.Projects, repo string) (ws Workspace, root string, err error) {
 	p := projects.Project(repo)
 	spaces, err := c.WorkspaceList(ctx)
 	if err != nil {
@@ -37,7 +37,7 @@ func ProjectWorkspace(ctx context.Context, c herdr.Mux, projects config.Projects
 		case 1:
 			return ws, "", nil
 		default:
-			return Workspace{}, "", fmt.Errorf("projects.%q.workspace: %d herdr workspaces labelled %q", repo, n, p.Workspace)
+			return Workspace{}, "", fmt.Errorf("projects.%q.workspace: %d workspaces labelled %q", repo, n, p.Workspace)
 		}
 	}
 
@@ -66,7 +66,7 @@ func ProjectWorkspace(ctx context.Context, c herdr.Mux, projects config.Projects
 			for i, w := range at {
 				names[i] = fmt.Sprintf("%q (%s)", w.Label, w.ID)
 			}
-			return Workspace{}, "", fmt.Errorf("herdr workspaces %s each have a pane in %s: set projects.%q.workspace to the project's",
+			return Workspace{}, "", fmt.Errorf("workspaces %s each have a pane in %s: set projects.%q.workspace to the project's",
 				strings.Join(names, ", "), p.Path, repo)
 		}
 	}
@@ -78,7 +78,7 @@ func ProjectWorkspace(ctx context.Context, c herdr.Mux, projects config.Projects
 	case 1:
 		return ws, "", nil
 	default:
-		return Workspace{}, "", fmt.Errorf("%d herdr workspaces labelled %q: set projects.%q.workspace to the project's", n, name, repo)
+		return Workspace{}, "", fmt.Errorf("%d workspaces labelled %q: set projects.%q.workspace to the project's", n, name, repo)
 	}
 }
 
@@ -97,14 +97,14 @@ func labelled(spaces []Workspace, label string) (Workspace, int) {
 	return Workspace{ID: ids[0], Label: label}, 1
 }
 
-// create is §9.2's step 4: a herdr workspace for repo, labelled label, at its checkout, which
+// create is §9.2's step 4: a workspace for repo, labelled label, at its checkout, which
 // must exist.
-func create(ctx context.Context, c herdr.Mux, repo, checkout, label string) (Workspace, string, error) {
+func create(ctx context.Context, c rex.Client, repo, checkout, label string) (Workspace, string, error) {
 	if checkout == "" {
-		return Workspace{}, "", fmt.Errorf("no herdr workspace for %s, and no checkout to open one at: set projects.root, or projects.%q.path", repo, repo)
+		return Workspace{}, "", fmt.Errorf("no workspace for %s, and no checkout to open one at: set projects.root, or projects.%q.path", repo, repo)
 	}
 	if fi, err := os.Stat(checkout); err != nil || !fi.IsDir() {
-		return Workspace{}, "", fmt.Errorf("no herdr workspace for %s, and no checkout of it at %s to open one at; nothing is cloned: clone it there, or set projects.%q.path",
+		return Workspace{}, "", fmt.Errorf("no workspace for %s, and no checkout of it at %s to open one at; nothing is cloned: clone it there, or set projects.%q.path",
 			repo, checkout, repo)
 	}
 	root, err := c.WorkspaceCreate(ctx, checkout, label)

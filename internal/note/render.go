@@ -111,7 +111,7 @@ func SplitSummary(title string) (head, summary string) {
 
 // PromptUnit is a work item's herdr-prompt block.
 type PromptUnit struct {
-	To   string // the project's owner/repo, or a herdr workspace label
+	To   string // the project's owner/repo, or a workspace label
 	Body string // the prompt, without callout markers
 }
 

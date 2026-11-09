@@ -72,8 +72,6 @@ A user's file may name several harnesses and route tiers between them; this one 
 well-specified implementation to a cheaper harness:
 
 ```toml
-multiplexer = "herdr"                     # herdr (the default) or rex: what send, dispatch and refresh drive
-
 [vault]
 repo = "~/src/github.com/sigma/worklog"   # jj repo holding the vault
 dir = "worklog"                           # Obsidian vault, relative to repo
@@ -102,12 +100,6 @@ root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<re
 # path = "~/work/IaC"           # its checkout, instead of <root>/<owner>/<repo>
 # workspace = "infra"           # its herdr workspace label, instead of finding it (§9.2)
 ```
-
-`multiplexer` picks the terminal multiplexer agents run under: `herdr`, the default, or
-`rex`. Rex is the multiplexer ([ADR 0012]), and herdr support and this key are being
-removed. With `rex`, a herdr workspace below is a rex session, a tab a window and a pane a
-block. Every other section still names herdr's calls, which rex answers
-as that ADR maps them. Any other value is a load error.
 
 A **harness** is `[harness.<name>]`: a herdr agent `kind` and its `args`. `[tiers]` maps a
 work item's tier to a harness name; a tier it does not list, and an item with no tier, go
