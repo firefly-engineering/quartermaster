@@ -208,6 +208,36 @@ func TestPromptSendRefuses(t *testing.T) {
 	}
 }
 
+// TestSendPromptNotTaken fails a send whose prompt the agent did not take, and records no pane
+// on the item, for prompt_send and a session dispatch alike.
+func TestSendPromptNotTaken(t *testing.T) {
+	t.Parallel()
+	queue := "- Wave 2 after the stack lands.\n"
+	item := "- ⬜ [#20](https://github.com/acme/web/issues/20): rename the store · Tier: `basic-implementation` ^rename\n"
+	for name, send := range map[string]func(Deps) error{
+		"prompt_send": func(d Deps) error {
+			_, err := d.promptSend(t.Context(), PromptSendInput{Item: "session-store"})
+			return err
+		},
+		"task_dispatch session": func(d Deps) error {
+			_, err := d.taskDispatch(t.Context(), TaskDispatchInput{Ref: "acme/web#20"})
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			src := edited(t, queue, item+queue)
+			h := newFakeHerdr(t, mixed()...)
+			h.fail(t, "agent prompt", "prompt not taken by w1:p2")
+			d := sendDeps(t, src, h)
+			if err := send(d); err == nil || !strings.Contains(err.Error(), "prompt not taken by w1:p2") {
+				t.Fatalf("%v, want the prompt not taken", err)
+			}
+			d.checkNote(t, src)
+		})
+	}
+}
+
 // TestTaskDispatchSession dispatches a ref in session mode through the send path prompt_send
 // takes: the harness of the item's tier, and its pane recorded.
 func TestTaskDispatchSession(t *testing.T) {

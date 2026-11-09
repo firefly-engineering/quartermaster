@@ -357,6 +357,8 @@ exists under the vault, and the vault is the configured one (`vault.repo` and `v
 5. Run `herdr agent prompt <pane> <text>` with no shell in between, the text ending with the
    closing line the skill relies on (`send.Closing`): update work item `^<id>`, or
    `owner/repo#N` for a prompt no block holds, in the note at its path, and refresh *Next*.
+   A send fails, and records nothing, when the agent does not take its prompt: no `working`
+   or `blocked`, nor a status newer than the send, within 15 s ([ADR 0012]).
 6. Record the pane on the item, through the engine ([§7]): its `qm` marker becomes
    `<!-- qm pane=<id> -->`, replacing any marker it had. A marker with `ws=` is a `fresh`
    dispatch's (§9.2) and stays as it is: its worker remains the item's agent, and `refresh`

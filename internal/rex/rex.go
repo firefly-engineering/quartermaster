@@ -32,9 +32,12 @@ type Runner func(ctx context.Context, args ...string) ([]byte, error)
 // Client calls rex through Run. The zero Client reports rex as not available.
 type Client struct {
 	Run Runner
-	// Tick and Patience pace AgentStart's wait for its program: how often it looks, and for how
-	// long. Zero is 250ms and 30s.
-	Tick, Patience time.Duration
+	// Tick is how often AgentStart looks for its program, and AgentPrompt for its prompt taken.
+	// Zero is 250ms.
+	Tick time.Duration
+	// Patience and PromptPatience are how long AgentStart and AgentPrompt wait. Zero is 30s and
+	// 15s.
+	Patience, PromptPatience time.Duration
 }
 
 var _ herdr.Mux = Client{}
@@ -161,11 +164,11 @@ func (c Client) PaneList(ctx context.Context) ([]herdr.Pane, error) {
 			return nil, err
 		}
 		for _, b := range blocks {
-			p, _, err := c.pane(ctx, s.ID, b)
+			v, err := c.pane(ctx, s.ID, b)
 			if err != nil {
 				return nil, err
 			}
-			panes = append(panes, p)
+			panes = append(panes, v.Pane)
 		}
 	}
 	return panes, nil
@@ -184,12 +187,12 @@ func (c Client) AgentList(ctx context.Context) ([]herdr.Agent, error) {
 			return nil, err
 		}
 		for _, b := range blocks {
-			p, name, err := c.pane(ctx, s.ID, b)
+			p, err := c.pane(ctx, s.ID, b)
 			if err != nil {
 				return nil, err
 			}
 			if p.Kind != "" {
-				agents = append(agents, herdr.Agent{Kind: p.Kind, Name: name, Workspace: p.Workspace, Tab: p.Tab, Pane: p.ID, Cwd: p.Cwd, Status: p.Status})
+				agents = append(agents, herdr.Agent{Kind: p.Kind, Name: p.Label, Workspace: p.Workspace, Tab: p.Tab, Pane: p.ID, Cwd: p.Cwd, Status: p.Status})
 			}
 		}
 	}
@@ -203,17 +206,8 @@ func (c Client) PaneGet(ctx context.Context, id string) (herdr.Pane, error) {
 	if err != nil {
 		return herdr.Pane{}, err
 	}
-	blocks, err := c.blocks(ctx, s)
-	if err != nil {
-		return herdr.Pane{}, gone(err, herdr.PaneNotFound)
-	}
-	for _, bl := range blocks {
-		if bl.ID == b {
-			p, _, err := c.pane(ctx, s, bl)
-			return p, gone(err, herdr.PaneNotFound)
-		}
-	}
-	return herdr.Pane{}, &notFound{err: fmt.Errorf("rex: no block %s in session %s", b, s), want: herdr.PaneNotFound}
+	v, err := c.look(ctx, s, b)
+	return v.Pane, err
 }
 
 // WorkspaceCreate is `rex new <label> -c <cwd>`: a session with one shell. It returns that
@@ -278,10 +272,7 @@ func (c Client) AgentStart(ctx context.Context, name, kind, pane string, args []
 	if err := c.submit(ctx, s, b, shellLine(append([]string{kind}, args...))); err != nil {
 		return err
 	}
-	tick, patience := c.Tick, c.Patience
-	if tick == 0 {
-		tick = 250 * time.Millisecond
-	}
+	tick, patience := c.tick(), c.Patience
 	if patience == 0 {
 		patience = 30 * time.Second
 	}
@@ -295,7 +286,7 @@ func (c Client) AgentStart(ctx context.Context, name, kind, pane string, args []
 			if bl.ID != b {
 				continue
 			}
-			p, _, err := c.pane(ctx, s, bl)
+			p, err := c.pane(ctx, s, bl)
 			if err != nil {
 				return err
 			}
@@ -318,13 +309,59 @@ func (c Client) AgentStart(ctx context.Context, name, kind, pane string, args []
 	}
 }
 
-// AgentPrompt pastes text into pane's block and presses Enter: one turn, whatever its lines.
+// AgentPrompt pastes text into pane's block and presses Enter: one turn, whatever its lines. It
+// returns once the agent took it: it reports working or blocked, or a status rex recorded after
+// the one seen before the paste, as a turn that finished between two looks leaves. Not by
+// PromptPatience is an error quoting the screen's last lines: a screen that ate the prompt,
+// as omp's setup wizard, reporting idle, shows there. The screen's words are never matched.
 func (c Client) AgentPrompt(ctx context.Context, pane, text string) error {
 	s, b, err := split(pane)
 	if err != nil {
 		return err
 	}
-	return c.submit(ctx, s, b, text)
+	before, err := c.look(ctx, s, b)
+	if err != nil {
+		return err
+	}
+	if err := c.submit(ctx, s, b, text); err != nil {
+		return err
+	}
+	tick, patience := c.tick(), c.PromptPatience
+	if patience == 0 {
+		patience = 15 * time.Second
+	}
+	for deadline := time.Now().Add(patience); ; {
+		v, err := c.look(ctx, s, b)
+		if err != nil {
+			return err
+		}
+		if v.Status == herdr.Working || v.Status == herdr.Blocked || v.Reported != before.Reported {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			screen, err := c.AgentRead(ctx, pane, notTakenLines)
+			if err != nil {
+				return fmt.Errorf("rex: prompt not taken by %s within %s; its screen could not be read: %w", pane, patience, err)
+			}
+			return fmt.Errorf("rex: prompt not taken by %s within %s; its screen ends:\n%s", pane, patience, strings.TrimSuffix(string(screen), "\n"))
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(tick):
+		}
+	}
+}
+
+// notTakenLines is how many of the screen's last lines a prompt not taken quotes.
+const notTakenLines = 5
+
+// tick is how often AgentStart and AgentPrompt look at their block.
+func (c Client) tick() time.Duration {
+	if c.Tick == 0 {
+		return 250 * time.Millisecond
+	}
+	return c.Tick
 }
 
 // AgentRead is the last lines of pane's screen and scrollback, unwrapped, as plain text.
@@ -361,45 +398,72 @@ func (c Client) blocks(ctx context.Context, session string) ([]block, error) {
 	return r.Blocks, err
 }
 
-// pane reads block b of session as herdr's pane, and returns its label. Its Kind is the name of
-// the program in its foreground when that is not the block's shell, and its Status what that
-// program last reported, "" when it reported nothing.
-func (c Client) pane(ctx context.Context, session string, b block) (herdr.Pane, string, error) {
-	p := herdr.Pane{ID: join(session, b.ID), Workspace: session, Tab: join(session, b.Window)}
+// view is a block as herdr's pane, with its label and when its status was reported.
+type view struct {
+	herdr.Pane
+	Label string
+	// Reported is the updated_at of the record Status came from, as rex wrote it, compared only
+	// for change: a report rex records later can only carry a later time, so a different one is
+	// newer, and its format need not be known. "" when the program reported nothing.
+	Reported string
+}
+
+// pane reads block b of session as herdr's pane. Its Kind is the name of the program in its
+// foreground when that is not the block's shell, and its Status what that program last
+// reported, "" when it reported nothing.
+func (c Client) pane(ctx context.Context, session string, b block) (view, error) {
+	v := view{Pane: herdr.Pane{ID: join(session, b.ID), Workspace: session, Tab: join(session, b.Window)}, Label: b.Label}
 	var pr struct {
 		Child      *proc  `json:"child"`
 		Foreground *proc  `json:"foreground"`
 		Ancestors  []proc `json:"ancestors"`
 	}
 	if err := c.method(ctx, &pr, session, b.ID, "process"); err != nil {
-		return herdr.Pane{}, "", err
+		return view{}, err
 	}
 	if pr.Foreground == nil {
-		return p, b.Label, nil
+		return v, nil
 	}
-	p.Cwd = pr.Foreground.Cwd
+	v.Cwd = pr.Foreground.Cwd
 	if !agentRunning(pr.Child, pr.Foreground, pr.Ancestors) {
-		return p, b.Label, nil
+		return v, nil
 	}
-	p.Kind = pr.Foreground.Name
+	v.Kind = pr.Foreground.Name
 	var st struct {
 		Records []struct {
-			ID    string `json:"id"`
-			State string `json:"state"`
-			Owner *proc  `json:"owner"`
+			ID      string          `json:"id"`
+			State   string          `json:"state"`
+			Owner   *proc           `json:"owner"`
+			Updated json.RawMessage `json:"updated_at"`
 		} `json:"records"`
 	}
 	if err := c.method(ctx, &st, session, b.ID, "program_status"); err != nil {
-		return herdr.Pane{}, "", err
+		return view{}, err
 	}
 	for _, r := range st.Records {
 		// The root record, reported by the program now in the foreground: an exited program's
 		// record outlives it. pid and name together, as rex asks, since pids are reused.
 		if r.ID == "" && r.Owner != nil && r.Owner.PID == pr.Foreground.PID && r.Owner.Name == pr.Foreground.Name {
-			p.Status = r.State
+			v.Status, v.Reported = r.State, string(r.Updated)
 		}
 	}
-	return p, b.Label, nil
+	return v, nil
+}
+
+// look is block blk of session, read as pane does. A block, or a session, that does not exist
+// is an error whose herdr.Code is herdr.PaneNotFound.
+func (c Client) look(ctx context.Context, session, blk string) (view, error) {
+	blocks, err := c.blocks(ctx, session)
+	if err != nil {
+		return view{}, gone(err, herdr.PaneNotFound)
+	}
+	for _, b := range blocks {
+		if b.ID == blk {
+			v, err := c.pane(ctx, session, b)
+			return v, gone(err, herdr.PaneNotFound)
+		}
+	}
+	return view{}, &notFound{err: fmt.Errorf("rex: no block %s in session %s", blk, session), want: herdr.PaneNotFound}
 }
 
 // agentRunning reports whether fg, a block's foreground process, is a program other than the

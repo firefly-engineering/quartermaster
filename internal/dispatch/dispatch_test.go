@@ -434,7 +434,8 @@ func TestFreshHerdrFails(t *testing.T) {
 	}
 }
 
-// TestFreshPromptFails names the failed `agent prompt` by herdr's verb, not by the prompt.
+// TestFreshPromptFails names a failed `agent prompt`, including one not taken, by herdr's verb,
+// not by the prompt, and leaves the item where it was.
 func TestFreshPromptFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -446,6 +447,12 @@ func TestFreshPromptFails(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "Today.") {
 		t.Errorf("err %v holds the prompt", err)
+	}
+	if !strings.Contains(err.Error(), "is not moved") {
+		t.Errorf("err %v does not say the item stays", err)
+	}
+	if f.noteSrc(t) != testNote {
+		t.Errorf("the note changed:\n%s", f.noteSrc(t))
 	}
 }
 
