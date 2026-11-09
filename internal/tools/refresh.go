@@ -12,7 +12,7 @@ import (
 
 	"github.com/firefly-engineering/quartermaster/internal/note"
 	"github.com/firefly-engineering/quartermaster/internal/refresh"
-	"github.com/firefly-engineering/quartermaster/internal/send"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
 )
 
 // RefreshInput is refresh's input.
@@ -27,7 +27,7 @@ type RefreshOutput struct {
 	SkippedItems []refresh.Skipped `json:"skipped_items" jsonschema:"the work items refresh checked and left as they were, and why"`
 }
 
-// refresh reconciles the note with GitHub and herdr (spec §6, §11). It asks them before it
+// refresh reconciles the note with GitHub and rex (spec §6, §11). It asks them before it
 // takes the note's lock, from a read of the note, then applies what they proved in one write;
 // that write also ticks paired checkboxes and derives icons, as every write does, so a refresh
 // that proves nothing still settles the note.
@@ -35,16 +35,16 @@ func (d Deps) refresh(ctx context.Context, in RefreshInput) (RefreshOutput, erro
 	return d.refreshWith(ctx, in, d.reconciler())
 }
 
-// reconciler asks GitHub, herdr, jj and git through the commands d resolved.
+// reconciler asks GitHub, rex, jj and git through the commands d resolved.
 func (d Deps) reconciler() refresh.Reconciler {
 	return refresh.Reconciler{
-		GH: refresh.Command("gh", d.GH, d.Env), Herdr: send.Mux(d.Config, d.Herdr, d.Env),
+		GH: refresh.Command("gh", d.GH, d.Env), Rex: rex.New(d.Rex, d.Env),
 		JJ: refresh.Command("jj", d.JJ, d.Env), Git: refresh.Command("git", d.Git, d.Env),
 		Projects: d.Config.Projects,
 	}
 }
 
-// refreshWith is refresh asking GitHub, herdr, jj and git through rec, which tests stand fakes in.
+// refreshWith is refresh asking GitHub, rex, jj and git through rec, which tests stand fakes in.
 func (d Deps) refreshWith(ctx context.Context, in RefreshInput, rec refresh.Reconciler) (RefreshOutput, error) {
 	vault, err := d.vault()
 	if err != nil {

@@ -27,9 +27,9 @@ The ▶ buttons need the community **Shell commands** plugin
    ```
 
    Obsidian started from the Dock does not have the nix profile on `PATH`, so the
-   prefix is what finds `worklog` and lets it find the multiplexer worklog.toml names,
-   `herdr` or `rex`, so that executable must be in the profile too. No environment variables
-   of either are needed: each reaches its running server on its own.
+   prefix is what finds `worklog` and lets it find `rex`, which must be in the profile too.
+   No environment variables of either are needed: each reaches its running server on its
+   own.
 
    If jj signs commits with an SSH key held in an agent, also prefix
    `SSH_AUTH_SOCK="<your agent's socket>"`. Without it, `worklog send` fails at the
@@ -65,7 +65,7 @@ escaping "cannot guarantee the escaping to be 100% secure". Any web page or emai
 open an `obsidian://` link.
 
 So `worklog send` accepts only a date and an id, and validates both. It reads the prompt
-from your own note, and passes it to `herdr` as an argument, never through a shell. A
+from your own note, and passes it to `rex` as an argument, never through a shell. A
 forged link can only resend a prompt you already wrote.
 
 It also refuses to type into an agent that is `blocked`, because there the text

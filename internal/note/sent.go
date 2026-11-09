@@ -28,7 +28,7 @@ const sentArrow = "→"
 // summary: `<title> → <to>, **<status>**`, then `, <note>` when it has one.
 type Sent struct {
 	Title  string // the title before ` → `: its ref link, text, cost and route as written
-	To     string // the herdr workspace label the ask goes to
+	To     string // the workspace label the ask goes to
 	Status string // one of SentStatuses
 	Note   string // the text after the status and its `, `, as when it was asked and the reply's links; "" for none
 }
@@ -36,7 +36,7 @@ type Sent struct {
 // SentUnit is a sent status as the renderer writes it after a work item's title (and, in the
 // list form, its cost and route): ` → <to>, **<status>**`, then `, <note>` when it has one.
 type SentUnit struct {
-	To     string // the herdr workspace label
+	To     string // the workspace label
 	Status string // one of SentStatuses
 	Note   string // "" for none
 }

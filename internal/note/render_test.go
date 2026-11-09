@@ -168,7 +168,7 @@ func TestRenderUnits(t *testing.T) {
 			})
 		}, "##### ⬜ [#819](u): admissible?\n\nEvery Run is refused.\n~20 min.\n" +
 			"[▶ grill in trunk](obsidian://shell-commands/?vault=worklog&execute=nf8lgvkx5s&_date=2026-10-18&_item=grill-819) ^grill-819\n\n" +
-			"> [!prompt]- Prompt sent to trunk\n> ```herdr-prompt id=grill-819 to=trunk\n> /grill-with-docs u\n>\n> the question\n> ```\n"},
+			"> [!prompt]- Prompt sent to trunk\n> ```qm-prompt id=grill-819 to=trunk\n> /grill-with-docs u\n>\n> the question\n> ```\n"},
 		{"heading item, id alone", func() ([]byte, error) {
 			return r.Item(ItemUnit{ID: "x", Icon: IconTodo, Heading: true, Title: "X"})
 		}, "##### ⬜ X\n\n^x\n"},

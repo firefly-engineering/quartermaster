@@ -28,16 +28,16 @@ type ItemFields struct {
 	Prompt *PromptInput `json:"prompt,omitempty" jsonschema:"the prompt its ▶ button sends; makes it a ##### item. An item_upsert update of an item with a prompt refuses an absent one; null drops its prompt and its ▶ buttons, in its bucket and on Next, and it stays a ##### item only with a body"`
 	Button string       `json:"button,omitempty" jsonschema:"the ▶ label, as: grill in trunk; with a prompt, send to <to> when absent"`
 	Sent   string       `json:"sent,omitempty" jsonschema:"in Sent to other repos, how far its ask has gone: to send, sent, acked or done; written after its title as → <sent_to>, **<sent>**; unchanged when absent"`
-	SentTo string       `json:"sent_to,omitempty" jsonschema:"the herdr workspace label its ask goes to, written after the →; unchanged when absent, else the prompt's to"`
+	SentTo string       `json:"sent_to,omitempty" jsonschema:"the workspace label its ask goes to, written after the →; unchanged when absent, else the prompt's to"`
 
 	// null holds the fields given as an explicit JSON null, which decodes as an absent one does.
 	// An update drops a null prompt and its buttons, and clears a null ref, cost, route or tier.
 	null struct{ prompt, ref, cost, route, tier bool }
 }
 
-// PromptInput is a work item's herdr-prompt block.
+// PromptInput is a work item's prompt block.
 type PromptInput struct {
-	To   string `json:"to" jsonschema:"the project whose session it goes to, owner/repo, whose herdr workspace is opened if need be; or a herdr workspace label, only looked up"`
+	To   string `json:"to" jsonschema:"the project whose session it goes to, owner/repo, whose workspace is opened if need be; or a workspace label, only looked up"`
 	Text string `json:"text" jsonschema:"the self-contained prompt"`
 }
 

@@ -13,7 +13,7 @@ and rex is now the only multiplexer
 - The docs keep quartermaster's own words, **workspace**, **tab** and **pane**, defined in
   GLOSSARY.md as rex's session, window and block. "herdr" stays only in ADRs and history.
 - New prompt blocks are written as `qm-prompt`, like the `qm` dispatch marker. `herdr-prompt`
-  blocks in old notes still parse, and old notes are not rewritten.
+  blocks in old notes still parse, and stay as written until a tool rewrites their item.
 - Every send checks its prompt was taken. The agent must report `working` or `blocked`, or a
   status newer than the send, within 15 s. Otherwise the send fails with the last 5 lines of
   the pane's screen, and the item stays as it was.
@@ -99,5 +99,3 @@ whitespace, `--` or `>`, so they fit a dispatch marker as they are.
   This is the only text the client inspects.
 - `agent list` costs one call per session plus two per block, about 16 ms each. That is fine
   at tens of panes.
-- Until [#173](https://github.com/firefly-engineering/quartermaster/issues/173) lands, the
-  code still carries herdr's client and the `multiplexer` key as the trial left them.

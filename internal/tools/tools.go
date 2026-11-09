@@ -10,7 +10,7 @@
 // Deps.engine; nothing else writes a note.
 //
 // Like every package but main, this one reads neither the environment nor the cwd: [Deps]
-// carries the configuration, the clock, and the paths of jj, git, gh and herdr.
+// carries the configuration, the clock, and the paths of jj, git, gh and rex.
 package tools
 
 import (
@@ -36,8 +36,8 @@ type Deps struct {
 	JJ     string           // jj's path, "" when not found
 	Git    string           // git's path, "" when not found
 	GH     string           // gh's path, "" when not found
-	Herdr  string           // the path of Config.Multiplexer's executable, "" when not found
-	Env    []string         // the environment jj, git, gh and herdr run with
+	Rex    string           // rex's path, "" when not found
+	Env    []string         // the environment jj, git, gh and rex run with
 }
 
 // Tool is one operation, servable over MCP and runnable from the CLI.
@@ -179,7 +179,7 @@ func All(d Deps) []Tool {
 		},
 		Def[RefreshInput, RefreshOutput]{
 			Name: "refresh", Verb: "refresh",
-			Description: "Reconcile the note with GitHub and herdr, applying only what the evidence proves " +
+			Description: "Reconcile the note with GitHub and rex, applying only what the evidence proves " +
 				"(spec §11): a merged PR or an issue closed as completed moves its item to DONE with the PR or " +
 				"commit; an issue closed as not planned or a duplicate, to DROPPED; a dispatched IN_PROGRESS " +
 				"item whose pane is gone or whose agent exited, to WAITING (\"worker exited\"), never DONE; a " +
@@ -191,7 +191,7 @@ func All(d Deps) []Tool {
 		},
 		Def[PromptSendInput, PromptSendOutput]{
 			Name: "prompt_send", Verb: "send",
-			Description: "Send a work item's prompt block to the herdr workspace its to= names, as `worklog send` does, " +
+			Description: "Send a work item's prompt block to the workspace its to= names, as `worklog send` does, " +
 				"with the closing line asking it to update the item. The item's tier picks the harness through [tiers] " +
 				"(default when it has none); the prompt goes to the first idle or done agent of the harness's kind there " +
 				"whose cwd is in the project's checkout. With none, it spawns one of the harness in a new tab there, which " +
@@ -203,10 +203,10 @@ func All(d Deps) []Tool {
 			Name: "task_dispatch", Verb: "dispatch",
 			Description: "Start work on a ref, owner/repo#N, or a work item by id: a batch, which has no ref, or an " +
 				"item dispatched as its ref. Mode session (the default) sends the work item's prompt, or /implement <url>, " +
-				"to the project's herdr session as prompt_send does, and records the pane on the work item. Mode fresh " +
+				"to the project's session as prompt_send does, and records the pane on the work item. Mode fresh " +
 				"creates or reuses the ref's workspace, or the batch's, named after its item id (jj workspace, else git " +
 				"worktree, under dispatch.workspace_root), starts the harness [tiers] maps the item's tier to (default " +
-				"when it has none) in a new herdr tab there and prompts it, with /implement <url> or the batch's prompt, " +
+				"when it has none) in a new tab there and prompts it, with /implement <url> or the batch's prompt, " +
 				"then records the pane and workspace on the work item and moves it to IN_PROGRESS. Dispatched fresh " +
 				"again, it first closes its previous worker's tab, and refuses while that worker is working or blocked.",
 			Run: d.taskDispatch,

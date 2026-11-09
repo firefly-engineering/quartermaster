@@ -19,18 +19,17 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
 	"github.com/firefly-engineering/quartermaster/skills"
 )
 
 // Config is the resolved configuration. Every path in it has had `~` expanded.
 type Config struct {
-	Multiplexer string             `toml:"multiplexer"` // Herdr or Rex: the one send, dispatch and refresh drive (ADR 0012)
-	Vault       Vault              `toml:"vault"`
-	Dispatch    Dispatch           `toml:"dispatch"`
-	Harness     map[string]Harness `toml:"harness"` // keyed by the harness's name
-	Tiers       map[string]string  `toml:"tiers"`   // tier, or default, to a harness's name
-	Projects    Projects           `toml:"-"`       // decodeFile reads the projects table key by key: see Projects
+	Vault    Vault              `toml:"vault"`
+	Dispatch Dispatch           `toml:"dispatch"`
+	Harness  map[string]Harness `toml:"harness"` // keyed by the harness's name
+	Tiers    map[string]string  `toml:"tiers"`   // tier, or default, to a harness's name
+	Projects Projects           `toml:"-"`       // decodeFile reads the projects table key by key: see Projects
 }
 
 // Vault locates the worklog vault.
@@ -45,8 +44,8 @@ type Dispatch struct {
 	WorkspaceRoot string `toml:"workspace_root"` // <root>/<owner>/<repo>/issue-<n>, or <item-id> for a batch
 }
 
-// Harness is an agent program and how herdr starts it: its herdr agent kind and its arguments
-// (ADR 0011). Config holds at most one harness per kind.
+// Harness is an agent program and how rex starts it: its kind, which is the program to run,
+// and its arguments (ADR 0011). Config holds at most one harness per kind.
 type Harness struct {
 	Kind string   `toml:"kind"`
 	Args []string `toml:"args"`
@@ -69,12 +68,6 @@ func (h Harness) Prompt(text string) string {
 	}
 	return "/skill:" + rest
 }
-
-// The multiplexers config may name.
-const (
-	Herdr = "herdr"
-	Rex   = "rex"
-)
 
 // DefaultTier is the [tiers] key every tier it does not list, and every item with no tier,
 // goes to.
@@ -103,16 +96,16 @@ type Projects struct {
 	Repos map[string]Project // projects."owner/repo", keyed by owner/repo (ADR 0007)
 }
 
-// Project is one GitHub repo's checkout and herdr session. In an override, an empty field
+// Project is one GitHub repo's checkout and session. In an override, an empty field
 // keeps the convention.
 type Project struct {
 	Path      string `toml:"path"`      // checkout
-	Workspace string `toml:"workspace"` // herdr workspace label of the project's session
+	Workspace string `toml:"workspace"` // workspace label of the project's session
 }
 
 // Project resolves repo, an owner/repo: its checkout is its entry's path, else
-// <Root>/<owner>/<repo> ("" when Root is unset); its herdr workspace label is its entry's, or
-// "" for the caller to find in herdr's live state (spec §9.2).
+// <Root>/<owner>/<repo> ("" when Root is unset); its workspace label is its entry's, or "" for
+// the caller to find in rex's live state (spec §9.2).
 func (p Projects) Project(repo string) Project {
 	pr := p.Repos[repo]
 	if owner, name, ok := strings.Cut(repo, "/"); ok && pr.Path == "" && p.Root != "" {
@@ -133,9 +126,8 @@ type Options struct {
 // Defaults returns the built-in configuration, before `~` expansion.
 func Defaults() Config {
 	return Config{
-		Multiplexer: Herdr,
-		Vault:       Vault{Dir: "worklog", Name: "worklog"},
-		Dispatch:    Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
+		Vault:    Vault{Dir: "worklog", Name: "worklog"},
+		Dispatch: Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
 		Harness: map[string]Harness{
 			"claude": {Kind: "claude"},
 		},
@@ -169,9 +161,6 @@ func Load(opts Options) (Config, error) {
 		cfg.Vault.Repo = repo
 	}
 
-	if cfg.Multiplexer != Herdr && cfg.Multiplexer != Rex {
-		return Config{}, fmt.Errorf("multiplexer %q: want %q or %q", cfg.Multiplexer, Herdr, Rex)
-	}
 	if err := validateHarnesses(cfg); err != nil {
 		return Config{}, err
 	}
@@ -193,13 +182,12 @@ func decodeFile(path string, required bool, cfg *Config) error {
 	// by key. vault and dispatch decode into cfg in place, keeping the defaults the file omits;
 	// harness and tiers, when the file has them, replace the built-in tables whole.
 	file := struct {
-		Multiplexer *string                   `toml:"multiplexer"`
-		Vault       *Vault                    `toml:"vault"`
-		Dispatch    *Dispatch                 `toml:"dispatch"`
-		Harness     map[string]Harness        `toml:"harness"`
-		Tiers       map[string]string         `toml:"tiers"`
-		Projects    map[string]toml.Primitive `toml:"projects"`
-	}{Multiplexer: &cfg.Multiplexer, Vault: &cfg.Vault, Dispatch: &cfg.Dispatch}
+		Vault    *Vault                    `toml:"vault"`
+		Dispatch *Dispatch                 `toml:"dispatch"`
+		Harness  map[string]Harness        `toml:"harness"`
+		Tiers    map[string]string         `toml:"tiers"`
+		Projects map[string]toml.Primitive `toml:"projects"`
+	}{Vault: &cfg.Vault, Dispatch: &cfg.Dispatch}
 	md, err := toml.Decode(string(b), &file)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -253,7 +241,7 @@ func validateHarnesses(cfg Config) error {
 		}
 		kind := cfg.Harness[name].Kind
 		if kind == "" {
-			return fmt.Errorf("harness.%s.kind is not set: name the herdr agent kind it starts", name)
+			return fmt.Errorf("harness.%s.kind is not set: name the program it starts", name)
 		}
 		if other, ok := byKind[kind]; ok {
 			return fmt.Errorf("harnesses %q and %q are both of kind %q: keep one harness per kind", other, name, kind)
@@ -279,9 +267,9 @@ func validateHarnesses(cfg Config) error {
 	return nil
 }
 
-// validHarnessName reports whether name matches [a-z][a-z0-9_-]*, so it fits a herdr agent name.
+// validHarnessName reports whether name matches [a-z][a-z0-9_-]*, so it fits an agent name.
 func validHarnessName(name string) bool {
-	return name != "" && herdr.NameStart(rune(name[0])) && !strings.ContainsFunc(name, func(r rune) bool { return !herdr.NameChar(r) })
+	return name != "" && rex.NameStart(rune(name[0])) && !strings.ContainsFunc(name, func(r rune) bool { return !rex.NameChar(r) })
 }
 
 func expandPaths(cfg *Config, home string) error {

@@ -97,13 +97,13 @@ type ItemView struct {
 // SentView is the sent status of an item in Sent to other repos.
 type SentView struct {
 	Status string `json:"status" jsonschema:"to send, sent, acked or done"`
-	To     string `json:"to" jsonschema:"the herdr workspace label after its →"`
+	To     string `json:"to" jsonschema:"the workspace label after its →"`
 	Note   string `json:"note,omitempty" jsonschema:"what follows the status: when it was asked, the reply's links"`
 }
 
-// PromptView is a work item's herdr-prompt block.
+// PromptView is a work item's prompt block.
 type PromptView struct {
-	To   string `json:"to" jsonschema:"the herdr workspace label"`
+	To   string `json:"to" jsonschema:"the workspace label"`
 	Body string `json:"body"`
 }
 

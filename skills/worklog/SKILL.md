@@ -7,8 +7,8 @@ description: >-
   to open the day (objectives, triage of yesterday's leftovers), to record a human unblock
   session or its decisions, to queue or record an AFK agent batch (mass-implement results,
   PR stacks, merges), to capture a new bug, HITL need or work item sent to another repo
-  (IaC agent over herdr), to refine the day's objectives, and to close the day. Also use
-  when the user asks "where are we", "what's next" or "what's left" for today.
+  (IaC agent in its own workspace), to refine the day's objectives, and to close the day.
+  Also use when the user asks "where are we", "what's next" or "what's left" for today.
 ---
 
 # Worklog
@@ -39,8 +39,8 @@ Without it, stop and say so: never edit the note by hand instead.
 | `next_set` | replace *Next*, by work item, manual action or anchor id |
 | `status_set` | rewrite the status line |
 | `carryover_verdict` | record keep, defer or drop on a carry-over row |
-| `refresh` | reconcile the note with GitHub and herdr |
-| `prompt_send` | send a work item's prompt to an available agent of its tier's harness in its herdr session; records the pane on the item and leaves its state |
+| `refresh` | reconcile the note with GitHub and the agents' panes |
+| `prompt_send` | send a work item's prompt to an available agent of its tier's harness in its project's workspace; records the pane on the item and leaves its state |
 | `task_dispatch` | start work on a ref or a work item, in its project's session or in a fresh agent |
 
 `prompt_send` is the tool form of the ▶ button's `worklog send`: see
@@ -136,8 +136,8 @@ result, then `status_set` and `next_set`.
    once a day: a later call rewrites the status line as `open` again.
    Review findings left as judgement calls in prose are not collected: read the previous
    note and capture them.
-2. Check each row against its source of truth (`gh issue view`, `gh pr view`, herdr
-   replies). An item closed overnight is reported, not triaged: drop it with the link.
+2. Check each row against its source of truth (`gh issue view`, `gh pr view`, the
+   replies in agents' panes). An item closed overnight is reported, not triaged: drop it with the link.
 3. Ask for the day's **objectives**, and add each with `objective_set`. Each names its
    project and a checkable done-condition, such as "epic #639 closed" or "stack merged".
    Offer candidates from the carry-over and the open epics. **Milestones first when one
@@ -360,15 +360,17 @@ it goes to the user; escalation never loops.
 
 ## Buttons
 
-A ▶ button runs `worklog send`, which types a work item's prompt into a herdr
-session: the user's agent for a project, in the project's herdr workspace. Nothing is
-pasted by hand.
+A ▶ button runs `worklog send`, which types a work item's prompt into a session: the
+user's agent for a project, in a pane of the project's workspace. Nothing is pasted by
+hand.
 
 Give a work item a prompt with `item_upsert`: `prompt.to` is the project the prompt goes
 to, as `owner/repo` (`arbora-partners/trunk`), `prompt.text` the prompt, and `button` the label. The server renders the item, its
-button and its prompt block; [`template.md`](template.md) shows the result, and
+button and its `qm-prompt` block; [`template.md`](template.md) shows the result, and
 [`buttons-setup.md`](buttons-setup.md) why the button carries only a reference.
-`next_set` repeats the button on the item's line in *Next*.
+`next_set` repeats the button on the item's line in *Next*. Older notes hold
+`herdr-prompt` blocks: they are still read and sent, and an `item_upsert` of their item
+writes `qm-prompt`.
 
 A TODO item whose route is a command (`/triage`, `/implement`) needs a prompt: its
 button is how that command gets sent, and without a prompt it has none. `item_upsert`
@@ -396,16 +398,15 @@ Point the user at [`buttons-setup.md`](buttons-setup.md) once.
 To send a prompt yourself, call `prompt_send` with the item's id. It records the pane it
 sent to on the item, unless the item was dispatched `fresh` (its marker keeps that worker),
 and nothing else: record the send yourself. When no agent of the item's harness there is
-`idle` or `done`, it starts one in a new tab, and when the project has no herdr workspace,
-it opens one at the project's checkout. It fails if the multiplexer (herdr, or rex when
-worklog.toml names it) is not found or the checkout is missing; leave the item as it was and
-say why.
+`idle` or `done`, it starts one in a new tab, and when the project has no workspace, it
+opens one at the project's checkout. It fails if `rex` is not found or the checkout is
+missing; leave the item as it was and say why.
 
 ## Other repos
 
 Some work belongs to another repo; the current repo's `CLAUDE.md` draws the boundary.
 For trunk, `arbora-partners/IaC` owns what Arbora operates. That work goes to the repo's
-own session over herdr. It is tracked in the **originating** project's *Sent to other
+own session, in its own workspace. It is tracked in the **originating** project's *Sent to other
 repos* bucket, because that project is waiting on it.
 
 1. Write the work item with `item_upsert` under *Sent to other repos*, with `sent: to send`

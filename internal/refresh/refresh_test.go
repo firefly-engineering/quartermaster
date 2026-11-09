@@ -7,12 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	qmherdr "github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
+	"github.com/firefly-engineering/quartermaster/internal/rex/rextest"
 	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
-// fake stands in for gh or herdr: each call's key, from keyOf, names its reply. A call with no
+// fake stands in for gh: each call's key, from keyOf, names its reply. A call with no
 // reply fails the test, so a test also proves what refresh does not ask.
 type fake struct {
 	t       *testing.T
@@ -66,8 +67,6 @@ func ghKey(t *testing.T) func([]string) string {
 	}
 }
 
-func herdrKey(args []string) string { return strings.Join(args, " ") }
-
 // issue and pr are gh's GraphQL replies.
 func issue(state, reason, closer string) string {
 	nodes := "[]"
@@ -92,8 +91,7 @@ const (
 	byCommit = `{"__typename":"Commit","url":"https://github.com/o/r/commit/abc1234"}`
 )
 
-// paneText is what herdr 0.9.5's `agent read` prints for a pane whose agent took item id's
-// prompt and replied: earlier transcript, the prompt with the tag `worklog send` closes it with,
+// paneText is a pane's screen whose agent took item id's prompt and replied: earlier transcript, the prompt with the tag `worklog send` closes it with,
 // then the reply. It is plain text, not JSON.
 func paneText(id, prompt, reply string) string {
 	return "  ⎿  Working copy  (@) : uoytrlvu 201be9fb (empty)\n" +
@@ -126,16 +124,16 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 - ⬜ [#4](https://github.com/o/r/issues/4): still open ^open
 - 🔍 [#5](https://github.com/o/r/pull/5): a merged PR ^merged
 - 🔍 [#6](https://github.com/o/r/pull/6): a PR closed unmerged ^unmerged
-- 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1:p7 ws=/ws/7 --> ^gone
-- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited
-- 🔄 [#9](https://github.com/o/r/issues/9): its agent works <!-- qm pane=w1:p9 ws=/ws/9 --> ^working
-- ⏳ [#10](https://github.com/o/r/issues/10): waits, pane gone — on review <!-- qm pane=w1:p10 ws=/ws/10 --> ^waits
+- 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone
+- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited
+- 🔄 [#9](https://github.com/o/r/issues/9): its agent works <!-- qm pane=w1/p9 ws=/ws/9 --> ^working
+- ⏳ [#10](https://github.com/o/r/issues/10): waits, pane gone — on review <!-- qm pane=w10/p1 ws=/ws/10 --> ^waits
 - ⏳ [#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed
 - ⬜ [#12](https://github.com/o/r/issues/12): closed with no reason ^no-reason
 - ⬜ [#13](https://github.com/o/r/issues/13): gh fails ^gh-fails
-- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone
-- ✅ [#15](https://github.com/o/r/issues/15): done already, a session send <!-- qm pane=w1:p15 --> ^done
-- 🔄 [#17](https://github.com/o/r/issues/17): a session send, its agent gone <!-- qm pane=w1:p17 --> ^session
+- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone
+- ✅ [#15](https://github.com/o/r/issues/15): done already, a session send <!-- qm pane=w15/p1 --> ^done
+- 🔄 [#17](https://github.com/o/r/issues/17): a session send, its agent gone <!-- qm pane=w17/p1 --> ^session
 - 🔄 no ref, nothing to check ^plain
 - 🔄 mentions [#16](https://github.com/o/r/issues/16) after its text ^mention
 
@@ -145,7 +143,7 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 
 #### ⏳ Sent to other repos
 
-- ⏳ [infra#40](https://github.com/o/infra/issues/40): open the port → infra, **sent**, asked 10:00 <!-- qm pane=w5:p1 --> ^port
+- ⏳ [infra#40](https://github.com/o/infra/issues/40): open the port → infra, **sent**, asked 10:00 <!-- qm pane=w5/p1 --> ^port
 - ⏳ [infra#41](https://github.com/o/infra/issues/41): a second ask → infra, **to send** ^unsent
 - 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third
 - ⏳ [infra#43](https://github.com/o/infra/issues/43): a fourth ask → infra, **sent** ^fourth
@@ -174,25 +172,24 @@ func TestGatherAndApply(t *testing.T) {
 		"o/infra#42": {out: issue("CLOSED", "COMPLETED", byPR)},
 		"o/infra#43": {out: issue("CLOSED", "COMPLETED", byCommit)},
 	}}
-	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
-		"pane get w1:p7": {err: &qmherdr.ExitError{Args: []string{"pane", "get", "w1:p7"},
-			Stderr: []byte(`{"id":"1","error":{"code":"pane_not_found","message":"pane w1:p7 not found"}}`)}},
-		"pane get w1:p8": {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p8","agent":null,"agent_status":"unknown"}}}`},
-		"pane get w1:p9": {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p9","agent":"claude","agent_status":"working"}}}`},
-		"agent list": {out: `{"id":"1","result":{"type":"agent_list","agents":[` +
-			`{"workspace_id":"w1","pane_id":"w1:p9","agent_status":"working"},` +
-			`{"workspace_id":"w5","pane_id":"w5:p1","agent_status":"idle"}]}}`},
-		"agent read w5:p1 --source recent-unwrapped --lines 400 --format text": {out: paneText("port",
+	// Pane w1/p7 is gone, w1/p8 holds only its shell; the panes of the items asked nothing are
+	// in sessions rex does not have, so asking about one shows in its calls.
+	rx := rextest.New(t)
+	rx.Edit(func(s *rextest.State) {
+		s.Pane(rex.Pane{ID: "w1/p8", Workspace: "w1", Tab: "w1/t8"})
+		s.Agent(rex.Agent{Kind: "claude", Workspace: "w1", Tab: "w1/t9", Pane: "w1/p9", Status: rex.Working})
+		s.Agent(rex.Agent{Kind: "claude", Workspace: "w5", Tab: "w5/t1", Pane: "w5/p1", Status: rex.Idle})
+		s.Block("w5/p1").Screen = paneText("port",
 			"open the port for https://github.com/o/infra/issues/40",
 			"⏺ Opened the port in https://github.com/o/infra/pull/77 (merged), run: https://github.com/o/infra/actions/runs/9.\n"+
-				"  See also [the issue](https://github.com/o/infra/issues/40).")},
-	}}
+				"  See also [the issue](https://github.com/o/infra/issues/40).")
+	})
 	src := []byte(refreshNote)
 	n, err := note.Parse(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Reconciler{GH: gh.run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n)
+	plan := Reconciler{GH: gh.run, Rex: rx.Client()}.Gather(t.Context(), n)
 	out, applied, skipped, err := plan.Apply(src)
 	if err != nil {
 		t.Fatal(err)
@@ -203,8 +200,8 @@ func TestGatherAndApply(t *testing.T) {
 		{Item: "by-commit", Ref: "o/r#2", From: "IN_REVIEW", To: "DONE", Summary: "closed by https://github.com/o/r/commit/abc1234"},
 		{Item: "not-planned", Ref: "o/r#3", From: "TODO", To: "DROPPED", Summary: "closed as not planned: https://github.com/o/r/issues/0"},
 		{Item: "merged", Ref: "o/r#5", From: "IN_REVIEW", To: "DONE", Summary: "merged https://github.com/o/r/pull/5"},
-		{Item: "gone", Ref: "o/r#7", From: "IN_PROGRESS", To: "WAITING", Summary: "worker exited: pane w1:p7 is gone"},
-		{Item: "exited", Ref: "o/r#8", From: "IN_PROGRESS", To: "WAITING", Summary: "worker exited: no agent in pane w1:p8"},
+		{Item: "gone", Ref: "o/r#7", From: "IN_PROGRESS", To: "WAITING", Summary: "worker exited: pane w1/p7 is gone"},
+		{Item: "exited", Ref: "o/r#8", From: "IN_PROGRESS", To: "WAITING", Summary: "worker exited: no agent in pane w1/p8"},
 		{Item: "waits-closed", Ref: "o/r#11", From: "WAITING", To: "DONE", Summary: "closed by https://github.com/o/r/pull/31"},
 		{Item: "closed-gone", Ref: "o/r#14", From: "IN_PROGRESS", To: "DONE", Summary: "closed as completed: https://github.com/o/r/issues/0"},
 		{Item: "port", Ref: "o/infra#40", From: "WAITING", To: "WAITING", Status: "acked",
@@ -218,7 +215,7 @@ func TestGatherAndApply(t *testing.T) {
 	wantSkipped := map[string]string{
 		"open":      "o/r#4 is open",
 		"unmerged":  "o/r#6 was closed without being merged",
-		"working":   "o/r#9 is open; its worker claude in pane w1:p9 is working",
+		"working":   "o/r#9 is open; its worker claude in pane w1/p9 is working",
 		"waits":     "o/r#10 is open",
 		"no-reason": "o/r#12 is closed with no reason recorded",
 		"gh-fails":  "gh: gh api graphql: HTTP 502",
@@ -242,11 +239,14 @@ func TestGatherAndApply(t *testing.T) {
 	// A terminal item with no fresh dispatch, an item with no ref and one whose ref is not its
 	// leading link ask nothing; nor does a session send's pane (no ws=): its agent leaving is
 	// no worker exiting, so its item stays IN_PROGRESS.
-	for _, c := range append(gh.calls, herdr.calls...) {
-		if c == "o/r#15" || c == "o/r#16" || c == "pane get w1:p15" || c == "pane get w1:p10" || c == "pane get w1:p14" ||
-			c == "pane get w1:p17" {
+	for _, c := range append(gh.calls, rx.Calls()...) {
+		if c == "o/r#15" || c == "o/r#16" || strings.HasSuffix(c, " w15") || strings.HasSuffix(c, " w10") ||
+			strings.HasSuffix(c, " w14") || strings.HasSuffix(c, " w17") {
 			t.Errorf("asked %q", c)
 		}
+	}
+	if w := rx.Writes(); w != "" {
+		t.Errorf("rex written to:\n%s", w)
 	}
 
 	want := refreshNote
@@ -259,16 +259,16 @@ func TestGatherAndApply(t *testing.T) {
 			"- ❌ [#3](https://github.com/o/r/issues/3): closed as not planned — closed as not planned: https://github.com/o/r/issues/0 ^not-planned"},
 		{"- 🔍 [#5](https://github.com/o/r/pull/5): a merged PR ^merged",
 			"- ✅ [#5](https://github.com/o/r/pull/5): a merged PR — merged https://github.com/o/r/pull/5 ^merged"},
-		{"- 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1:p7 ws=/ws/7 --> ^gone",
-			"- ⏳ [#7](https://github.com/o/r/issues/7): its pane is gone — worker exited: pane w1:p7 is gone <!-- qm pane=w1:p7 ws=/ws/7 --> ^gone"},
-		{"- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited",
-			"- ⏳ [#8](https://github.com/o/r/issues/8): its agent exited — worker exited: no agent in pane w1:p8 <!-- qm pane=w1:p8 ws=/ws/8 --> ^exited"},
+		{"- 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone",
+			"- ⏳ [#7](https://github.com/o/r/issues/7): its pane is gone — worker exited: pane w1/p7 is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone"},
+		{"- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited",
+			"- ⏳ [#8](https://github.com/o/r/issues/8): its agent exited — worker exited: no agent in pane w1/p8 <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited"},
 		{"- ⏳ [#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed",
 			"- ✅ [#11](https://github.com/o/r/issues/11): waits, issue closed — closed by https://github.com/o/r/pull/31 ^waits-closed"},
-		{"- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone",
-			"- ✅ [#14](https://github.com/o/r/issues/14): closed, its pane gone too — closed as completed: https://github.com/o/r/issues/0 <!-- qm pane=w1:p14 ws=/ws/14 --> ^closed-gone"},
-		{"→ infra, **sent**, asked 10:00 <!-- qm pane=w5:p1 --> ^port",
-			"→ infra, **acked**, asked 10:00, https://github.com/o/infra/pull/77, https://github.com/o/infra/actions/runs/9 <!-- qm pane=w5:p1 --> ^port"},
+		{"- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone",
+			"- ✅ [#14](https://github.com/o/r/issues/14): closed, its pane gone too — closed as completed: https://github.com/o/r/issues/0 <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone"},
+		{"→ infra, **sent**, asked 10:00 <!-- qm pane=w5/p1 --> ^port",
+			"→ infra, **acked**, asked 10:00, https://github.com/o/infra/pull/77, https://github.com/o/infra/actions/runs/9 <!-- qm pane=w5/p1 --> ^port"},
 		{"- 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third",
 			"- ✅ [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **done** — closed by https://github.com/o/r/pull/31 ^third"},
 		{"- ⏳ [infra#43](https://github.com/o/infra/issues/43): a fourth ask → infra, **sent** ^fourth",
@@ -300,7 +300,11 @@ func TestApplyChangedSinceRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Reconciler{GH: gh.run, Herdr: qmherdr.Client{Run: (&fake{t: t, keyOf: herdrKey}).run}}.Gather(t.Context(), n)
+	rx := rextest.New(t)
+	plan := Reconciler{GH: gh.run, Rex: rx.Client()}.Gather(t.Context(), n)
+	if calls := rx.Calls(); len(calls) != 0 {
+		t.Errorf("rex asked %q", calls)
+	}
 	now := strings.Replace(before, "🔄 [#1]", "⏳ [#1]", 1)
 	out, applied, skipped, err := plan.Apply([]byte(now))
 	if err != nil {
@@ -324,7 +328,11 @@ func TestApplyRefChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Reconciler{GH: gh.run, Herdr: qmherdr.Client{Run: (&fake{t: t, keyOf: herdrKey}).run}}.Gather(t.Context(), n)
+	rx := rextest.New(t)
+	plan := Reconciler{GH: gh.run, Rex: rx.Client()}.Gather(t.Context(), n)
+	if calls := rx.Calls(); len(calls) != 0 {
+		t.Errorf("rex asked %q", calls)
+	}
 	now := strings.Replace(before, "[#1](https://github.com/o/r/issues/1)", "[#2](https://github.com/o/r/issues/2)", 1)
 	out, applied, skipped, err := plan.Apply([]byte(now))
 	if err != nil || string(out) != now || len(applied) != 0 {
@@ -339,41 +347,42 @@ func TestApplyRefChanged(t *testing.T) {
 func TestApplyMarkerChanged(t *testing.T) {
 	t.Parallel()
 	const before = "# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
-		"- ✅ [#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1:p1 ws=/ws/o/r/issue-1 --> ^fix\n"
-	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
-		"pane get w1:p1":  {out: `{"id":"1","result":{"type":"pane_info","pane":{"pane_id":"w1:p1","tab_id":"w1:t1","agent":null}}}`},
-		"tab close w1:t1": {out: `{"id":"1","result":{"type":"ok"}}`},
-	}}
+		"- ✅ [#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1/p1 ws=/ws/o/r/issue-1 --> ^fix\n"
+	rx := rextest.New(t)
+	rx.Edit(func(s *rextest.State) { s.Pane(rex.Pane{ID: "w1/p1", Workspace: "w1", Tab: "w1/t1"}) })
 	n, err := note.Parse([]byte(before))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n)
-	now := strings.Replace(before, "pane=w1:p1", "pane=w1:p2", 1)
+	plan := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Rex: rx.Client()}.Gather(t.Context(), n)
+	if w := rx.Writes(); w != "close w1/t1\n" {
+		t.Errorf("rex writes %q, want the tab closed", w)
+	}
+	now := strings.Replace(before, "pane=w1/p1", "pane=w1/p2", 1)
 	out, applied, skipped, err := plan.Apply([]byte(now))
 	if err != nil || string(out) != now || len(applied) != 0 {
 		t.Fatalf("applied %+v, err %v:\n%s", applied, err, out)
 	}
-	if len(skipped) != 1 || skipped[0].Reason != "its marker no longer records pane w1:p1" {
+	if len(skipped) != 1 || skipped[0].Reason != "its marker no longer records pane w1/p1" {
 		t.Errorf("skipped %+v", skipped)
 	}
 }
 
-// TestNoRunners reports a missing gh or herdr per item, and changes nothing.
+// TestNoRunners reports a missing gh or rex per item, and changes nothing.
 func TestNoRunners(t *testing.T) {
 	t.Parallel()
 	const src = "# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
-		"- 🔄 [#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1:p1 ws=/ws --> ^fix\n"
+		"- 🔄 [#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1/p1 ws=/ws --> ^fix\n"
 	n, err := note.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, applied, skipped, err := Reconciler{GH: Command("gh", "", nil), Herdr: qmherdr.New("", nil)}.
+	out, applied, skipped, err := Reconciler{GH: Command("gh", "", nil), Rex: rex.New("", nil)}.
 		Gather(t.Context(), n).Apply([]byte(src))
 	if err != nil || string(out) != src || len(applied) != 0 {
 		t.Fatalf("applied %+v, err %v", applied, err)
 	}
-	if want := "gh: gh not found on PATH; herdr: herdr not found on PATH"; len(skipped) != 1 || skipped[0].Reason != want {
+	if want := "gh: gh not found on PATH; rex: rex not found on PATH"; len(skipped) != 1 || skipped[0].Reason != want {
 		t.Errorf("skipped %+v, want %q", skipped, want)
 	}
 }
@@ -454,22 +463,24 @@ func TestReplyRoutes(t *testing.T) {
 	t.Parallel()
 	const src = "# Worklog — 2026-10-18\n\n## ⏳ o/r\n\n### ⏳ What remains\n\n#### ⏳ Sent to other repos\n\n" +
 		"##### ⏳ open the port → other, **sent**\n\n" +
-		"Body. [▶ send to infra](obsidian://shell-commands/?vault=w&execute=abc&_date=2026-10-18&_item=port) <!-- qm pane=w5:p2 --> ^port\n\n" +
+		"Body. [▶ send to infra](obsidian://shell-commands/?vault=w&execute=abc&_date=2026-10-18&_item=port) <!-- qm pane=w5/p2 --> ^port\n\n" +
 		"> [!prompt]- Prompt sent to infra\n> ```herdr-prompt id=port to=infra\n> open the port\n> ```\n\n" +
-		"- ⏳ rotate the key → infra, **acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9:p2 ws=/ws --> ^key\n" +
+		"- ⏳ rotate the key → infra, **acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9/p2 ws=/ws --> ^key\n" +
 		"- ⏳ sent before panes were recorded → infra, **sent** ^old\n"
-	read := func(id, links string) reply { return reply{out: paneText(id, "do the thing", "⏺ "+links)} }
-	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
-		"agent list": {out: `{"result":{"agents":[{"workspace_id":"w5","pane_id":"w5:p1","agent_status":"done"},` +
-			`{"workspace_id":"w5","pane_id":"w5:p2","agent_status":"idle"},{"workspace_id":"w9","pane_id":"w9:p2","agent_status":"idle"}]}}`},
-		"agent read w5:p2 --source recent-unwrapped --lines 400 --format text": read("port", "PR: https://github.com/o/infra/pull/5"),
-		"agent read w9:p2 --source recent-unwrapped --lines 400 --format text": read("key", "https://github.com/o/infra/pull/1 and https://github.com/o/infra/pull/2"),
-	}}
+	read := func(id, links string) string { return paneText(id, "do the thing", "⏺ "+links) }
+	rx := rextest.New(t)
+	rx.Edit(func(s *rextest.State) {
+		s.Agent(rex.Agent{Kind: "claude", Workspace: "w5", Tab: "w5/t1", Pane: "w5/p1", Status: rex.Done})
+		s.Agent(rex.Agent{Kind: "claude", Workspace: "w5", Tab: "w5/t2", Pane: "w5/p2", Status: rex.Idle})
+		s.Agent(rex.Agent{Kind: "claude", Workspace: "w9", Tab: "w9/t2", Pane: "w9/p2", Status: rex.Idle})
+		s.Block("w5/p2").Screen = read("port", "PR: https://github.com/o/infra/pull/5")
+		s.Block("w9/p2").Screen = read("key", "https://github.com/o/infra/pull/1 and https://github.com/o/infra/pull/2")
+	})
 	n, err := note.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n).Apply([]byte(src))
+	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Rex: rx.Client()}.Gather(t.Context(), n).Apply([]byte(src))
 	if err != nil || len(applied) != 2 {
 		t.Fatalf("applied %+v skipped %+v err %v", applied, skipped, err)
 	}
@@ -478,35 +489,34 @@ func TestReplyRoutes(t *testing.T) {
 	}
 	want := strings.NewReplacer(
 		"##### ⏳ open the port → other, **sent**\n", "##### ⏳ open the port → other, **acked**, https://github.com/o/infra/pull/5\n",
-		"**acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9:p2 ws=/ws --> ^key",
-		"**acked**, https://github.com/o/infra/pull/1, https://github.com/o/infra/pull/2 <!-- qm pane=w9:p2 ws=/ws --> ^key",
+		"**acked**, https://github.com/o/infra/pull/1 <!-- qm pane=w9/p2 ws=/ws --> ^key",
+		"**acked**, https://github.com/o/infra/pull/1, https://github.com/o/infra/pull/2 <!-- qm pane=w9/p2 ws=/ws --> ^key",
 	).Replace(src)
 	if string(out) != want {
 		t.Errorf("note:\n%s\nwant:\n%s", out, want)
 	}
 }
 
-// TestReplyReadFails reports an `agent read` that exits non-zero as why the item stays sent.
+// TestReplyReadFails reports a screen capture that exits non-zero as why the item stays sent.
 func TestReplyReadFails(t *testing.T) {
 	t.Parallel()
 	const src = "# Worklog — 2026-10-18\n\n## ⏳ o/r\n\n### ⏳ What remains\n\n#### ⏳ Sent to other repos\n\n" +
-		"- ⏳ rotate the key → infra, **sent** <!-- qm pane=w9:p2 ws=/ws --> ^key\n"
-	args := []string{"agent", "read", "w9:p2", "--source", "recent-unwrapped", "--lines", "400", "--format", "text"}
-	herdr := &fake{t: t, keyOf: herdrKey, replies: map[string]reply{
-		"agent list": {out: `{"result":{"agents":[{"workspace_id":"w9","pane_id":"w9:p2","agent_status":"idle"}]}}`},
-		strings.Join(args, " "): {err: &qmherdr.ExitError{Args: args,
-			Stderr: []byte(`{"id":"1","error":{"code":"pane_not_found","message":"pane w9:p2 not found"}}`)}},
-	}}
+		"- ⏳ rotate the key → infra, **sent** <!-- qm pane=w9/p2 ws=/ws --> ^key\n"
+	rx := rextest.New(t)
+	rx.Edit(func(s *rextest.State) {
+		s.Agent(rex.Agent{Kind: "claude", Workspace: "w9", Tab: "w9/t2", Pane: "w9/p2", Status: rex.Idle})
+		s.Fail = map[string]string{"capture": "Error: block gone (status=404 code=not_found)"}
+	})
 	n, err := note.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Herdr: qmherdr.Client{Run: herdr.run}}.Gather(t.Context(), n).Apply([]byte(src))
+	out, applied, skipped, err := Reconciler{GH: (&fake{t: t, keyOf: ghKey(t)}).run, Rex: rx.Client()}.Gather(t.Context(), n).Apply([]byte(src))
 	if err != nil || string(out) != src || len(applied) != 0 {
 		t.Fatalf("applied %+v, err %v", applied, err)
 	}
-	want := `herdr: herdr agent read: {"id":"1","error":{"code":"pane_not_found","message":"pane w9:p2 not found"}}`
-	if len(skipped) != 1 || !strings.HasPrefix(skipped[0].Reason, "herdr:") || skipped[0].Reason != want {
+	want := `rex: rex capture: Error: block gone (status=404 code=not_found)`
+	if len(skipped) != 1 || skipped[0].Reason != want {
 		t.Errorf("skipped %+v, want %q", skipped, want)
 	}
 }

@@ -2,7 +2,7 @@
 
 quartermaster is a suite of agent tools ([ADR 0009](docs/adr/0009-quartermaster-is-the-suite.md)).
 Its first tool, the `worklog` Go binary, keeps the day's Obsidian worklog note and dispatches its
-work to agents under herdr, served as MCP tools. Read [`docs/spec.md`](docs/spec.md) first;
+work to agents under rex, served as MCP tools. Read [`docs/spec.md`](docs/spec.md) first;
 decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md).
 
 ## Layout
@@ -10,15 +10,15 @@ decisions are in [`docs/adr/`](docs/adr/), terms in [`GLOSSARY.md`](GLOSSARY.md)
 | Path | Holds |
 |---|---|
 | `cmd/worklog/` | the `worklog` binary's entry point |
-| `internal/command/` | runs an external executable directly, with injected env and dir, for herdr, gh, and dispatch's jj and git |
+| `internal/command/` | runs an external executable directly, with injected env and dir, for rex, gh, and dispatch's jj and git |
 | `internal/config/` | config loading: defaults, then `worklog.toml`, then flags (spec §3) |
 | `internal/dispatch/` | `task_dispatch`: session mode, and fresh mode in a jj workspace (spec §9.2, ADR 0004); the tab-close guards refresh shares |
 | `internal/engine/` | the mutation engine: lock, hash check, rename, jj commit; the only writer of a note (ADR 0006) |
-| `internal/herdr/` | the herdr client: one method per herdr call, each answer's JSON declared once |
-| `internal/rex/` | the rex client: herdr's calls answered by rex, in herdr's types, for `multiplexer = "rex"` (ADR 0012; herdr support goes in [#173](https://github.com/firefly-engineering/quartermaster/issues/173)) |
+| `internal/rex/` | the rex client: one method per call send, dispatch and refresh make, and the types they share (ADR 0012) |
+| `internal/rex/rextest/` | a fake rex for the tests of the packages that drive it, in process or as an executable on disk |
 | `internal/note/` | the note parser: every unit of spec §4.1 by source range (ADR 0002) |
-| `internal/refresh/` | `refresh`: reconcile the note from GitHub, herdr and ticked checkboxes; close finished `fresh` dispatch tabs and remove their checkouts (ADR 0003, ADR 0011) |
-| `internal/send/` | the one send path for ▶, `prompt_send` and `task_dispatch` session: pick or spawn an agent of the tier's harness, open the project's herdr workspace on demand, record the pane (spec §9.1, §9.2); the agent naming dispatch shares |
+| `internal/refresh/` | `refresh`: reconcile the note from GitHub, rex and ticked checkboxes; close finished `fresh` dispatch tabs and remove their checkouts (ADR 0003, ADR 0011) |
+| `internal/send/` | the one send path for ▶, `prompt_send` and `task_dispatch` session: pick or spawn an agent of the tier's harness, open the project's workspace on demand, record the pane (spec §9.1, §9.2); the agent naming dispatch shares |
 | `internal/server/` | the MCP server (`worklog serve`): the prompts, cut from the embedded skill |
 | `internal/tools/` | every MCP tool and `note` verb, one `Def` each (spec §6) |
 | `skills/worklog/` | the worklog skill: one source for the installed skill and the `workflow_rules` prompt (ADR 0005) |

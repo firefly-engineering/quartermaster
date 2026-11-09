@@ -5,15 +5,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
 	"github.com/firefly-engineering/quartermaster/internal/engine"
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
+	"github.com/firefly-engineering/quartermaster/internal/rex/rextest"
 	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
@@ -46,35 +47,11 @@ const testNote = "# Worklog — " + date + "\n" + `
 > ` + fence + `
 `
 
-// fakeHerdr answers the herdr calls dispatch makes, logging each call's arguments as
-// `[arg]` runs, one call per line. A file named fail-<verb> in its directory makes that call
-// fail; a file named clobber makes `agent start` overwrite the note whose path it holds. Files
-// named workspaces, panes and agents, when present, are the answers of `workspace list`,
-// `pane list` and `agent list`; newFixture writes agents. Every pane `pane get` asks about is
-// gone: a dispatch again finds its previous worker exited.
-const fakeHerdr = `#!/bin/sh
-dir=$(dirname "$0")
-for a in "$@"; do printf '[%s]' "$a" >> "$dir/calls"; done
-echo >> "$dir/calls"
-if [ -e "$dir/fail-$2" ]; then echo "$2 failed" >&2; exit 1; fi
-case "$1 $2" in
-  "workspace list") if [ -e "$dir/workspaces" ]; then cat "$dir/workspaces"; else
-    echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"r"},{"workspace_id":"w2","label":"iac"}]}}'; fi ;;
-  "pane list") if [ -e "$dir/panes" ]; then cat "$dir/panes"; else echo '{"result":{"panes":[]}}'; fi ;;
-  "agent list") cat "$dir/agents" ;;
-  "pane get") echo '{"error":{"code":"pane_not_found","message":"pane not found"}}' >&2; exit 1 ;;
-  "tab create") echo '{"result":{"tab":{"tab_id":"w1:t5"},"root_pane":{"pane_id":"w1:p7"}}}' ;;
-  "agent start") if [ -e "$dir/clobber" ]; then read -r p < "$dir/clobber"; printf '# Worklog — 2026-10-18\n' > "$p"; fi ;;
-  "agent prompt") ;;
-  *) echo "unexpected: $*" >&2; exit 3 ;;
-esac
-`
-
 // fixture is a vault holding testNote, a jj project o/r and a git project o/g, a workspace
-// root, and a Dispatcher on them with the fake herdr.
+// root, and a Dispatcher on them with a fake rex, whose new tab is w1/t9, its pane w1/p9.
 type fixture struct {
 	d         Dispatcher
-	bin       string // the fake herdr's directory
+	rex       *rextest.Fake
 	jjRepo    string
 	gitRepo   string
 	root      string
@@ -86,7 +63,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{bin: t.TempDir(), root: filepath.Join(t.TempDir(), "ws")}
+	f := &fixture{rex: rextest.New(t), root: filepath.Join(t.TempDir(), "ws")}
 	var err error
 	if f.jjBin, err = exec.LookPath("jj"); err != nil {
 		t.Fatal("jj not found: run the tests in the dev shell")
@@ -110,12 +87,9 @@ func newFixture(t *testing.T) *fixture {
 	f.run(t, f.gitBin, "init", f.gitRepo)
 	f.run(t, f.gitBin, "-C", f.gitRepo, "commit", "--allow-empty", "-m", "init")
 
-	herdr := filepath.Join(f.bin, "herdr")
-	writeHerdr(t, herdr)
 	// An idle omp agent, of harness glm, in o/r's checkout and in o/iac's.
-	write(t, filepath.Join(f.bin, "agents"), `{"result":{"agents":[`+
-		`{"agent":"omp","workspace_id":"w1","pane_id":"w1:p1","cwd":"`+f.jjRepo+`","agent_status":"idle"},`+
-		`{"agent":"omp","workspace_id":"w2","pane_id":"w2:p1","cwd":"/src/iac","agent_status":"idle"}]}}`)
+	f.agents(rex.Agent{Kind: "omp", Workspace: "w1", Tab: "w1/t1", Pane: "w1/p1", Cwd: f.jjRepo, Status: rex.Idle},
+		rex.Agent{Kind: "omp", Workspace: "w2", Tab: "w2/t1", Pane: "w2/p1", Cwd: "/src/iac", Status: rex.Idle})
 	f.d = Dispatcher{
 		Config: config.Config{
 			Dispatch: config.Dispatch{WorkspaceRoot: f.root},
@@ -129,7 +103,7 @@ func newFixture(t *testing.T) *fixture {
 			}},
 		},
 		Engine: &engine.Engine{Repo: vaultRepo, Dir: "worklog"},
-		Herdr:  herdr, JJ: f.jjBin, Git: f.gitBin, Env: f.toolchain,
+		Rex:    f.rex.Bin, JJ: f.jjBin, Git: f.gitBin, Env: f.toolchain,
 	}
 	return f
 }
@@ -144,16 +118,16 @@ func write(t *testing.T, path, s string) {
 	}
 }
 
-// writeHerdr writes the fakeHerdr stand-in at path.
-func writeHerdr(t *testing.T, path string) {
-	t.Helper()
-	// Hold ForkLock so no parallel fork inherits the write fd: golang/go#22315 (ETXTBSY).
-	syscall.ForkLock.RLock()
-	err := os.WriteFile(path, []byte(fakeHerdr), 0o755)
-	syscall.ForkLock.RUnlock()
-	if err != nil {
-		t.Fatal(err)
-	}
+// agents makes the fake's sessions w1, labelled r, and w2, labelled iac, holding agents.
+func (f *fixture) agents(agents ...rex.Agent) {
+	f.rex.Edit(func(s *rextest.State) {
+		s.Sessions = nil
+		s.Workspace("w1", "r")
+		s.Workspace("w2", "iac")
+		for _, a := range agents {
+			s.Agent(a)
+		}
+	})
 }
 
 // run runs a real jj or git with the fixture's env, failing the test on error.
@@ -168,24 +142,8 @@ func (f *fixture) run(t *testing.T, bin string, args ...string) string {
 	return string(out)
 }
 
-// calls are the fake herdr's calls so far, one per line.
-func (f *fixture) calls(t *testing.T) string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(f.bin, "calls"))
-	if os.IsNotExist(err) {
-		return ""
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-
-// started reports whether dispatch made anything in herdr: finding a workspace only reads.
-func (f *fixture) started(t *testing.T) bool {
-	t.Helper()
-	return strings.Contains(f.calls(t), "[tab]")
-}
+// started reports whether dispatch made anything in rex: finding a workspace only reads.
+func (f *fixture) started() bool { return f.rex.Writes() != "" }
 
 func (f *fixture) item(t *testing.T, id string) *note.Item {
 	t.Helper()
@@ -235,12 +193,14 @@ func same(t *testing.T, a, b string) bool {
 	return ra == rb
 }
 
-// freshCalls are the herdr calls of a fresh dispatch of o/r#n into ws, then its prompt.
+// freshCalls are the rex writes of a fresh dispatch of o/r#n into ws: its tab, its agent
+// started, then its prompt.
 func freshCalls(ws string, n int, prompt string) string {
-	return "[workspace][list]\n[pane][list]\n[agent][list]\n" +
-		"[tab][create][--workspace][w1][--cwd][" + ws + "][--label][r-" + strconv.Itoa(n) + "][--no-focus]\n" +
-		"[agent][start][r-" + strconv.Itoa(n) + "][--kind][omp][--pane][w1:p7][--][--model][glm-5]\n" +
-		"[agent][prompt][w1:p7][" + prompt + "]\n"
+	name := "r-" + strconv.Itoa(n)
+	return "window new w1 " + name + " " + ws + "\n" +
+		"label w1/p9 " + name + "\n" +
+		"paste w1/p9 omp --model glm-5\nsend-key w1/p9 enter\n" +
+		"paste w1/p9 " + prompt + "\nsend-key w1/p9 enter\n"
 }
 
 func TestFreshJJ(t *testing.T) {
@@ -251,7 +211,7 @@ func TestFreshJJ(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := filepath.Join(f.root, "o", "r", "issue-11")
-	if res.Workspace != ws || res.Pane != "w1:p7" || res.Item != "d11" || res.Reused || res.Mode != Fresh {
+	if res.Workspace != ws || res.Pane != "w1/p9" || res.Item != "d11" || res.Reused || res.Mode != Fresh {
 		t.Errorf("result %+v", res)
 	}
 	if got := f.run(t, f.jjBin, "-R", f.jjRepo, "workspace", "root", "--name", "issue-11"); !same(t, strings.TrimSpace(got), ws) {
@@ -259,14 +219,14 @@ func TestFreshJJ(t *testing.T) {
 	}
 	prompt := "/skill:implement https://github.com/o/r/issues/11\n\nKeep it small.\n\nWhen this is done, update the worklog with the " +
 		"worklog skill: work item ^d11 in " + f.notePath + ". Record the outcome and refresh Next."
-	if got, want := f.calls(t), freshCalls(ws, 11, prompt); got != want {
-		t.Errorf("herdr calls:\n%s\nwant:\n%s", got, want)
+	if got, want := f.rex.Writes(), freshCalls(ws, 11, prompt); got != want {
+		t.Errorf("rex writes:\n%s\nwant:\n%s", got, want)
 	}
 	it := f.item(t, "d11")
-	if it.Icon != note.IconInProgress || it.Dispatch == nil || *it.Dispatch != (note.Dispatch{Pane: "w1:p7", Workspace: ws}) {
+	if it.Icon != note.IconInProgress || it.Dispatch == nil || *it.Dispatch != (note.Dispatch{Pane: "w1/p9", Workspace: ws}) {
 		t.Errorf("item %+v dispatch %+v", it, it.Dispatch)
 	}
-	if !strings.Contains(f.noteSrc(t), "<!-- qm pane=w1:p7 ws="+ws+" --> ^d11\n") {
+	if !strings.Contains(f.noteSrc(t), "<!-- qm pane=w1/p9 ws="+ws+" --> ^d11\n") {
 		t.Errorf("note:\n%s", f.noteSrc(t))
 	}
 }
@@ -307,7 +267,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), filepath.Base(elsewhere)) {
 			t.Fatalf("err %v, want the other workspace's path", err)
 		}
-		if f.started(t) || f.noteSrc(t) != testNote {
+		if f.started() || f.noteSrc(t) != testNote {
 			t.Error("dispatch went on")
 		}
 	})
@@ -326,7 +286,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "jj workspace forget issue-11") {
 			t.Fatalf("err %v, want the way out", err)
 		}
-		if f.started(t) {
+		if f.started() {
 			t.Error("dispatch went on")
 		}
 	})
@@ -339,7 +299,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), ws) {
 			t.Fatalf("err %v, want the path", err)
 		}
-		if f.started(t) {
+		if f.started() {
 			t.Error("dispatch went on")
 		}
 	})
@@ -352,7 +312,7 @@ func TestFreshRefusesAnotherWorkspace(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), filepath.Base(elsewhere)) {
 			t.Fatalf("err %v, want the other worktree's path", err)
 		}
-		if f.started(t) {
+		if f.started() {
 			t.Error("dispatch went on")
 		}
 	})
@@ -395,10 +355,9 @@ func TestFreshGit(t *testing.T) {
 func TestFreshNameTaken(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	write(t, filepath.Join(f.bin, "agents"), `{"result":{"agents":[`+
-		`{"name":"g-5","workspace_id":"w1","pane_id":"w1:p1","agent_status":"idle"},`+
-		`{"name":"r-5-2","workspace_id":"w1","pane_id":"w1:p2","agent_status":"idle"},`+
-		`{"workspace_id":"w2","pane_id":"w2:p1","agent_status":"idle"}]}}`)
+	f.agents(rex.Agent{Kind: "omp", Name: "g-5", Workspace: "w1", Tab: "w1/t1", Pane: "w1/p1", Status: rex.Idle},
+		rex.Agent{Kind: "omp", Name: "r-5-2", Workspace: "w1", Tab: "w1/t2", Pane: "w1/p2", Status: rex.Idle},
+		rex.Agent{Kind: "omp", Workspace: "w2", Tab: "w2/t1", Pane: "w2/p1", Status: rex.Idle})
 	ws := filepath.Join(f.root, "o", "g", "issue-5")
 	res, err := f.d.Dispatch(context.Background(), date, ref(t, "o/g#5"), Fresh, "")
 	if err != nil {
@@ -407,24 +366,24 @@ func TestFreshNameTaken(t *testing.T) {
 	if res.Workspace != ws {
 		t.Errorf("result %+v", res)
 	}
-	calls := f.calls(t)
-	if !strings.Contains(calls, "[--label][g-5-2][--no-focus]\n") || !strings.Contains(calls, "[agent][start][g-5-2][--kind]") {
-		t.Errorf("herdr calls:\n%s\nwant the tab and the agent named g-5-2", calls)
+	calls := f.rex.Writes()
+	if !strings.Contains(calls, "window new w1 g-5-2 ") || !strings.Contains(calls, "label w1/p9 g-5-2\n") {
+		t.Errorf("rex writes:\n%s\nwant the tab and the agent named g-5-2", calls)
 	}
 	if b := strings.TrimSpace(f.run(t, f.gitBin, "-C", ws, "branch", "--show-current")); b != "issue-5" {
 		t.Errorf("branch %q", b)
 	}
 }
 
-// TestFreshHerdrFails leaves the workspace and the item as they were, and says so.
-func TestFreshHerdrFails(t *testing.T) {
+// TestFreshRexFails leaves the workspace and the item as they were, and says so.
+func TestFreshRexFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	write(t, filepath.Join(f.bin, "fail-start"), "")
+	f.rex.Edit(func(s *rextest.State) { s.Fail = map[string]string{"start": ""} })
 	ws := filepath.Join(f.root, "o", "r", "issue-11")
 	_, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "")
-	if err == nil || !strings.Contains(err.Error(), "herdr agent start: start failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1:p7") {
-		t.Fatalf("err %v, want herdr's reason, the workspace and the pane", err)
+	if err == nil || !strings.Contains(err.Error(), "rex api call block.event: start failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1/p9") {
+		t.Fatalf("err %v, want rex's reason, the workspace and the pane", err)
 	}
 	if _, err := os.Stat(ws); err != nil {
 		t.Errorf("workspace: %v", err)
@@ -434,18 +393,25 @@ func TestFreshHerdrFails(t *testing.T) {
 	}
 }
 
-// TestFreshPromptFails names the failed `agent prompt` by herdr's verb, not by the prompt.
+// TestFreshPromptFails names a failed prompt by rex's call, not by the prompt, and leaves the
+// item where it was. rex's tests cover a prompt not taken, which fails the same way.
 func TestFreshPromptFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	write(t, filepath.Join(f.bin, "fail-prompt"), "")
+	f.rex.Edit(func(s *rextest.State) { s.Fail = map[string]string{"prompt": ""} })
 	ws := filepath.Join(f.root, "o", "r", "issue-11")
 	_, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "Today.")
-	if err == nil || !strings.Contains(err.Error(), "herdr agent prompt: prompt failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1:p7") {
-		t.Fatalf("err %v, want herdr's reason, the workspace and the pane", err)
+	if err == nil || !strings.Contains(err.Error(), "rex api call block.event: prompt failed") || !strings.Contains(err.Error(), ws) || !strings.Contains(err.Error(), "w1/p9") {
+		t.Fatalf("err %v, want rex's reason, the workspace and the pane", err)
 	}
 	if strings.Contains(err.Error(), "Today.") {
 		t.Errorf("err %v holds the prompt", err)
+	}
+	if !strings.Contains(err.Error(), "is not moved") {
+		t.Errorf("err %v does not say the item stays", err)
+	}
+	if f.noteSrc(t) != testNote {
+		t.Errorf("the note changed:\n%s", f.noteSrc(t))
 	}
 }
 
@@ -453,9 +419,11 @@ func TestFreshPromptFails(t *testing.T) {
 func TestFreshNoteFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	write(t, filepath.Join(f.bin, "clobber"), f.notePath+"\n")
+	f.rex.Edit(func(s *rextest.State) {
+		s.OnStart = &rextest.File{Path: f.notePath, Text: "# Worklog — " + date + "\n"}
+	})
 	_, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "")
-	if err == nil || !strings.Contains(err.Error(), "w1:p7") || !strings.Contains(err.Error(), "not recorded") {
+	if err == nil || !strings.Contains(err.Error(), "w1/p9") || !strings.Contains(err.Error(), "not recorded") {
 		t.Fatalf("err %v, want the pane", err)
 	}
 }
@@ -471,15 +439,15 @@ func TestSession(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Pane != "w2:p1" || res.To != "iac" || res.Item != "d13" || !res.Note.Changed {
+		if res.Pane != "w2/p1" || res.To != "iac" || res.Item != "d13" || !res.Note.Changed {
 			t.Errorf("result %+v", res)
 		}
-		want := "[workspace][list]\n[agent][list]\n[agent][prompt][w2:p1][Please do it.\n\nToday.\n\nWhen this is done, update the " +
-			"worklog with the worklog skill: work item ^d13 in " + f.notePath + ". Record the outcome and refresh Next.]\n"
-		if got := f.calls(t); got != want {
-			t.Errorf("herdr calls:\n%s\nwant:\n%s", got, want)
+		want := "paste w2/p1 Please do it.\n\nToday.\n\nWhen this is done, update the " +
+			"worklog with the worklog skill: work item ^d13 in " + f.notePath + ". Record the outcome and refresh Next.\nsend-key w2/p1 enter\n"
+		if got := f.rex.Writes(); got != want {
+			t.Errorf("rex writes:\n%s\nwant:\n%s", got, want)
 		}
-		if src := f.noteSrc(t); !strings.Contains(src, "_item=d13) <!-- qm pane=w2:p1 --> ^d13\n") || strings.Count(src, "<!-- qm ") != 1 {
+		if src := f.noteSrc(t); !strings.Contains(src, "_item=d13) <!-- qm pane=w2/p1 --> ^d13\n") || strings.Count(src, "<!-- qm ") != 1 {
 			t.Errorf("note:\n%s", f.noteSrc(t))
 		}
 	})
@@ -487,44 +455,41 @@ func TestSession(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
 		for _, c := range []struct{ ref, what string }{{"o/r#11", "work item ^d11"}, {"o/r#40", "o/r#40"}} {
-			if err := os.Remove(filepath.Join(f.bin, "calls")); err != nil && !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
+			f.rex.ClearCalls()
 			res, err := f.d.Dispatch(context.Background(), date, ref(t, c.ref), "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if res.Pane != "w1:p1" || res.To != "r" || res.Mode != Session {
+			if res.Pane != "w1/p1" || res.To != "r" || res.Mode != Session {
 				t.Errorf("result %+v", res)
 			}
 			n := strings.TrimPrefix(c.ref, "o/r#")
-			want := "[workspace][list]\n[pane][list]\n[agent][list]\n[agent][prompt][w1:p1][/skill:implement https://github.com/o/r/issues/" + n +
+			want := "paste w1/p1 /skill:implement https://github.com/o/r/issues/" + n +
 				"\n\nWhen this is done, update the worklog with the worklog skill: " + c.what + " in " + f.notePath +
-				". Record the outcome and refresh Next.]\n"
-			if got := f.calls(t); got != want {
-				t.Errorf("herdr calls:\n%s\nwant:\n%s", got, want)
+				". Record the outcome and refresh Next.\nsend-key w1/p1 enter\n"
+			if got := f.rex.Writes(); got != want {
+				t.Errorf("rex writes:\n%s\nwant:\n%s", got, want)
 			}
 		}
-		if src := f.noteSrc(t); !strings.Contains(src, "dispatch <!-- qm pane=w1:p1 --> ^d11\n") || strings.Count(src, "<!-- qm ") != 1 {
+		if src := f.noteSrc(t); !strings.Contains(src, "dispatch <!-- qm pane=w1/p1 --> ^d11\n") || strings.Count(src, "<!-- qm ") != 1 {
 			t.Errorf("note:\n%s", f.noteSrc(t))
 		}
 	})
 	t.Run("no available agent spawns one", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		write(t, filepath.Join(f.bin, "agents"), `{"result":{"agents":[`+
-			`{"agent":"claude","workspace_id":"w1","pane_id":"w1:p1","cwd":"`+f.jjRepo+`","agent_status":"idle"},`+
-			`{"agent":"omp","name":"r-glm","workspace_id":"w1","pane_id":"w1:p2","cwd":"`+f.jjRepo+`","agent_status":"working"},`+
-			`{"agent":"omp","workspace_id":"w1","pane_id":"w1:p3","cwd":"`+f.root+`/o/r/issue-9","agent_status":"idle"}]}}`)
+		f.agents(rex.Agent{Kind: "claude", Workspace: "w1", Tab: "w1/t1", Pane: "w1/p1", Cwd: f.jjRepo, Status: rex.Idle},
+			rex.Agent{Kind: "omp", Name: "r-glm", Workspace: "w1", Tab: "w1/t2", Pane: "w1/p2", Cwd: f.jjRepo, Status: rex.Working},
+			rex.Agent{Kind: "omp", Workspace: "w1", Tab: "w1/t3", Pane: "w1/p3", Cwd: f.root + "/o/r/issue-9", Status: rex.Idle})
 		res, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Session, "")
-		if err != nil || res.Pane != "w1:p7" {
+		if err != nil || res.Pane != "w1/p9" {
 			t.Fatalf("%+v, %v", res, err)
 		}
-		if want := "[tab][create][--workspace][w1][--cwd][" + f.jjRepo + "][--label][r-glm-2][--no-focus]\n" +
-			"[agent][start][r-glm-2][--kind][omp][--pane][w1:p7][--][--model][glm-5]\n[agent][prompt][w1:p7]["; !strings.Contains(f.calls(t), want) {
-			t.Errorf("herdr calls:\n%s\nwant:\n%s", f.calls(t), want)
+		if want := "window new w1 r-glm-2 " + f.jjRepo + "\nlabel w1/p9 r-glm-2\n" +
+			"paste w1/p9 omp --model glm-5\nsend-key w1/p9 enter\npaste w1/p9 "; !strings.Contains(f.rex.Writes(), want) {
+			t.Errorf("rex writes:\n%s\nwant:\n%s", f.rex.Writes(), want)
 		}
-		if src := f.noteSrc(t); !strings.Contains(src, "<!-- qm pane=w1:p7 --> ^d11\n") {
+		if src := f.noteSrc(t); !strings.Contains(src, "<!-- qm pane=w1/p9 --> ^d11\n") {
 			t.Errorf("note:\n%s", src)
 		}
 	})
@@ -561,7 +526,7 @@ func TestRefuses(t *testing.T) {
 	if _, err := g.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, ""); err == nil || !strings.Contains(err.Error(), "whitespace") {
 		t.Errorf("a root with a space: %v", err)
 	}
-	if f.calls(t) != "" || f.noteSrc(t) != testNote {
+	if len(f.rex.Calls()) != 0 || f.noteSrc(t) != testNote {
 		t.Error("a refused dispatch acted")
 	}
 	if _, err := os.Stat(f.root); !os.IsNotExist(err) {
@@ -569,32 +534,28 @@ func TestRefuses(t *testing.T) {
 	}
 }
 
-// TestHerdrWorkspace resolves a project's herdr workspace: the override, else the one
-// workspace with a pane in the checkout, else the one labelled with the repo's name, else none,
-// and it has no checkout to create one at. The tools tests cover creation.
-func TestHerdrWorkspace(t *testing.T) {
+// TestProjectWorkspace resolves a project's workspace: the override, else the one workspace
+// with a pane in the checkout, else the one labelled with the repo's name, else none, and it has
+// no checkout to create one at. The tools tests cover creation.
+func TestProjectWorkspace(t *testing.T) {
 	t.Parallel()
-	const spaces = `{"result":{"workspaces":[` +
-		`{"workspace_id":"w1","label":"r"},{"workspace_id":"w2","label":"iac"},` +
-		`{"workspace_id":"w3","label":"misc"},{"workspace_id":"w4","label":"dup"},{"workspace_id":"w5","label":"dup"}]}}`
-	pane := func(ws, cwd string) string { return `{"workspace_id":"` + ws + `","cwd":"` + cwd + `"}` }
-	panes := func(ps ...string) string { return `{"result":{"panes":[` + strings.Join(ps, ",") + `]}}` }
+	type pane struct{ ws, cwd string }
 	for _, c := range []struct {
 		name     string
 		repo     string
 		override config.Project
-		panes    string
+		panes    []pane
 		want     string   // the workspace id; "" for an error
 		errs     []string // what the error names
-		calls    string
+		calls    []string // every call made, when set
 	}{
 		{
 			name:     "the override wins over a pane and the label",
 			repo:     "o/r",
 			override: config.Project{Workspace: "iac"},
-			panes:    panes(pane("w3", "/src/o/r")),
+			panes:    []pane{{"w3", "/src/o/r"}},
 			want:     "w2",
-			calls:    "[workspace][list]\n",
+			calls:    []string{"session.list"},
 		},
 		{
 			name:     "an override labelling no workspace",
@@ -605,64 +566,66 @@ func TestHerdrWorkspace(t *testing.T) {
 		{
 			name:  "a pane in the checkout wins over the label",
 			repo:  "o/r",
-			panes: panes(pane("w2", "/src/o/other"), pane("w3", "/src/o/r")),
+			panes: []pane{{"w2", "/src/o/other"}, {"w3", "/src/o/r"}},
 			want:  "w3",
-			calls: "[workspace][list]\n[pane][list]\n",
 		},
 		{
 			name:  "a pane under the checkout, its path uncleaned",
 			repo:  "o/r",
-			panes: panes(pane("w3", "/src/o/r/./sub/../sub/")),
+			panes: []pane{{"w3", "/src/o/r/./sub/../sub/"}},
 			want:  "w3",
 		},
 		{
 			name:  "panes of one workspace are one match",
 			repo:  "o/r",
-			panes: panes(pane("w3", "/src/o/r"), pane("w3", "/src/o/r/a")),
+			panes: []pane{{"w3", "/src/o/r"}, {"w3", "/src/o/r/a"}},
 			want:  "w3",
 		},
 		{
 			name:  "a sibling sharing the checkout's prefix is not under it",
 			repo:  "o/r",
-			panes: panes(pane("w3", "/src/o/rc"), pane("w2", "/src/o"), pane("w2", "relative/src/o/r")),
+			panes: []pane{{"w3", "/src/o/rc"}, {"w2", "/src/o"}, {"w2", "relative/src/o/r"}},
 			want:  "w1",
 		},
 		{
 			name:  "panes of two workspaces in the checkout",
 			repo:  "o/r",
-			panes: panes(pane("w2", "/src/o/r"), pane("w3", "/src/o/r/x")),
+			panes: []pane{{"w2", "/src/o/r"}, {"w3", "/src/o/r/x"}},
 			errs:  []string{`"iac" (w2)`, `"misc" (w3)`, "/src/o/r", `projects."o/r".workspace`},
 		},
 		{
 			name:     "a path override is where panes are looked for",
 			repo:     "o/r",
 			override: config.Project{Path: "/elsewhere/r"},
-			panes:    panes(pane("w3", "/src/o/r"), pane("w2", "/elsewhere/r")),
+			panes:    []pane{{"w3", "/src/o/r"}, {"w2", "/elsewhere/r"}},
 			want:     "w2",
 		},
 		{
 			name:  "no pane and no label",
 			repo:  "o/nothing",
-			panes: panes(pane("w3", "/src/o/r")),
-			errs:  []string{"no herdr workspace for o/nothing", "no checkout of it at /src/o/nothing", "nothing is cloned"},
+			panes: []pane{{"w3", "/src/o/r"}},
+			errs:  []string{"no workspace for o/nothing", "no checkout of it at /src/o/nothing", "nothing is cloned"},
 		},
 		{
 			name: "two workspaces labelled with the repo's name",
 			repo: "o/dup",
-			errs: []string{`2 herdr workspaces labelled "dup"`, `projects."o/dup".workspace`},
+			errs: []string{`2 workspaces labelled "dup"`, `projects."o/dup".workspace`},
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			bin := t.TempDir()
-			exe := filepath.Join(bin, "herdr")
-			writeHerdr(t, exe)
-			write(t, filepath.Join(bin, "workspaces"), spaces)
-			if c.panes != "" {
-				write(t, filepath.Join(bin, "panes"), c.panes)
-			}
+			f := rextest.New(t)
+			f.Edit(func(s *rextest.State) {
+				for _, w := range [][2]string{{"w1", "r"}, {"w2", "iac"}, {"w3", "misc"}, {"w4", "dup"}, {"w5", "dup"}} {
+					s.Workspace(w[0], w[1])
+				}
+				for i, p := range c.panes {
+					n := strconv.Itoa(i + 1)
+					s.Pane(rex.Pane{ID: p.ws + "/p" + n, Workspace: p.ws, Tab: p.ws + "/t" + n, Cwd: p.cwd})
+				}
+			})
 			projects := config.Projects{Root: "/src", Repos: map[string]config.Project{c.repo: c.override}}
-			got, _, err := send.ProjectWorkspace(context.Background(), herdr.New(exe, nil), projects, c.repo)
+			got, _, err := send.ProjectWorkspace(context.Background(), f.Client(), projects, c.repo)
 			if c.want == "" {
 				if err == nil {
 					t.Fatalf("got %+v, want an error", got)
@@ -677,17 +640,18 @@ func TestHerdrWorkspace(t *testing.T) {
 			if err != nil || got.ID != c.want {
 				t.Fatalf("got %+v %v, want %s", got, err, c.want)
 			}
-			if c.calls != "" {
-				if b, _ := os.ReadFile(filepath.Join(bin, "calls")); string(b) != c.calls {
-					t.Errorf("herdr calls %q, want %q", b, c.calls)
-				}
+			if w := f.Writes(); w != "" {
+				t.Errorf("rex written to:\n%s", w)
+			}
+			if c.calls != nil && !slices.Equal(f.Calls(), c.calls) {
+				t.Errorf("rex calls %q, want %q", f.Calls(), c.calls)
 			}
 		})
 	}
 }
 
 // TestFreshByConvention dispatches a ref of a project with no entry: its checkout is under
-// projects.root, and its herdr workspace the one with a pane there.
+// projects.root, and its workspace the one with a pane there.
 func TestFreshByConvention(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -700,24 +664,24 @@ func TestFreshByConvention(t *testing.T) {
 	if err := os.Rename(f.jjRepo, checkout); err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(f.bin, "panes"), `{"result":{"panes":[{"workspace_id":"w2","cwd":"`+filepath.Join(checkout, "sub")+`"}]}}`)
+	f.rex.Edit(func(s *rextest.State) {
+		s.Pane(rex.Pane{ID: "w2/p5", Workspace: "w2", Tab: "w2/t5", Cwd: filepath.Join(checkout, "sub")})
+	})
 	res, err := f.d.Dispatch(context.Background(), date, ref(t, "o/r#11"), Fresh, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.To != "iac" || !strings.Contains(f.calls(t), "[tab][create][--workspace][w2]") {
-		t.Errorf("result %+v, calls:\n%s", res, f.calls(t))
+	if res.To != "iac" || !strings.Contains(f.rex.Writes(), "window new w2 ") {
+		t.Errorf("result %+v, rex writes:\n%s", res, f.rex.Writes())
 	}
 
-	// A project with no checkout under the root is refused before herdr is asked.
-	if err := os.Remove(filepath.Join(f.bin, "calls")); err != nil {
-		t.Fatal(err)
-	}
+	// A project with no checkout under the root is refused before rex is asked.
+	f.rex.ClearCalls()
 	_, err = f.d.Dispatch(context.Background(), date, ref(t, "o/g#5"), Fresh, "")
 	if err == nil || !strings.Contains(err.Error(), filepath.Join(root, "o", "g")) {
 		t.Fatalf("err %v, want the conventional path", err)
 	}
-	if f.calls(t) != "" {
-		t.Errorf("herdr was asked: %s", f.calls(t))
+	if calls := f.rex.Calls(); len(calls) != 0 {
+		t.Errorf("rex was asked: %q", calls)
 	}
 }

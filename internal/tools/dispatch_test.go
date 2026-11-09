@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/firefly-engineering/quartermaster/internal/config"
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
 )
 
 // TestTaskDispatchRefuses checks the input task_dispatch validates itself; internal/dispatch
@@ -44,15 +44,15 @@ func TestTaskDispatchFreshRoutesByTier(t *testing.T) {
 	for _, c := range []struct {
 		ref, id, start string
 	}{
-		{"acme/web#20", "rename", "[agent][start][web-20][--kind][omp][--pane][w1:p9][--][--model][glm-5]\n"},
-		{"acme/web#21", "form", "[agent][start][web-21][--kind][claude][--pane][w1:p9]\n"},
-		{"acme/web#22", "cache", "[agent][start][web-22][--kind][claude][--pane][w1:p9]\n"},
+		{"acme/web#20", "rename", start("w1/p9", "web-20", "omp --model glm-5")},
+		{"acme/web#21", "form", start("w1/p9", "web-21", "claude")},
+		{"acme/web#22", "cache", start("w1/p9", "web-22", "claude")},
 	} {
 		t.Run(c.ref, func(t *testing.T) {
 			t.Parallel()
 			d := fixtureDeps(t, edited(t, queue, items+queue), true)
-			h := newFakeHerdr(t)
-			d.Herdr = h.Bin
+			h := newFakeRex(t)
+			d.Rex = h.Bin
 			checkout := filepath.Join(t.TempDir(), "web")
 			d.jj(t, "git", "init", checkout)
 			d.Config.Dispatch.WorkspaceRoot = filepath.Join(t.TempDir(), "ws")
@@ -68,13 +68,13 @@ func TestTaskDispatchFreshRoutesByTier(t *testing.T) {
 			if err := RunVerb(t.Context(), All(d), "dispatch", []byte(in), &out); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), `"item": "`+c.id+`"`) || !strings.Contains(out.String(), `"pane": "w1:p9"`) {
+			if !strings.Contains(out.String(), `"item": "`+c.id+`"`) || !strings.Contains(out.String(), `"pane": "w1/p9"`) {
 				t.Errorf("output:\n%s", out.String())
 			}
-			if calls := h.calls(t); !strings.Contains(calls, c.start) {
-				t.Errorf("herdr calls:\n%s\nlack %s", calls, c.start)
+			if calls := h.Writes(); !strings.Contains(calls, c.start) {
+				t.Errorf("rex writes:\n%s\nlack %s", calls, c.start)
 			}
-			if got := d.note(t, fixtureDate); !strings.Contains(got, "<!-- qm pane=w1:p9 ws=") {
+			if got := d.note(t, fixtureDate); !strings.Contains(got, "<!-- qm pane=w1/p9 ws=") {
 				t.Errorf("no dispatch marker on ^%s:\n%s", c.id, got)
 			}
 		})
@@ -86,56 +86,56 @@ func TestTaskDispatchFreshRoutesByTier(t *testing.T) {
 // or the dispatch is refused while that worker runs.
 func TestTaskDispatchAgain(t *testing.T) {
 	t.Parallel()
-	const tabClose, tabCreate = "[tab][close][w1:t1]\n", "[tab][create]"
+	const tabClose, tabCreate = "close w1/t1\n", "window new "
 	for _, c := range []struct {
 		name    string
-		marker  string                      // the item's marker; ws= is added when it has pane=
-		setup   func(*testing.T, fakeHerdr) // herdr's state
-		close   bool                        // tab close is called
-		closed  string                      // the tab task_dispatch reports closed
-		refused string                      // the error; "" when it dispatches
+		marker  string        // the item's marker; ws= is added when it has pane=
+		setup   func(fakeRex) // rex's state
+		close   bool          // tab close is called
+		closed  string        // the tab task_dispatch reports closed
+		refused string        // the error; "" when it dispatches
 	}{
-		{name: "idle", marker: "pane=w1:p1", close: true, closed: "w1:t1",
-			setup: func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "web-20", "idle", "", 1)) }},
-		{name: "done, its name counted", marker: "pane=w1:p1", close: true, closed: "w1:t1",
-			setup: func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "web-20-2", "done", "", 1)) }},
-		{name: "its agent exited", marker: "pane=w1:p1", close: true, closed: "w1:t1",
-			setup: func(t *testing.T, h fakeHerdr) {
-				h.panes(t, herdr.Pane{ID: "w1:p1", Workspace: "w1", Tab: "w1:t1", Status: "unknown"})
+		{name: "idle", marker: "pane=w1/p1", close: true, closed: "w1/t1",
+			setup: func(h fakeRex) { h.agents(rexAgent("omp", "web-20", "idle", "", 1)) }},
+		{name: "done, its name counted", marker: "pane=w1/p1", close: true, closed: "w1/t1",
+			setup: func(h fakeRex) { h.agents(rexAgent("omp", "web-20-2", "done", "", 1)) }},
+		{name: "its agent exited", marker: "pane=w1/p1", close: true, closed: "w1/t1",
+			setup: func(h fakeRex) {
+				h.panes(rex.Pane{ID: "w1/p1", Workspace: "w1", Tab: "w1/t1", Status: ""})
 			}},
-		{name: "its pane gone", marker: "pane=w1:p1", setup: func(*testing.T, fakeHerdr) {}},
-		{name: "its tab gone as it closes", marker: "pane=w1:p1", close: true,
-			setup: func(t *testing.T, h fakeHerdr) {
-				h.agents(t, herdrAgent("omp", "web-20", "idle", "", 1))
-				h.fail(t, "tab close", `{"error":{"code":"tab_not_found","message":"tab w1:t1 not found"}}`)
+		{name: "its pane gone", marker: "pane=w1/p1", setup: func(fakeRex) {}},
+		{name: "its tab gone as it closes", marker: "pane=w1/p1", close: true,
+			setup: func(h fakeRex) {
+				h.agents(rexAgent("omp", "web-20", "idle", "", 1))
+				h.fail("close", "Error: window gone (status=404 code=not_found)")
 			}},
-		{name: "no pane recorded", marker: "", setup: func(*testing.T, fakeHerdr) {}},
-		{name: "working", marker: "pane=w1:p1",
-			setup:   func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "web-20", "working", "", 1)) },
-			refused: "^cache: its worker is still running: web-20 in pane w1:p1 is working; dispatch it again once it is idle or done"},
-		{name: "working, the project's herdr workspace gone", marker: "pane=w1:p1",
-			setup: func(t *testing.T, h fakeHerdr) {
-				h.workspaces(t)
-				h.agents(t, herdrAgent("omp", "web-20", "working", "", 1))
+		{name: "no pane recorded", marker: "", setup: func(fakeRex) {}},
+		{name: "working", marker: "pane=w1/p1",
+			setup:   func(h fakeRex) { h.agents(rexAgent("omp", "web-20", "working", "", 1)) },
+			refused: "^cache: its worker is still running: web-20 in pane w1/p1 is working; dispatch it again once it is idle or done"},
+		{name: "working, the project's workspace gone", marker: "pane=w1/p1",
+			setup: func(h fakeRex) {
+				h.workspaces(rex.Workspace{ID: "w1", Label: "elsewhere"})
+				h.agents(rexAgent("omp", "web-20", "working", "", 1))
 			},
-			refused: "^cache: its worker is still running: web-20 in pane w1:p1 is working; dispatch it again once it is idle or done"},
-		{name: "blocked", marker: "pane=w1:p1",
-			setup:   func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "web-20", "blocked", "", 1)) },
-			refused: "^cache: its worker is still running: web-20 in pane w1:p1 is blocked; dispatch it again once it is idle or done"},
-		{name: "renamed", marker: "pane=w1:p1",
-			setup: func(t *testing.T, h fakeHerdr) { h.agents(t, herdrAgent("omp", "mine", "idle", "", 1)) },
-			refused: `^cache: not dispatched again: its worker in pane w1:p1 is named "mine", not as its dispatch named it, ` +
+			refused: "^cache: its worker is still running: web-20 in pane w1/p1 is working; dispatch it again once it is idle or done"},
+		{name: "blocked", marker: "pane=w1/p1",
+			setup:   func(h fakeRex) { h.agents(rexAgent("omp", "web-20", "blocked", "", 1)) },
+			refused: "^cache: its worker is still running: web-20 in pane w1/p1 is blocked; dispatch it again once it is idle or done"},
+		{name: "renamed", marker: "pane=w1/p1",
+			setup: func(h fakeRex) { h.agents(rexAgent("omp", "mine", "idle", "", 1)) },
+			refused: `^cache: not dispatched again: its worker in pane w1/p1 is named "mine", not as its dispatch named it, ` +
 				"so it keeps its tab"},
-		{name: "the close fails", marker: "pane=w1:p1", close: true,
-			setup: func(t *testing.T, h fakeHerdr) {
-				h.agents(t, herdrAgent("omp", "web-20", "idle", "", 1))
-				h.fail(t, "tab close", "")
+		{name: "the close fails", marker: "pane=w1/p1", close: true,
+			setup: func(h fakeRex) {
+				h.agents(rexAgent("omp", "web-20", "idle", "", 1))
+				h.fail("close", "")
 			},
-			refused: "^cache: not dispatched again: closing tab w1:t1 of pane w1:p1: herdr tab close: tab close failed"},
+			refused: "^cache: not dispatched again: closing tab w1/t1 of pane w1/p1: rex api call session.close_window: close failed"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			h := newFakeHerdr(t)
+			h := newFakeRex(t)
 			d := fixtureDeps(t, settled(t), true)
 			root := t.TempDir()
 			ws := filepath.Join(root, "acme", "web", "issue-20")
@@ -148,7 +148,7 @@ func TestTaskDispatchAgain(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(ws, "attempt.txt"), []byte("the first worker's"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			d.Herdr = h.Bin
+			d.Rex = h.Bin
 			d.Config.Dispatch.WorkspaceRoot = root
 			d.Config.Harness = map[string]config.Harness{"claude": {Kind: "claude"}}
 			d.Config.Tiers = map[string]string{config.DefaultTier: "claude"}
@@ -163,10 +163,10 @@ func TestTaskDispatchAgain(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(d.Config.Vault.Repo, "worklog", fixtureDate+".md"), []byte(src), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			c.setup(t, h)
+			c.setup(h)
 
 			out, err := d.taskDispatch(t.Context(), TaskDispatchInput{Date: fixtureDate, Ref: "acme/web#20", Mode: "fresh"})
-			calls := h.calls(t)
+			calls := h.Writes()
 			if closed := strings.Contains(calls, tabClose); closed != c.close {
 				t.Errorf("tab closed: %v, want %v; calls:\n%s", closed, c.close, calls)
 			}
@@ -177,8 +177,8 @@ func TestTaskDispatchAgain(t *testing.T) {
 				if strings.Contains(calls, tabCreate) {
 					t.Errorf("a worker started; calls:\n%s", calls)
 				}
-				if strings.Contains(calls, "[workspace][create]") {
-					t.Errorf("a herdr workspace was created before the refusal; calls:\n%s", calls)
+				if h.wrote("new ") {
+					t.Errorf("a workspace was created before the refusal; calls:\n%s", calls)
 				}
 				d.checkNote(t, src)
 				return
@@ -189,7 +189,7 @@ func TestTaskDispatchAgain(t *testing.T) {
 			if i := strings.Index(calls, tabCreate); c.close && strings.Index(calls, tabClose) > i {
 				t.Errorf("tab closed after the new one was made; calls:\n%s", calls)
 			}
-			if !out.Reused || out.Workspace != ws || out.Pane != "w1:p9" || out.Closed != c.closed {
+			if !out.Reused || out.Workspace != ws || out.Pane != "w1/p9" || out.Closed != c.closed {
 				t.Errorf("output %+v", out)
 			}
 			if b, err := os.ReadFile(filepath.Join(ws, "attempt.txt")); err != nil || string(b) != "the first worker's" {
@@ -199,7 +199,7 @@ func TestTaskDispatchAgain(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if it := n.Item("cache"); it.Icon != note.IconInProgress || *it.Dispatch != (note.Dispatch{Pane: "w1:p9", Workspace: ws}) {
+			if it := n.Item("cache"); it.Icon != note.IconInProgress || *it.Dispatch != (note.Dispatch{Pane: "w1/p9", Workspace: ws}) {
 				t.Errorf("item %+v, its marker %+v", it, it.Dispatch)
 			}
 		})
@@ -247,7 +247,7 @@ func TestTaskDispatchItemRefuses(t *testing.T) {
 func TestTaskDispatchBatchSession(t *testing.T) {
 	t.Parallel()
 	src := edited(t, "- Wave 2 after the stack lands.\n", batch)
-	h := newFakeHerdr(t, mixed()...)
+	h := newFakeRex(t, mixed()...)
 	d := sendDeps(t, src, h)
 
 	var out bytes.Buffer
@@ -256,15 +256,15 @@ func TestTaskDispatchBatchSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := out.String(); strings.Contains(got, `"ref"`) || !strings.Contains(got, `"item": "wave-2"`) ||
-		!strings.Contains(got, `"mode": "session"`) || !strings.Contains(got, `"pane": "w1:p2"`) ||
+		!strings.Contains(got, `"mode": "session"`) || !strings.Contains(got, `"pane": "w1/p2"`) ||
 		!strings.Contains(got, `"committed": true`) {
 		t.Errorf("output:\n%s", got)
 	}
-	if calls := h.calls(t); !strings.Contains(calls, "[agent][prompt][w1:p2][/skill:mass-implement acme/web #20 #21\n") {
-		t.Errorf("herdr calls:\n%s\nlack the batch's prompt to the glm agent", calls)
+	if calls := h.Writes(); !strings.Contains(calls, "paste w1/p2 /skill:mass-implement acme/web #20 #21\n") {
+		t.Errorf("rex writes:\n%s\nlack the batch's prompt to the glm agent", calls)
 	}
 	const id = "Tier: `basic-implementation`. ^wave-2"
-	d.checkNote(t, strings.Replace(src, id, "Tier: `basic-implementation`. <!-- qm pane=w1:p2 --> ^wave-2", 1))
+	d.checkNote(t, strings.Replace(src, id, "Tier: `basic-implementation`. <!-- qm pane=w1/p2 --> ^wave-2", 1))
 }
 
 // TestTaskDispatchBatchFresh dispatches a batch fresh, in a jj project and in a git one: its
@@ -276,8 +276,8 @@ func TestTaskDispatchBatchFresh(t *testing.T) {
 		t.Run(vcs, func(t *testing.T) {
 			t.Parallel()
 			d := fixtureDeps(t, edited(t, "- Wave 2 after the stack lands.\n", batch), true)
-			h := newFakeHerdr(t)
-			d.Herdr = h.Bin
+			h := newFakeRex(t)
+			d.Rex = h.Bin
 			checkout := filepath.Join(t.TempDir(), "web")
 			if vcs == "jj" {
 				d.jj(t, "git", "init", checkout)
@@ -303,14 +303,14 @@ func TestTaskDispatchBatchFresh(t *testing.T) {
 				!strings.Contains(got, `"workspace": "`+ws+`"`) {
 				t.Errorf("output:\n%s", got)
 			}
-			calls := h.calls(t)
+			calls := h.Writes()
 			for _, want := range []string{
-				"[tab][create][--workspace][w1][--cwd][" + ws + "][--label][web-wave-2][--no-focus]\n",
-				"[agent][start][web-wave-2][--kind][omp][--pane][w1:p9][--][--model][glm-5]\n",
-				"[agent][prompt][w1:p9][/skill:mass-implement acme/web #20 #21\n\nKeep it small.\n\n",
+				"window new w1 web-wave-2 " + ws + "\n",
+				start("w1/p9", "web-wave-2", "omp --model glm-5"),
+				"paste w1/p9 /skill:mass-implement acme/web #20 #21\n\nKeep it small.\n\n",
 			} {
 				if !strings.Contains(calls, want) {
-					t.Errorf("herdr calls:\n%s\nlack %s", calls, want)
+					t.Errorf("rex writes:\n%s\nlack %s", calls, want)
 				}
 			}
 			if !strings.Contains(calls, "work item ^wave-2 in ") {
@@ -325,7 +325,7 @@ func TestTaskDispatchBatchFresh(t *testing.T) {
 			}
 			got := d.note(t, fixtureDate)
 			if !strings.Contains(got, "##### 🔄 Wave 2: the form and the store") ||
-				!strings.Contains(got, "<!-- qm pane=w1:p9 ws="+ws+" -->") {
+				!strings.Contains(got, "<!-- qm pane=w1/p9 ws="+ws+" -->") {
 				t.Errorf("^wave-2 is not recorded as dispatched:\n%s", got)
 			}
 		})

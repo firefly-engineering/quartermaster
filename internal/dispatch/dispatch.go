@@ -1,14 +1,14 @@
 // Package dispatch starts work on a ref or a work item (spec §9.2): task_dispatch's logic.
 //
-// Mode session prompts the project's herdr session through package send, the path of
+// Mode session prompts the project's session through package send, the path of
 // `worklog send`, which records the prompted pane on the work item. Mode fresh gives the ref,
-// or a batch, a workspace of its own (ADR 0004), starts an agent there under herdr, then
+// or a batch, a workspace of its own (ADR 0004), starts an agent there under rex, then
 // records the agent's pane and workspace on the work item and moves it to IN_PROGRESS, through
 // the engine. Dispatched fresh again, as after an escalation, it reuses the workspace, and
 // first closes its previous agent's tab under the guards refresh closes a finished one's with
 // (CloseTab), or refuses while that agent runs.
 //
-// The order is the failure contract: workspace, then agent, then note. A herdr failure leaves
+// The order is the failure contract: workspace, then agent, then note. A rex failure leaves
 // the workspace in place and the item as it was; a note failure after the agent started
 // reports the pane, so the user can record it by hand.
 //
@@ -46,10 +46,10 @@ const summary = "dispatched to a fresh agent"
 
 // Dispatcher dispatches refs and work items. The caller resolves every field.
 type Dispatcher struct {
-	Config         config.Config
-	Engine         *engine.Engine // the note's only writer
-	Herdr, JJ, Git string         // the executables' paths; "" when not found
-	Env            []string       // their environment
+	Config       config.Config
+	Engine       *engine.Engine // the note's only writer
+	Rex, JJ, Git string         // the executables' paths; "" when not found
+	Env          []string       // their environment
 }
 
 // Result is a dispatch's outcome.
@@ -58,11 +58,11 @@ type Result struct {
 	Mode      string
 	Item      string // the work item; "" when a ref has none (session only)
 	Path      string // the note's path
-	To        string // the herdr workspace label prompted
-	Pane      string // the herdr pane prompted
+	To        string // the workspace label prompted
+	Pane      string // the pane prompted
 	Workspace string // fresh: the ref's or the batch's workspace
 	Reused    bool   // fresh: the workspace existed already
-	Closed    string // fresh: the herdr tab of the item's previous worker, closed first; "" for none
+	Closed    string // fresh: the tab of the item's previous worker, closed first; "" for none
 	Note      engine.Result
 }
 
@@ -209,7 +209,7 @@ func item(n *note.Note, ref note.Ref) (*note.Item, error) {
 // A batch always has a prompt, so only a ref reaches the second.
 func (d Dispatcher) session(ctx context.Context, date string, j job, instruction string, res Result) (Result, error) {
 	ref, it := j.ref, j.item
-	s := send.Sender{Config: d.Config, Engine: d.Engine, Herdr: d.Herdr, Env: d.Env}
+	s := send.Sender{Config: d.Config, Engine: d.Engine, Rex: d.Rex, Env: d.Env}
 	var sent send.Sent
 	var err error
 	if it != nil && it.Prompt != nil {
@@ -249,11 +249,11 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 	case checkout == "":
 		return Result{}, fmt.Errorf("neither projects.root nor projects.%q.path is set: a fresh dispatch needs the checkout", j.repo)
 	case harness.Kind == "":
-		return Result{}, fmt.Errorf("[tiers] routes ^%s to no harness: a fresh dispatch needs the herdr agent kind to start", it.ID)
+		return Result{}, fmt.Errorf("[tiers] routes ^%s to no harness: a fresh dispatch needs the program to start", it.ID)
 	case d.Config.Dispatch.WorkspaceRoot == "":
 		return Result{}, errors.New("dispatch.workspace_root is not set")
-	case d.Herdr == "":
-		return Result{}, fmt.Errorf("%s not found on PATH", d.Config.Multiplexer)
+	case d.Rex == "":
+		return Result{}, errors.New("rex not found on PATH")
 	}
 	wsName := j.name()
 	ws := checkoutPath(d.Config.Dispatch.WorkspaceRoot, j.repo, wsName)
@@ -271,13 +271,13 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 	if res.Closed, err = d.closePrevious(ctx, it); err != nil {
 		return Result{}, err
 	}
-	// The project's herdr workspace, created when it has none, goes before the checkout is made.
-	herdrWS, _, err := send.ProjectWorkspace(ctx, d.herdr(), d.Config.Projects, j.repo)
+	// The project's workspace, created when it has none, goes before the checkout is made.
+	project, _, err := send.ProjectWorkspace(ctx, d.client(), d.Config.Projects, j.repo)
 	if err != nil {
 		return Result{}, err
 	}
 	// Naming the agent only reads, after the close that frees the name. Another agent may take
-	// the name before it starts: herdr then refuses it, as any other herdr failure.
+	// the name before this one starts: nothing here guards that race.
 	taken, err := d.agentNames(ctx)
 	if err != nil {
 		return Result{}, err
@@ -290,15 +290,15 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 	res.Workspace = ws
 
 	prompt := j.prompt(instruction) + "\n\n" + send.Closing(send.Item(it.ID), res.Path)
-	pane, err := d.agent(ctx, harness, herdrWS.ID, ws, agentName, prompt)
+	pane, err := d.agent(ctx, harness, project.ID, ws, agentName, prompt)
 	if err != nil {
 		left := "workspace " + ws + " is left in place"
 		if pane != "" {
-			left += ", with its herdr tab, pane " + pane
+			left += ", with its tab, pane " + pane
 		}
 		return Result{}, fmt.Errorf("%w; %s, and ^%s is not moved", err, left, it.ID)
 	}
-	res.To, res.Pane = herdrWS.Label, pane
+	res.To, res.Pane = project.Label, pane
 
 	res.Note, err = d.Engine.Mutate(ctx, date, tool, func(n *note.Note, src []byte) ([]byte, string, error) {
 		if n == nil {
@@ -307,13 +307,13 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 		return record(n, src, it.ID, note.Dispatch{Pane: pane, Workspace: ws})
 	})
 	if err != nil {
-		return Result{}, fmt.Errorf("the agent started in herdr pane %s, workspace %s, but it is not recorded on ^%s: %w",
+		return Result{}, fmt.Errorf("the agent started in pane %s, workspace %s, but it is not recorded on ^%s: %w",
 			pane, ws, it.ID, err)
 	}
 	return res, nil
 }
 
-// closePrevious closes the herdr tab of the worker a fresh dispatch of it started before, under
+// closePrevious closes the tab of the worker a fresh dispatch of it started before, under
 // CloseTab's guards, and returns the tab it closed. A marker with no ws= records a session
 // send's pane, never closed. It refuses while that worker is working or blocked, and while its
 // tab stays for any other reason.
@@ -322,8 +322,8 @@ func (d Dispatcher) closePrevious(ctx context.Context, it *note.Item) (string, e
 	if prev == nil || prev.Pane == "" || prev.Workspace == "" {
 		return "", nil
 	}
-	h := d.herdr()
-	tab, err := CloseTab(ctx, h, h.AgentList, prev.Pane, prev.Workspace)
+	c := d.client()
+	tab, err := CloseTab(ctx, c, c.AgentList, prev.Pane, prev.Workspace)
 	var kept *Kept
 	switch {
 	case errors.As(err, &kept) && kept.Running():
@@ -349,7 +349,7 @@ func record(n *note.Note, src []byte, id string, d note.Dispatch) ([]byte, strin
 			return nil, "", err
 		}
 	}
-	return out, "dispatch ^" + id + " to herdr pane " + d.Pane, nil
+	return out, "dispatch ^" + id + " to pane " + d.Pane, nil
 }
 
 // implement is the prompt that starts work on ref, with instruction after it.

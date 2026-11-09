@@ -3,7 +3,8 @@
 quartermaster is a suite of MCP servers, skills and tools
 ([ADR 0009](docs/adr/0009-quartermaster-is-the-suite.md)). Its first tool, `worklog`, is a
 single Go binary that keeps the day's **worklog note** in an Obsidian vault and dispatches
-the work it lists to agents running under [herdr](https://github.com/herdrdev/herdr). It
+the work it lists to agents running under rex, a terminal multiplexer
+([ADR 0012](docs/adr/0012-rex-is-a-second-multiplexer.md)). It
 serves the note's operations as MCP tools, so Claude Code, oh-my-pi or any MCP client
 mutates the note through one state machine instead of rewriting markdown by hand. [Status](#status) lists what is built.
 
@@ -65,8 +66,8 @@ worklog note transition '{"item": "login-stack", "to": "DONE", "summary": "merge
 | `next` | `next_set` | replaces *Next* with up to five actions, by item id |
 | `status` | `status_set` | rewrites the status line |
 | `verdict` | `carryover_verdict` | records keep, defer or drop on a carry-over row |
-| `refresh` | `refresh` | reconciles the note with GitHub and herdr |
-| `send` | `prompt_send` | sends a work item's prompt to its herdr session |
+| `refresh` | `refresh` | reconciles the note with GitHub and rex |
+| `send` | `prompt_send` | sends a work item's prompt to its session |
 | `dispatch` | `task_dispatch` | starts work on a ref, in its project's session or a fresh agent |
 
 The write tools change the note through one lock, check, rename and commit sequence
@@ -84,10 +85,10 @@ dropped or done, and *Process* to-dos. It refuses when today's note exists and i
 [spec §11](docs/spec.md#11-failure-modes)), in one write, and moves an item only on evidence.
 It asks `gh` about the issue or PR each open work item's title leads with: a merged PR, or an
 issue closed as completed, is `DONE` with the PR or the commit that closed it; an issue closed
-as not planned or as a duplicate is `DROPPED`. It asks `herdr` about the pane in each
+as not planned or as a duplicate is `DROPPED`. It asks `rex` about the pane in each
 `IN_PROGRESS` item's `fresh` dispatch marker, one with `ws=`: a pane gone, or no agent in it, is `WAITING` ("worker
 exited"), never `DONE`. For an item in *Sent to other repos* marked **sent** or **acked**, it
-reads the agent the item was sent to (`herdr agent read`); GitHub links in the reply after the
+reads the pane of the agent the item was sent to (`rex capture`); GitHub links in the reply after the
 item's prompt mark it **acked** and are added to its line; once GitHub moves it to `DONE`, it
 reads **done**. Its write also ticks paired
 checkboxes and derives icons, as every write does. It returns what it changed, and every item
@@ -95,7 +96,7 @@ it checked and left as it was, with why.
 
 `prompt_send` takes `{date, item}` and does what `worklog send` does
 ([spec §9.1](docs/spec.md#91-worklog-send--buttons)): it sends the item's prompt block,
-with its closing line, to the herdr workspace the block names. The item's tier picks the
+with its closing line, to the workspace the block names. The item's tier picks the
 harness through `[tiers]`, and the prompt goes to the first `idle` or `done` agent of the
 harness's kind there whose cwd is in the project's checkout; with none, it spawns one of the
 harness in a new tab there, which stays as the session. It records the agent's pane on the item as `<!-- qm pane=<id> -->`, which `refresh`
@@ -107,14 +108,14 @@ ref's work item in the note by the link leading its title
 ([spec §9.2](docs/spec.md#92-task_dispatch)). In place of `ref` it takes `item`, a work item's
 id: a batch, which has no ref, runs in its project with its own prompt, and its workspace,
 branch and agent are named after the id. Mode `session`, the default, sends the item's
-prompt, or `/implement <url>`, to the project's herdr session as `worklog send` does,
-and records the pane on the work item. Mode `fresh` creates the ref's workspace at
+prompt, or `/implement <url>`, to the project's session as `worklog send` does,
+and records the pane on the work item. Mode `fresh` creates the ref's checkout at
 `<dispatch.workspace_root>/<owner>/<repo>/issue-<N>` with `jj workspace add`, or with
 `git worktree add -b issue-<N>` when the project has no `.jj`
 ([ADR 0004](docs/adr/0004-dispatch-isolates-in-a-jj-workspace.md)), and reuses one that exists
 for the ref. It then starts the harness `[tiers]` maps the item's tier to (`default` when it
-has none) in a new tab of the project's herdr workspace, prompts it, and records
-`<!-- qm pane=<id> ws=<path> -->` on the item, which it moves to `IN_PROGRESS`. If herdr fails, the workspace stays and the item does not move; if the note
+has none) in a new tab of the project's workspace, prompts it, and records
+`<!-- qm pane=<id> ws=<path> -->` on the item, which it moves to `IN_PROGRESS`. If rex fails, the checkout stays and the item does not move; if the note
 cannot be written, the error names the agent's pane.
 
 ## Install
@@ -164,7 +165,7 @@ MCP server ([spec §10.1](docs/spec.md#101-home-manager-module)); the sections b
 ```
 
 Projects need no entry: any `owner/repo` has its checkout at `<projects.root>/<owner>/<repo>`,
-and dispatch finds its herdr workspace live, as the one with a pane in that checkout, else
+and dispatch finds its workspace live, as the one with a pane in that checkout, else
 the one labelled with the repo's name ([spec §9.2](docs/spec.md#92-task_dispatch)). An entry
 under `projects."owner/repo"` overrides the `path`, the `workspace` label, or both.
 
@@ -263,7 +264,7 @@ PATH="/etc/profiles/per-user/$USER/bin:$PATH" worklog send {{vault_path}} {{_dat
 ```
 
 An Obsidian started from the Dock does not have the nix profile on `PATH`; the prefix lets
-it find `worklog` and `herdr`. If jj signs through an SSH agent, also prefix
+it find `worklog` and `rex`. If jj signs through an SSH agent, also prefix
 `SSH_AUTH_SOCK="<your agent's socket>"`: a Dock-started Obsidian gets macOS's own agent,
 which holds no keys.
 [`skills/worklog/buttons-setup.md`](skills/worklog/buttons-setup.md) has the steps and why

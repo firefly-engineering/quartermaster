@@ -16,18 +16,15 @@ import (
 	"github.com/firefly-engineering/quartermaster/skills"
 )
 
-// TestDeps hands the tools the paths of jj, git, gh and herdr found on PATH, and the environment.
+// TestDeps hands the tools the paths of jj, git, gh and rex found on PATH, and the environment.
 func TestDeps(t *testing.T) {
 	t.Parallel()
 	h := testHost(t)
 	h.environ = []string{"A=1"}
 	h.lookPath = func(name string) (string, error) { return "/bin/" + name, nil }
-	d := deps(config.Config{Multiplexer: config.Herdr}, h)
-	if d.JJ != "/bin/jj" || d.Git != "/bin/git" || d.GH != "/bin/gh" || d.Herdr != "/bin/herdr" || len(d.Env) != 1 {
+	d := deps(config.Config{}, h)
+	if d.JJ != "/bin/jj" || d.Git != "/bin/git" || d.GH != "/bin/gh" || d.Rex != "/bin/rex" || len(d.Env) != 1 {
 		t.Errorf("deps %+v", d)
-	}
-	if d := deps(config.Config{Multiplexer: config.Rex}, h); d.Herdr != "/bin/rex" {
-		t.Errorf("deps with rex: multiplexer at %q, want /bin/rex", d.Herdr)
 	}
 }
 
@@ -57,7 +54,7 @@ func TestSendUsage(t *testing.T) {
 	}
 }
 
-func TestSendNoHerdr(t *testing.T) {
+func TestSendNoRex(t *testing.T) {
 	t.Parallel()
 	h := testHost(t)
 	repo := t.TempDir()
@@ -70,7 +67,7 @@ func TestSendNoHerdr(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errb bytes.Buffer
-	// The inputs are validated before herdr is needed.
+	// The inputs are validated before rex is needed.
 	code := send([]string{vault, "2026-10-16", "x;rm"}, &out, &errb, h)
 	if code != 1 || errb.String() != "worklog send: not an item id: \"x;rm\"\n" {
 		t.Fatalf("code %d, stderr %q", code, errb.String())
@@ -85,7 +82,7 @@ func TestSendNoHerdr(t *testing.T) {
 	}
 	errb.Reset()
 	code = send([]string{vault, "2026-10-16", "a"}, &out, &errb, h)
-	if code != 1 || errb.String() != "worklog send: herdr not found on PATH\n" {
+	if code != 1 || errb.String() != "worklog send: rex not found on PATH\n" {
 		t.Fatalf("code %d, stderr %q", code, errb.String())
 	}
 	// The vault the button names must be the configured one, where the send records its pane.

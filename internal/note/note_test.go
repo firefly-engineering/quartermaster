@@ -334,6 +334,29 @@ func TestUnits(t *testing.T) {
 	}
 }
 
+// TestPromptFenceNames: a prompt block is read under its name, qm-prompt, and under the
+// herdr-prompt name older notes carry (ADR 0012), side by side in one note.
+func TestPromptFenceNames(t *testing.T) {
+	t.Parallel()
+	const src = "# Worklog — 2026-10-18\n\n**09:00 UTC:** open.\n\n## ⬜ o/r\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n" +
+		"##### ⬜ New\n\nGo. ^a\n\n> [!prompt]- Prompt sent to r\n> ```qm-prompt id=a to=r\n> go\n> ```\n\n" +
+		"##### ⬜ Old\n\nGo. ^b\n\n> [!prompt]- Prompt sent to o/r\n> ```herdr-prompt id=b to=o/r\n> old\n> ```\n"
+	n, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkSpans(t, []byte(src), n)
+	for id, want := range map[string]Prompt{"a": {ID: "a", To: "r", Body: "go\n"}, "b": {ID: "b", To: "o/r", Body: "old\n"}} {
+		it := n.Item(id)
+		if it == nil || it.Prompt == nil {
+			t.Fatalf("%s: no prompt: %+v", id, it)
+		}
+		if got := *it.Prompt; got.ID != want.ID || got.To != want.To || got.Body != want.Body {
+			t.Errorf("%s: prompt %+v, want %+v", id, got, want)
+		}
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	t.Parallel()
 	const head = "# Worklog — 2026-10-18\n\n**09:00 UTC:** open.\n\n"
@@ -373,9 +396,12 @@ func TestParseErrors(t *testing.T) {
 		{"id outside project", head + "## Objectives\n\nx ^a\n", 7, "placed"},
 		{"id in remains before bucket", head + "## ⬜ o/r\n\n### ⬜ What remains\n\n- ⬜ x ^a\n", 9, "placed"},
 		{"stray herdr-prompt", proj + "```herdr-prompt id=a to=b\nx\n```\n", 11, "herdr-prompt"},
+		{"stray qm-prompt", proj + "```qm-prompt id=a to=b\nx\n```\n", 11, "qm-prompt"},
+		{"two prompt blocks", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt]- p\n> ```qm-prompt id=a to=b\n> x\n> ```\n> ```herdr-prompt id=a to=b\n> x\n> ```\n", 15, "not 2"},
+		{"qm-prompt id mismatch", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt]- p\n> ```qm-prompt id=b to=t\n> x\n> ```\n", 16, "qm-prompt id=b"},
 		{"prompt not after item", proj + "> [!prompt]- p\n> ```herdr-prompt id=a to=b\n> x\n> ```\n", 11, "work item"},
 		{"prompt id mismatch", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt]- p\n> ```herdr-prompt id=b to=t\n> x\n> ```\n", 16, "id"},
-		{"prompt without fence", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt]- p\n> x\n", 15, "herdr-prompt"},
+		{"prompt without fence", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt]- p\n> x\n", 15, "qm-prompt"},
 		{"prompt without to", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt]- p\n> ```herdr-prompt id=a\n> x\n> ```\n", 16, "to="},
 		{"prompt unknown key", proj + "##### ⬜ x\n\ny ^a\n\n> [!prompt]- p\n> ```herdr-prompt id=a to=b x=y\n> z\n> ```\n", 16, "x=y"},
 		{"unordered next", head + "## Next\n\n- x\n", 7, "ordered"},

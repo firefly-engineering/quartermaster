@@ -78,7 +78,7 @@ type parser struct {
 	lines  []int // offsets of line starts after the first
 	n      *Note
 	errs   []*ParseError
-	placed map[ast.Node]bool // blocks whose ^id or herdr-prompt fence is accounted for
+	placed map[ast.Node]bool // blocks whose ^id or prompt fence is accounted for
 	ids    []idAt
 
 	sec        section
@@ -714,7 +714,7 @@ func (p *parser) blockquote(q *ast.Blockquote, after *Item) {
 	line := p.line(q)
 	var fences []*ast.FencedCodeBlock
 	for c := q.FirstChild(); c != nil; c = c.NextSibling() {
-		if f, ok := c.(*ast.FencedCodeBlock); ok && string(f.Language(p.src)) == "herdr-prompt" {
+		if f, ok := c.(*ast.FencedCodeBlock); ok && isPromptFence(string(f.Language(p.src))) {
 			fences = append(fences, f)
 			p.placed[f] = true
 		}
@@ -728,27 +728,27 @@ func (p *parser) blockquote(q *ast.Blockquote, after *Item) {
 		return
 	}
 	if len(fences) != 1 {
-		p.errorf(line, "a [!prompt] callout holds exactly one herdr-prompt block, not %d", len(fences))
+		p.errorf(line, "a [!prompt] callout holds exactly one prompt block, %s or %s, not %d", PromptFence, legacyPromptFence, len(fences))
 		return
 	}
 	f := fences[0]
-	fline := p.line(f)
+	fline, name := p.line(f), string(f.Language(p.src))
 	attrs := map[string]string{}
 	fields := strings.Fields(string(f.Info.Segment.Value(p.src)))[1:]
 	for _, kv := range fields {
 		k, v, ok := strings.Cut(kv, "=")
 		if _, dup := attrs[k]; !ok || v == "" || dup || (k != "id" && k != "to") {
-			p.errorf(fline, "unknown or repeated herdr-prompt attribute %q", kv)
+			p.errorf(fline, "unknown or repeated %s attribute %q", name, kv)
 			return
 		}
 		attrs[k] = v
 	}
 	if attrs["id"] == "" || attrs["to"] == "" {
-		p.errorf(fline, "a herdr-prompt block needs id=<item-id> and to=<owner/repo or workspace label>")
+		p.errorf(fline, "a %s block needs id=<item-id> and to=<owner/repo or workspace label>", name)
 		return
 	}
 	if attrs["id"] != after.ID {
-		p.errorf(fline, "herdr-prompt id=%s under work item ^%s", attrs["id"], after.ID)
+		p.errorf(fline, "%s id=%s under work item ^%s", name, attrs["id"], after.ID)
 		return
 	}
 	pr := &Prompt{Span: p.blockSpan(q), ID: attrs["id"], To: attrs["to"], Body: p.linesText(f)}
@@ -1018,7 +1018,7 @@ func (p *parser) rows(t *extast.Table, seen *bool, section string, header ...str
 	return rows, true
 }
 
-// unplaced reports every ^id and herdr-prompt block the structure walk did not place.
+// unplaced reports every ^id and prompt block the structure walk did not place.
 func (p *parser) unplaced(doc ast.Node) {
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering || p.placed[n] {
@@ -1034,8 +1034,8 @@ func (p *parser) unplaced(doc ast.Node) {
 				}
 			}
 		case *ast.FencedCodeBlock:
-			if string(n.Language(p.src)) == "herdr-prompt" {
-				p.errorf(p.line(n), "a herdr-prompt block belongs in a `> [!prompt]-` callout under its work item")
+			if name := string(n.Language(p.src)); isPromptFence(name) {
+				p.errorf(p.line(n), "a %s block belongs in a `> [!prompt]-` callout under its work item", name)
 			}
 		}
 		return ast.WalkContinue, nil

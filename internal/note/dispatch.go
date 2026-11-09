@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Dispatch is where task_dispatch started a fresh agent on a work item (spec §9.2): its herdr
-// pane and its workspace. The item records it as an HTML comment, `<!-- qm pane=<id> ws=<path> -->`,
+// Dispatch is where task_dispatch started a fresh agent on a work item (spec §9.2): its pane
+// and its workspace. The item records it as an HTML comment, `<!-- qm pane=<id> ws=<path> -->`,
 // just before its `^<id>`, in a list item's line or a ##### item's paragraph; Obsidian does not
 // show it. Either part may be absent, as the pane once refresh closes a finished dispatch's tab,
 // but not both: once refresh removes the checkout too, the marker goes.

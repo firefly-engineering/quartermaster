@@ -1,4 +1,4 @@
-// Package command runs an external executable directly, with no shell, for herdr's client,
+// Package command runs an external executable directly, with no shell, for rex's client,
 // refresh's gh and dispatch's jj and git.
 //
 // Like every package but main, this one reads neither the environment nor the cwd: the caller
