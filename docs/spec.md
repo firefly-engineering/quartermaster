@@ -104,8 +104,9 @@ root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<re
 ```
 
 `multiplexer` picks the terminal multiplexer agents run under: `herdr`, the default, or
-`rex`, on trial ([ADR 0012]). With `rex`, a herdr workspace below is a rex session, a tab a
-window and a pane a block. Every other section still names herdr's calls, which rex answers
+`rex`. Rex is the multiplexer ([ADR 0012]), and herdr support and this key are being
+removed. With `rex`, a herdr workspace below is a rex session, a tab a window and a pane a
+block. Every other section still names herdr's calls, which rex answers
 as that ADR maps them. Any other value is a load error.
 
 A **harness** is `[harness.<name>]`: a herdr agent `kind` and its `args`. `[tiers]` maps a
