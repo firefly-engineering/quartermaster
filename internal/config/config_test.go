@@ -24,8 +24,9 @@ func write(t *testing.T, body string) string {
 
 func wantDefaults() Config {
 	return Config{
-		Vault:    Vault{Dir: "worklog", Name: "worklog"},
-		Dispatch: Dispatch{WorkspaceRoot: "/home/u/.local/share/quartermaster/worklog/workspaces"},
+		Multiplexer: "herdr",
+		Vault:       Vault{Dir: "worklog", Name: "worklog"},
+		Dispatch:    Dispatch{WorkspaceRoot: "/home/u/.local/share/quartermaster/worklog/workspaces"},
 		Harness: map[string]Harness{
 			"claude": {Kind: "claude"},
 		},
@@ -132,6 +133,11 @@ workspace = "IaC"
 			},
 		},
 		{
+			name:        "multiplexer picks rex",
+			defaultFile: "multiplexer = \"rex\"\n",
+			want:        func(c *Config) { c.Multiplexer = "rex" },
+		},
+		{
 			name:        "keys the user file omits keep their defaults",
 			defaultFile: "[vault]\nrepo = \"/v\"\n",
 			want:        func(c *Config) { c.Vault.Repo = "/v" },
@@ -205,6 +211,11 @@ func TestLoadErrors(t *testing.T) {
 			name: "unknown top-level key",
 			file: "colour = \"red\"\n",
 			want: []string{"unknown key", "colour"},
+		},
+		{
+			name: "a multiplexer neither herdr nor rex",
+			file: "multiplexer = \"tmux\"\n",
+			want: []string{"multiplexer", "tmux"},
 		},
 		{
 			name: "unknown nested key",

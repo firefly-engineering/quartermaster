@@ -24,7 +24,7 @@ import (
 // root is the created workspace's initial shell pane, "" when one was found. A missing
 // checkout is an error, and nothing is cloned. Send and dispatch both resolve here; the tool
 // never closes a workspace it created.
-func ProjectWorkspace(ctx context.Context, c herdr.Client, projects config.Projects, repo string) (ws Workspace, root string, err error) {
+func ProjectWorkspace(ctx context.Context, c herdr.Mux, projects config.Projects, repo string) (ws Workspace, root string, err error) {
 	p := projects.Project(repo)
 	spaces, err := c.WorkspaceList(ctx)
 	if err != nil {
@@ -48,7 +48,7 @@ func ProjectWorkspace(ctx context.Context, c herdr.Client, projects config.Proje
 		}
 		var at []Workspace
 		for _, pn := range panes {
-			if !Within(p.Path, pn.Cwd) || slices.ContainsFunc(at, func(w Workspace) bool { return w.ID == pn.Workspace }) {
+			if !InCheckout(p.Path, pn.Cwd) || slices.ContainsFunc(at, func(w Workspace) bool { return w.ID == pn.Workspace }) {
 				continue
 			}
 			ws := Workspace{ID: pn.Workspace, Label: pn.Workspace}
@@ -99,7 +99,7 @@ func labelled(spaces []Workspace, label string) (Workspace, int) {
 
 // create is §9.2's step 4: a herdr workspace for repo, labelled label, at its checkout, which
 // must exist.
-func create(ctx context.Context, c herdr.Client, repo, checkout, label string) (Workspace, string, error) {
+func create(ctx context.Context, c herdr.Mux, repo, checkout, label string) (Workspace, string, error) {
 	if checkout == "" {
 		return Workspace{}, "", fmt.Errorf("no herdr workspace for %s, and no checkout to open one at: set projects.root, or projects.%q.path", repo, repo)
 	}

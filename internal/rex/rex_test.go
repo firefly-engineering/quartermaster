@@ -1,0 +1,198 @@
+package rex
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/firefly-engineering/quartermaster/internal/herdr"
+)
+
+const (
+	sess  = "session:s1"
+	shell = "block:b1"
+	agent = "block:b2"
+)
+
+// fakeRex answers rex's calls from a session sess with two blocks: shell, a bare login shell, and
+// agent, a claude under it. status is what program_status answers for agent; calls records
+// every call but the read-only ones.
+type fakeRex struct {
+	t      *testing.T
+	status string
+	calls  []string
+	// started is false until a paste lands in agent, before which it holds only its shell.
+	started bool
+}
+
+func (f *fakeRex) run(_ context.Context, args ...string) ([]byte, error) {
+	if args[0] != "api" {
+		f.calls = append(f.calls, strings.Join(args, " "))
+		switch args[0] {
+		case "capture":
+			return []byte("one\ntwo\nthree\n"), nil
+		case "send-key":
+			return nil, nil
+		}
+		f.t.Fatalf("unexpected rex %q", args)
+	}
+	var in map[string]any
+	if err := json.Unmarshal([]byte(args[3]), &in); err != nil {
+		f.t.Fatal(err)
+	}
+	switch m := args[2]; m {
+	case "session.list":
+		return []byte(`{"sessions":[{"session_id":"` + sess + `","label":"web"}]}`), nil
+	case "session.list_blocks":
+		if in["session_id"] != sess {
+			return nil, notFoundExit(args, "session_not_found")
+		}
+		return []byte(`{"blocks":[{"block_id":"` + shell + `","label":"shell","window_id":"window:w1"},` +
+			`{"block_id":"` + agent + `","label":"web-claude","window_id":"window:w2"}]}`), nil
+	case "block.method":
+		bare := `{"child":{"pid":10,"name":"login"},"foreground":{"pid":11,"name":"fish","cwd":"/src/web"},"ancestors":[{"pid":10,"name":"login"}]}`
+		switch {
+		case in["method"] == "process" && (in["block_id"] == shell || !f.started):
+			return []byte(bare), nil
+		case in["method"] == "process":
+			return []byte(`{"child":{"pid":20,"name":"login"},"foreground":{"pid":22,"name":"claude","cwd":"/src/web"},` +
+				`"ancestors":[{"pid":21,"name":"fish"},{"pid":20,"name":"login"}]}`), nil
+		case in["method"] == "program_status":
+			return []byte(f.status), nil
+		}
+	case "block.event":
+		f.started = true
+		f.calls = append(f.calls, m+" "+in["event"].(map[string]any)["payload"].(map[string]any)["text"].(string))
+		return []byte(`{}`), nil
+	case "session.set_block_label", "session.close_window":
+		f.calls = append(f.calls, m+" "+args[3])
+		if m == "session.close_window" && in["window_id"] != "window:w2" {
+			return nil, notFoundExit(args, "not_found")
+		}
+		return []byte(`{}`), nil
+	}
+	f.t.Fatalf("unexpected rex %q", args)
+	return nil, nil
+}
+
+func notFoundExit(args []string, code string) error {
+	return &ExitError{Args: args, Stderr: []byte(fmt.Sprintf("Error: stream response \"control-2\" failed: gone (status=404 code=%s)\n", code))}
+}
+
+func status(state string, pid int) string {
+	return fmt.Sprintf(`{"records":[{"state":%q,"app":"claude-code","owner":{"pid":%d,"name":"claude"}}]}`, state, pid)
+}
+
+func TestAgentList(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ name, status, want string }{
+		{"the foreground program's own report", status("working", 22), "working"},
+		{"a record an exited program left", status("idle", 99), ""},
+		{"no report at all", `{"records":[]}`, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := &fakeRex{t: t, status: tt.status, started: true}
+			got, err := Client{Run: f.run}.AgentList(t.Context())
+			want := []herdr.Agent{{Kind: "claude", Name: "web-claude", Workspace: sess, Tab: sess + "/window:w2", Pane: sess + "/" + agent, Cwd: "/src/web", Status: tt.want}}
+			if err != nil || !slices.Equal(got, want) {
+				t.Fatalf("got %+v, %v; want %+v", got, err, want)
+			}
+		})
+	}
+}
+
+func TestPaneGetGone(t *testing.T) {
+	t.Parallel()
+	c := Client{Run: (&fakeRex{t: t}).run}
+	for _, id := range []string{sess + "/block:gone", "session:gone/" + shell} {
+		if _, err := c.PaneGet(t.Context(), id); herdr.Code(err) != herdr.PaneNotFound {
+			t.Errorf("PaneGet(%s): %v, code %q", id, err, herdr.Code(err))
+		}
+	}
+	p, err := c.PaneGet(t.Context(), sess+"/"+shell)
+	if want := (herdr.Pane{ID: sess + "/" + shell, Workspace: sess, Tab: sess + "/window:w1", Cwd: "/src/web"}); err != nil || p != want {
+		t.Fatalf("got %+v, %v; want %+v", p, err, want)
+	}
+}
+
+func TestTabClose(t *testing.T) {
+	t.Parallel()
+	c := Client{Run: (&fakeRex{t: t}).run}
+	if err := c.TabClose(t.Context(), sess+"/window:w2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.TabClose(t.Context(), sess+"/window:gone"); herdr.Code(err) != herdr.TabNotFound {
+		t.Fatalf("%v, code %q", err, herdr.Code(err))
+	}
+}
+
+func TestAgentStart(t *testing.T) {
+	t.Parallel()
+	f := &fakeRex{t: t, status: status("idle", 22)}
+	c := Client{Run: f.run, Tick: time.Millisecond, Patience: time.Second}
+	if err := c.AgentStart(t.Context(), "web-claude", "claude", sess+"/"+agent, []string{"--model", "it's"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`session.set_block_label {"block_id":"block:b2","label":"web-claude","session_id":"session:s1"}`,
+		`block.event claude --model 'it'\''s'`,
+		"send-key -s session:s1 -b block:b2 enter",
+	}
+	if !slices.Equal(f.calls, want) {
+		t.Fatalf("calls\n%s\nwant\n%s", strings.Join(f.calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestAgentStartNeverRuns(t *testing.T) {
+	t.Parallel()
+	f := &fakeRex{t: t}
+	run := func(ctx context.Context, args ...string) ([]byte, error) {
+		out, err := f.run(ctx, args...)
+		f.started = false // the program exits at once, leaving the shell
+		return out, err
+	}
+	c := Client{Run: run, Tick: time.Millisecond, Patience: 20 * time.Millisecond}
+	if err := c.AgentStart(t.Context(), "web-claude", "claude", sess+"/"+agent, nil); err == nil || !strings.Contains(err.Error(), "did not start") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestAgentStartNoStatus(t *testing.T) {
+	t.Parallel()
+	f := &fakeRex{t: t, status: `{"records":[]}`} // claude waiting on its folder-trust question
+	c := Client{Run: f.run, Tick: time.Millisecond, Patience: 20 * time.Millisecond}
+	err := c.AgentStart(t.Context(), "web-claude", "claude", sess+"/"+agent, nil)
+	if err == nil || !strings.Contains(err.Error(), "reported no status") {
+		t.Fatalf("got %v", err)
+	}
+	if last := f.calls[len(f.calls)-1]; last != "send-key -s session:s1 -b block:b2 enter" {
+		t.Fatalf("typed after the start's Enter: %q", last)
+	}
+}
+
+func TestAgentPromptAndRead(t *testing.T) {
+	t.Parallel()
+	f := &fakeRex{t: t}
+	c := Client{Run: f.run}
+	if err := c.AgentPrompt(t.Context(), sess+"/"+agent, "line one\nline two"); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"block.event line one\nline two", "send-key -s session:s1 -b block:b2 enter"}; !slices.Equal(f.calls, want) {
+		t.Fatalf("calls %q, want %q", f.calls, want)
+	}
+	if out, err := c.AgentRead(t.Context(), sess+"/"+agent, 2); err != nil || string(out) != "two\nthree\n" {
+		t.Fatalf("read %q, %v", out, err)
+	}
+}
+
+func TestBadID(t *testing.T) {
+	t.Parallel()
+	if _, err := (Client{Run: (&fakeRex{t: t}).run}).PaneGet(t.Context(), "w1:p1"); err == nil {
+		t.Fatal("a herdr pane id read as rex's")
+	}
+}

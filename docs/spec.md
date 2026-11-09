@@ -72,6 +72,8 @@ A user's file may name several harnesses and route tiers between them; this one 
 well-specified implementation to a cheaper harness:
 
 ```toml
+multiplexer = "herdr"                     # herdr (the default) or rex: what send, dispatch and refresh drive
+
 [vault]
 repo = "~/src/github.com/sigma/worklog"   # jj repo holding the vault
 dir = "worklog"                           # Obsidian vault, relative to repo
@@ -100,6 +102,11 @@ root = "~/src/github.com"       # every project's checkout is <root>/<owner>/<re
 # path = "~/work/IaC"           # its checkout, instead of <root>/<owner>/<repo>
 # workspace = "infra"           # its herdr workspace label, instead of finding it (§9.2)
 ```
+
+`multiplexer` picks the terminal multiplexer agents run under: `herdr`, the default, or
+`rex`, on trial ([ADR 0012]). With `rex`, a herdr workspace below is a rex session, a tab a
+window and a pane a block. Every other section still names herdr's calls, which rex answers
+as that ADR maps them. Any other value is a load error.
 
 A **harness** is `[harness.<name>]`: a herdr agent `kind` and its `args`. `[tiers]` maps a
 work item's tier to a harness name; a tier it does not list, and an item with no tier, go
@@ -531,6 +538,7 @@ own way; the README shows the snippets for `programs.agentSkills`,
 [ADR 0008]: adr/0008-mutating-tools-do-not-refresh.md
 [ADR 0010]: adr/0010-a-suite-member-may-be-skill-only.md
 [ADR 0011]: adr/0011-a-work-items-tier-routes-it-to-a-harness.md
+[ADR 0012]: adr/0012-rex-is-a-second-multiplexer.md
 [§4]: #4-the-note
 [§4.1]: #41-addressable-units
 [§4.3]: #43-transitions

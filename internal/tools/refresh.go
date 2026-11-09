@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
 	"github.com/firefly-engineering/quartermaster/internal/refresh"
+	"github.com/firefly-engineering/quartermaster/internal/send"
 )
 
 // RefreshInput is refresh's input.
@@ -38,7 +38,7 @@ func (d Deps) refresh(ctx context.Context, in RefreshInput) (RefreshOutput, erro
 // reconciler asks GitHub, herdr, jj and git through the commands d resolved.
 func (d Deps) reconciler() refresh.Reconciler {
 	return refresh.Reconciler{
-		GH: refresh.Command("gh", d.GH, d.Env), Herdr: herdr.New(d.Herdr, d.Env),
+		GH: refresh.Command("gh", d.GH, d.Env), Herdr: send.Mux(d.Config, d.Herdr, d.Env),
 		JJ: refresh.Command("jj", d.JJ, d.Env), Git: refresh.Command("git", d.Git, d.Env),
 		Projects: d.Config.Projects,
 	}

@@ -22,9 +22,12 @@ func TestDeps(t *testing.T) {
 	h := testHost(t)
 	h.environ = []string{"A=1"}
 	h.lookPath = func(name string) (string, error) { return "/bin/" + name, nil }
-	d := deps(config.Config{}, h)
+	d := deps(config.Config{Multiplexer: config.Herdr}, h)
 	if d.JJ != "/bin/jj" || d.Git != "/bin/git" || d.GH != "/bin/gh" || d.Herdr != "/bin/herdr" || len(d.Env) != 1 {
 		t.Errorf("deps %+v", d)
+	}
+	if d := deps(config.Config{Multiplexer: config.Rex}, h); d.Herdr != "/bin/rex" {
+		t.Errorf("deps with rex: multiplexer at %q, want /bin/rex", d.Herdr)
 	}
 }
 

@@ -25,11 +25,12 @@ import (
 
 // Config is the resolved configuration. Every path in it has had `~` expanded.
 type Config struct {
-	Vault    Vault              `toml:"vault"`
-	Dispatch Dispatch           `toml:"dispatch"`
-	Harness  map[string]Harness `toml:"harness"` // keyed by the harness's name
-	Tiers    map[string]string  `toml:"tiers"`   // tier, or default, to a harness's name
-	Projects Projects           `toml:"-"`       // decodeFile reads the projects table key by key: see Projects
+	Multiplexer string             `toml:"multiplexer"` // Herdr or Rex: the one send, dispatch and refresh drive (ADR 0012)
+	Vault       Vault              `toml:"vault"`
+	Dispatch    Dispatch           `toml:"dispatch"`
+	Harness     map[string]Harness `toml:"harness"` // keyed by the harness's name
+	Tiers       map[string]string  `toml:"tiers"`   // tier, or default, to a harness's name
+	Projects    Projects           `toml:"-"`       // decodeFile reads the projects table key by key: see Projects
 }
 
 // Vault locates the worklog vault.
@@ -68,6 +69,12 @@ func (h Harness) Prompt(text string) string {
 	}
 	return "/skill:" + rest
 }
+
+// The multiplexers config may name.
+const (
+	Herdr = "herdr"
+	Rex   = "rex"
+)
 
 // DefaultTier is the [tiers] key every tier it does not list, and every item with no tier,
 // goes to.
@@ -126,8 +133,9 @@ type Options struct {
 // Defaults returns the built-in configuration, before `~` expansion.
 func Defaults() Config {
 	return Config{
-		Vault:    Vault{Dir: "worklog", Name: "worklog"},
-		Dispatch: Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
+		Multiplexer: Herdr,
+		Vault:       Vault{Dir: "worklog", Name: "worklog"},
+		Dispatch:    Dispatch{WorkspaceRoot: "~/.local/share/quartermaster/worklog/workspaces"},
 		Harness: map[string]Harness{
 			"claude": {Kind: "claude"},
 		},
@@ -161,6 +169,9 @@ func Load(opts Options) (Config, error) {
 		cfg.Vault.Repo = repo
 	}
 
+	if cfg.Multiplexer != Herdr && cfg.Multiplexer != Rex {
+		return Config{}, fmt.Errorf("multiplexer %q: want %q or %q", cfg.Multiplexer, Herdr, Rex)
+	}
 	if err := validateHarnesses(cfg); err != nil {
 		return Config{}, err
 	}
@@ -182,12 +193,13 @@ func decodeFile(path string, required bool, cfg *Config) error {
 	// by key. vault and dispatch decode into cfg in place, keeping the defaults the file omits;
 	// harness and tiers, when the file has them, replace the built-in tables whole.
 	file := struct {
-		Vault    *Vault                    `toml:"vault"`
-		Dispatch *Dispatch                 `toml:"dispatch"`
-		Harness  map[string]Harness        `toml:"harness"`
-		Tiers    map[string]string         `toml:"tiers"`
-		Projects map[string]toml.Primitive `toml:"projects"`
-	}{Vault: &cfg.Vault, Dispatch: &cfg.Dispatch}
+		Multiplexer *string                   `toml:"multiplexer"`
+		Vault       *Vault                    `toml:"vault"`
+		Dispatch    *Dispatch                 `toml:"dispatch"`
+		Harness     map[string]Harness        `toml:"harness"`
+		Tiers       map[string]string         `toml:"tiers"`
+		Projects    map[string]toml.Primitive `toml:"projects"`
+	}{Multiplexer: &cfg.Multiplexer, Vault: &cfg.Vault, Dispatch: &cfg.Dispatch}
 	md, err := toml.Decode(string(b), &file)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)

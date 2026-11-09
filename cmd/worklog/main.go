@@ -162,7 +162,7 @@ func deps(cfg config.Config, h host) tools.Deps {
 	jj, _ := h.lookPath("jj")
 	git, _ := h.lookPath("git")
 	gh, _ := h.lookPath("gh")
-	herdr, _ := h.lookPath("herdr")
+	herdr, _ := h.lookPath(cfg.Multiplexer) // herdr or rex (ADR 0012)
 	return tools.Deps{Config: cfg, Now: h.now, JJ: jj, Git: git, GH: gh, Herdr: herdr, Env: h.environ}
 }
 

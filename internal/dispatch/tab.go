@@ -36,7 +36,7 @@ func (k *Kept) Running() bool { return k.Status == herdr.Working || k.Status == 
 //
 // refresh closes a finished item's tab with it, and a fresh re-dispatch its previous worker's
 // (spec §9.2): both under these guards.
-func CloseTab(ctx context.Context, h herdr.Client, agents func(context.Context) ([]herdr.Agent, error), pane, ws string) (tab string, err error) {
+func CloseTab(ctx context.Context, h herdr.Mux, agents func(context.Context) ([]herdr.Agent, error), pane, ws string) (tab string, err error) {
 	p, err := h.PaneGet(ctx, pane)
 	switch {
 	case herdr.Code(err) == herdr.PaneNotFound:

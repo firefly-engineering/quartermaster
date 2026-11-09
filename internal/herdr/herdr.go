@@ -23,6 +23,21 @@ import (
 // returns an *ExitError. Tests stand in a fake for it.
 type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
+// Mux is every call send, dispatch and refresh make on a terminal multiplexer: herdr's Client,
+// or rex's (ADR 0012), which answers in herdr's types.
+type Mux interface {
+	AgentList(ctx context.Context) ([]Agent, error)
+	WorkspaceList(ctx context.Context) ([]Workspace, error)
+	PaneList(ctx context.Context) ([]Pane, error)
+	PaneGet(ctx context.Context, id string) (Pane, error)
+	WorkspaceCreate(ctx context.Context, cwd, label string) (Pane, error)
+	TabCreate(ctx context.Context, workspace, cwd, label string) (pane string, err error)
+	TabClose(ctx context.Context, id string) error
+	AgentStart(ctx context.Context, name, kind, pane string, args []string) error
+	AgentPrompt(ctx context.Context, pane, text string) error
+	AgentRead(ctx context.Context, pane string, lines int) ([]byte, error)
+}
+
 // Client calls herdr through Run. The zero Client reports herdr as not available.
 type Client struct {
 	Run Runner
@@ -80,8 +95,13 @@ func NameStart(r rune) bool { return r >= 'a' && r <= 'z' }
 // NameChar reports whether r may be in a herdr agent name: [a-z0-9_-].
 func NameChar(r rune) bool { return NameStart(r) || r >= '0' && r <= '9' || r == '_' || r == '-' }
 
-// Code is herdr's error code in err, as PaneNotFound; "" when err is not one of herdr's.
+// Code is herdr's error code in err, as PaneNotFound; "" when err is not one of herdr's. Another
+// Mux's error answers through its own Code method, in herdr's codes.
 func Code(err error) string {
+	var coded interface{ Code() string }
+	if errors.As(err, &coded) {
+		return coded.Code()
+	}
 	var exit *ExitError
 	if !errors.As(err, &exit) {
 		return ""

@@ -253,7 +253,7 @@ func (d Dispatcher) fresh(ctx context.Context, date string, j job, instruction s
 	case d.Config.Dispatch.WorkspaceRoot == "":
 		return Result{}, errors.New("dispatch.workspace_root is not set")
 	case d.Herdr == "":
-		return Result{}, errors.New("herdr not found on PATH")
+		return Result{}, fmt.Errorf("%s not found on PATH", d.Config.Multiplexer)
 	}
 	wsName := j.name()
 	ws := checkoutPath(d.Config.Dispatch.WorkspaceRoot, j.repo, wsName)

@@ -21,6 +21,7 @@ import (
 	"github.com/firefly-engineering/quartermaster/internal/engine"
 	"github.com/firefly-engineering/quartermaster/internal/herdr"
 	"github.com/firefly-engineering/quartermaster/internal/note"
+	"github.com/firefly-engineering/quartermaster/internal/rex"
 )
 
 // available are the agent statuses a prompt may be typed into. A working agent would queue
@@ -36,8 +37,8 @@ const tool = "send"
 type Sender struct {
 	Config config.Config  // the harnesses, tiers and projects a prompt routes through
 	Engine *engine.Engine // the note's only writer, which records each send's pane
-	Herdr  string         // the herdr executable's path; "" when it was not found
-	Env    []string       // herdr's environment
+	Herdr  string         // the path of Config.Multiplexer's executable; "" when it was not found
+	Env    []string       // its environment
 }
 
 // Sent is a prompt delivered to a herdr pane.
@@ -325,7 +326,7 @@ func (s Sender) agent(ctx context.Context, p Prompt, name string, h config.Harne
 		return herdr.Agent{}, err
 	}
 	for _, a := range agents {
-		if a.Workspace == p.To.ID && a.Kind == h.Kind && slices.Contains(available, a.Status) && Within(p.Checkout, a.Cwd) {
+		if a.Workspace == p.To.ID && a.Kind == h.Kind && slices.Contains(available, a.Status) && InCheckout(p.Checkout, a.Cwd) {
 			return a, nil
 		}
 	}
@@ -370,7 +371,7 @@ func (s Sender) spawn(ctx context.Context, p Prompt, name string, h config.Harne
 // Start starts harness h's agent, named name, in a new tab of herdr workspace ws at cwd,
 // labelled name, without taking focus. pane is the tab's pane once created, even when the
 // agent does not start. A session's spawn and a fresh dispatch both start their agents here.
-func Start(ctx context.Context, c herdr.Client, h config.Harness, ws, cwd, name string) (pane string, err error) {
+func Start(ctx context.Context, c herdr.Mux, h config.Harness, ws, cwd, name string) (pane string, err error) {
 	if pane, err = c.TabCreate(ctx, ws, cwd, name); err != nil {
 		return "", err
 	}
@@ -387,6 +388,17 @@ func Within(root, dir string) bool {
 	return err == nil && filepath.IsLocal(rel)
 }
 
+// InCheckout is Within, also tried with root's symlinks resolved: rex reports a pane's cwd as
+// the kernel has it, so a checkout configured through a symlink, as /tmp on macOS, holds it
+// only once resolved.
+func InCheckout(root, dir string) bool {
+	if Within(root, dir) {
+		return true
+	}
+	real, err := filepath.EvalSymlinks(root)
+	return err == nil && real != root && Within(real, dir)
+}
+
 // sameDir reports whether a and b name one existing directory, through symlinks.
 func sameDir(a, b string) bool {
 	fa, err := os.Stat(a)
@@ -397,4 +409,12 @@ func sameDir(a, b string) bool {
 	return err == nil && fa.IsDir() && os.SameFile(fa, fb)
 }
 
-func (s Sender) herdr() herdr.Client { return herdr.New(s.Herdr, s.Env) }
+func (s Sender) herdr() herdr.Mux { return Mux(s.Config, s.Herdr, s.Env) }
+
+// Mux is the multiplexer cfg names (ADR 0012), its executable at path, run with env.
+func Mux(cfg config.Config, path string, env []string) herdr.Mux {
+	if cfg.Multiplexer == config.Rex {
+		return rex.New(path, env)
+	}
+	return herdr.New(path, env)
+}

@@ -36,4 +36,4 @@ func (d Dispatcher) agentNames(ctx context.Context) ([]string, error) {
 
 // herdr is the client dispatch calls herdr through. Its errors are herdr.ExitError's, as send's
 // and refresh's are.
-func (d Dispatcher) herdr() herdr.Client { return herdr.New(d.Herdr, d.Env) }
+func (d Dispatcher) herdr() herdr.Mux { return send.Mux(d.Config, d.Herdr, d.Env) }

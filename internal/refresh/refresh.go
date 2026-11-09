@@ -38,7 +38,7 @@
 // issue-<N> branch is never deleted.
 //
 // Like every package but main, this one reads neither the environment nor the cwd: gh, jj and
-// git come in as Runners, herdr as a herdr.Client, and the projects' checkouts from the
+// git come in as Runners, herdr as a herdr.Mux, and the projects' checkouts from the
 // configuration.
 package refresh
 
@@ -56,7 +56,7 @@ import (
 // Reconciler gathers the evidence for a refresh.
 type Reconciler struct {
 	GH       Runner          // runs gh
-	Herdr    herdr.Client    // calls herdr
+	Herdr    herdr.Mux       // calls herdr
 	JJ, Git  Runner          // run jj and git, to remove a finished fresh checkout
 	Projects config.Projects // where that checkout's project is
 }

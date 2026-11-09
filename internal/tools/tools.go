@@ -36,7 +36,7 @@ type Deps struct {
 	JJ     string           // jj's path, "" when not found
 	Git    string           // git's path, "" when not found
 	GH     string           // gh's path, "" when not found
-	Herdr  string           // herdr's path, "" when not found
+	Herdr  string           // the path of Config.Multiplexer's executable, "" when not found
 	Env    []string         // the environment jj, git, gh and herdr run with
 }
 

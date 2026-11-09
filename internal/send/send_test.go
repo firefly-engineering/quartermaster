@@ -361,6 +361,36 @@ func TestDedent(t *testing.T) {
 	}
 }
 
+func TestInCheckout(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real")
+	if err := os.MkdirAll(filepath.Join(real, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	real, err := filepath.EvalSymlinks(real) // t.TempDir may itself sit under a symlink
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		root, dir string
+		want      bool
+	}{
+		{link, filepath.Join(link, "sub"), true},
+		{link, filepath.Join(real, "sub"), true},
+		{link, filepath.Join(dir, "other"), false},
+		{filepath.Join(dir, "absent"), filepath.Join(dir, "absent"), true},
+	} {
+		if got := InCheckout(c.root, c.dir); got != c.want {
+			t.Errorf("InCheckout(%q, %q) = %v, want %v", c.root, c.dir, got, c.want)
+		}
+	}
+}
+
 func TestWithin(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
