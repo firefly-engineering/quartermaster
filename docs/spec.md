@@ -355,8 +355,11 @@ exists under the vault, and the vault is the configured one (`vault.repo` and `v
    nothing more is typed: a program showing a screen first, as claude's question whether to
    trust a new folder, would take a prompt's Enter as its answer. Only the harness the
    prompt needs starts. The name is the first of `<repo>-<harness>`, `<repo>-<harness>-2`,
-   `<repo>-<harness>-3`, … that no live agent has, in any workspace, sanitised and fitted to 32 characters as a `fresh` agent's is (§9.2
-   step 4). The tool never closes a session spawn, nor a workspace it created: it is the
+   `<repo>-<harness>-3`, … that no live agent has, in any workspace, sanitised and fitted to
+   32 characters as a `fresh` agent's is (§9.2 step 4). The name is free when it is picked:
+   two sends spawning at once can pick the same one. That only repeats a label, since
+   nothing finds an agent by its name, only by its pane
+   ([#174](https://github.com/firefly-engineering/quartermaster/issues/174)). The tool never closes a session spawn, nor a workspace it created: it is the
    session from then on, and keeps its warm context. A spawn that fails is an error; a tab or
    workspace created before the agent fails to start is left in place and named.
 5. Paste the text into the agent's pane (`block.event`) and press Enter (`rex send-key`),
