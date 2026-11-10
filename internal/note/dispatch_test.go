@@ -24,6 +24,16 @@ Port it.
 
 > [!prompt]- Prompt sent to r
 > ` + "```herdr-prompt id=d13 to=r\n> /implement\n> ```\n" + `
+##### ⬜ [#15](https://github.com/o/r/issues/15): canary
+
+^d15
+
+> [!prompt]- Prompt sent to r
+> ` + "```herdr-prompt id=d15 to=r\n> /implement\n> ```\n" + `
+##### ⬜ [#16](https://github.com/o/r/issues/16): bare
+
+^d16
+
 ##### 🔄 [#14](https://github.com/o/r/issues/14): which store?
 
 Working on it. <!-- qm pane=w1:p5 ws=/ws/o/r/issue-14 --> ^d14
@@ -63,9 +73,11 @@ func TestParseDispatch(t *testing.T) {
 // one, or one in a code span, which is code, not HTML.
 func TestParseDispatchIgnoresOtherComments(t *testing.T) {
 	t.Parallel()
-	for _, c := range []string{"<!-- a note -->", "<!-- qm -->", "<!-- qm pane= -->", "<!-- qm pane=p ws=/x extra -->",
+	for _, c := range []string{
+		"<!-- a note -->", "<!-- qm -->", "<!-- qm pane= -->", "<!-- qm pane=p ws=/x extra -->",
 		"<!-- qm pane=p pane=q ws=/x -->", "<!-- qmx pane=p ws=/x -->", "<!-- qm ws=/x ws=/y -->", "<!-- qm pane= ws=/x -->",
-		"<!-- qm pane=p ws=/x tab=t -->", "`<!-- qm pane=p ws=/x -->`"} {
+		"<!-- qm pane=p ws=/x tab=t -->", "`<!-- qm pane=p ws=/x -->`",
+	} {
 		src := []byte(strings.Replace(dispatchNote, "<!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 -->", c, 1))
 		n, err := Parse(src)
 		if err != nil {
@@ -153,14 +165,83 @@ func TestSetDispatch(t *testing.T) {
 	if out, err = SetDispatch(n, src, "d12", Dispatch{}); err != nil || string(out) != dispatchNote {
 		t.Errorf("no marker to remove: %v\n%s", err, out)
 	}
-	for _, bad := range []Dispatch{{Pane: "a b", Workspace: "/x"}, {Pane: "p", Workspace: "/a b"},
-		{Pane: "p", Workspace: "/a-->"}, {Pane: "p", Workspace: "relative"}} {
+	for _, bad := range []Dispatch{
+		{Pane: "a b", Workspace: "/x"},
+		{Pane: "p", Workspace: "/a b"},
+		{Pane: "p", Workspace: "/a-->"},
+		{Pane: "p", Workspace: "relative"},
+	} {
 		if _, err := SetDispatch(n, src, "d12", bad); err == nil {
 			t.Errorf("%+v: no error", bad)
 		}
 	}
 	if _, err := SetDispatch(n, src, "nope", d); err == nil {
 		t.Error("no item: no error")
+	}
+}
+
+// TestSetDispatchOnBareID: a marker written on an item whose paragraph holds only ^<id>
+// would start the paragraph, and CommonMark would read the line as an HTML block, not a
+// paragraph: the item's ▶ label is written in italics before the marker, where its button
+// would go, and the write is refused when there is no label to write (#168).
+func TestSetDispatchOnBareID(t *testing.T) {
+	t.Parallel()
+	src := []byte(dispatchNote)
+	n, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Dispatch{Pane: "w2:p1", Workspace: "/ws/o/r/issue-12"}
+	out, err := SetDispatch(n, src, "d15", d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(dispatchNote, "\n^d15\n",
+		"\n*send to r* <!-- qm pane=w2:p1 ws=/ws/o/r/issue-12 --> ^d15\n", 1)
+	if string(out) != want {
+		t.Errorf("bare ^d15:\n%s", out)
+	}
+	if _, err = Parse(out); err != nil {
+		t.Errorf("the note no longer parses: %v", err)
+	}
+	n, _ = Parse(src)
+	if _, err = SetDispatch(n, src, "d16", d); err == nil {
+		t.Error("no prompt, no prose, no label: no error")
+	}
+}
+
+// TestSetDispatchMatchesRender: on an item with a prompt and nothing else, SetDispatch and
+// the renderer write the same paragraph, marker and all (#168).
+func TestSetDispatchMatchesRender(t *testing.T) {
+	t.Parallel()
+	nob := testRenderer
+	nob.CommandID = ""
+	d := Dispatch{Pane: "w1:p1", Workspace: "/ws/o/r/issue-1"}
+	item := func(dispatch bool) string {
+		u := ItemUnit{
+			ID: "a", Icon: IconTodo, Heading: true, Title: "A",
+			Button: "send to r", Prompt: &PromptUnit{To: "r", Body: "go"},
+		}
+		if dispatch {
+			u.Dispatch = &d
+		}
+		b, err := nob.Item(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	src := []byte("# Worklog — 2026-10-18\n\n**09:00 UTC:** x.\n\n## ⬜ o/r\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n" + item(false))
+	n, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := SetDispatch(n, src, "a", d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(string(src), item(false), item(true), 1); string(out) != want {
+		t.Errorf("SetDispatch:\n%s\nwant\n%s", out, want)
 	}
 }
 
@@ -207,8 +288,10 @@ func TestRenderDispatch(t *testing.T) {
 		t.Errorf("list form %q", list)
 	}
 	for _, body := range []string{"", "Some prose."} {
-		heading, err := testRenderer.Item(ItemUnit{ID: "b", Icon: IconInProgress, Title: "heading", Heading: true, Body: body,
-			Prompt: &PromptUnit{To: "r", Body: "go"}, Button: "send to r", Dispatch: d})
+		heading, err := testRenderer.Item(ItemUnit{
+			ID: "b", Icon: IconInProgress, Title: "heading", Heading: true, Body: body,
+			Prompt: &PromptUnit{To: "r", Body: "go"}, Button: "send to r", Dispatch: d,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}

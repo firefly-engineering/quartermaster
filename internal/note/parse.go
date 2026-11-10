@@ -563,8 +563,8 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	}
 	it.ID = id
 	it.End = p.nodeEnd(para)
-	it.Button = p.buttonLabel(para)
 	p.dispatch(it, para)
+	it.Button, it.labelAt = p.buttonLabel(it, para)
 	p.sent(it)
 	p.fields(it, para)
 	p.addItem(it)
@@ -572,14 +572,28 @@ func (p *parser) itemParagraph(para *ast.Paragraph) *Item {
 	return it
 }
 
-// buttonLabel is the label after the ▶ of a paragraph's button: a link to the Shell commands
-// plugin reading `▶ <label>`. It is "" when the paragraph has none.
-func (p *parser) buttonLabel(para *ast.Paragraph) string {
-	l := p.buttonLink(para)
-	if l == nil {
-		return ""
+// buttonLabel is the ▶ label of a ##### item's paragraph, and where an italic label
+// starts: the text after the ▶ of a link to the Shell commands plugin, or, without one,
+// the label written in italics where the button would go (Renderer.Item). at is -1
+// without an italic label.
+func (p *parser) buttonLabel(it *Item, para *ast.Paragraph) (label string, at int) {
+	if l := p.buttonLink(para); l != nil {
+		return strings.TrimPrefix(p.inlineText(l), buttonMark), -1
 	}
-	return strings.TrimPrefix(p.inlineText(l), buttonMark)
+	return p.italicLabel(it, para)
+}
+
+// italicLabel reads the label written in italics where a work item's ▶ button would go,
+// on a vault with no Shell commands id: `*<label>*` alone on the last line of its
+// paragraph, before its dispatch marker and `^<id>`. at is where the label's first `*`
+// starts, -1 when the last line is not a label.
+func (p *parser) italicLabel(it *Item, para *ast.Paragraph) (label string, at int) {
+	last := para.Lines().At(para.Lines().Len() - 1)
+	line := bytes.TrimRight(p.src[last.Start:it.bodyEnd()], " \t")
+	if len(line) < 2 || line[0] != '*' || line[len(line)-1] != '*' || bytes.ContainsRune(line[1:len(line)-1], '*') {
+		return "", -1
+	}
+	return string(line[1 : len(line)-1]), last.Start
 }
 
 // buttonLink is the first of a block's inlines that is a button: a link to the Shell commands

@@ -100,8 +100,8 @@ func TestNoButtonWithoutCommandID(t *testing.T) {
 	if strings.Contains(s, "obsidian://") || strings.Contains(s, "▶") {
 		t.Errorf("a button was rendered:\n%s", s)
 	}
-	if !strings.Contains(s, "Cost: 20 min. Route: `/grill-with-docs`. Tier: `design`. ^grill-2\n\n> [!prompt]- Prompt sent to firefly-engineering/quartermaster\n") {
-		t.Errorf("the item lost its id or prompt:\n%s", s)
+	if !strings.Contains(s, "Cost: 20 min. Route: `/grill-with-docs`. Tier: `design`.\n*grill in quartermaster* ^grill-2\n\n> [!prompt]- Prompt sent to firefly-engineering/quartermaster\n") {
+		t.Errorf("the item lost its label, id or prompt:\n%s", s)
 	}
 	n, err := Parse(got)
 	if err != nil {
@@ -109,6 +109,92 @@ func TestNoButtonWithoutCommandID(t *testing.T) {
 	}
 	if it := n.Item("grill-2"); it == nil || it.Prompt == nil || it.Prompt.To != "firefly-engineering/quartermaster" {
 		t.Errorf("item: %+v", it)
+	}
+}
+
+// TestLabelWithoutButton: an item with a prompt but no ▶ button, on a vault with no Shell
+// commands id, writes its button's label in italics where the button would go, with or
+// without a marker, so its paragraph never starts with one. The parser reads the label
+// back as the item's, not as body text, and a command id renders the button again (#168).
+func TestLabelWithoutButton(t *testing.T) {
+	t.Parallel()
+	nob := testRenderer
+	nob.CommandID = ""
+	marker := "<!-- qm pane=w1:p1 ws=/ws/o/r/issue-1 -->"
+	cases := []struct {
+		name string
+		u    ItemUnit
+		want string
+	}{
+		{
+			"label of its own",
+			ItemUnit{
+				ID: "a", Icon: IconTodo, Heading: true, Title: "A", Body: "Prose.", Cost: "5 min", Route: "/grill",
+				Button: "send to r", Prompt: &PromptUnit{To: "r", Body: "go"},
+			},
+			"##### ⬜ A\n\nProse. Cost: 5 min. Route: `/grill`.\n*send to r* ^a\n",
+		},
+		{
+			"label and marker",
+			ItemUnit{
+				ID: "a", Icon: IconTodo, Heading: true, Title: "A",
+				Button: "send to r", Prompt: &PromptUnit{To: "r", Body: "go"}, Dispatch: &Dispatch{Pane: "w1:p1", Workspace: "/ws/o/r/issue-1"},
+			},
+			"##### ⬜ A\n\n*send to r* " + marker + " ^a\n",
+		},
+		{
+			"no label of its own",
+			ItemUnit{
+				ID: "a", Icon: IconTodo, Heading: true, Title: "A",
+				Prompt: &PromptUnit{To: "t", Body: "go"},
+			},
+			"##### ⬜ A\n\n*send to t* ^a\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := nob.Item(c.u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := []byte(c.want + "\n> [!prompt]- Prompt sent to " + c.u.Prompt.To + "\n> ```qm-prompt id=a to=" + c.u.Prompt.To + "\n> go\n> ```\n"); string(got) != string(want) {
+				t.Errorf("got\n%q\nwant\n%q", got, want)
+			}
+			label := c.u.Button
+			if label == "" {
+				label = DefaultButton(c.u.Prompt.To)
+			}
+			n, err := Parse([]byte("# Worklog — 2026-10-18\n\n**09:00 UTC:** x.\n\n## ⬜ o/r\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n" + string(got)))
+			if err != nil {
+				t.Fatalf("%v\n%s", err, got)
+			}
+			it := n.Item("a")
+			if it == nil || it.Button != label {
+				t.Fatalf("label %q, want %q: %+v", it.Button, label, it)
+			}
+			// The label is not body text: the body's last sentences still read.
+			if it.Cost != c.u.Cost || it.Route != c.u.Route {
+				t.Errorf("cost %q route %q, want %q %q", it.Cost, it.Route, c.u.Cost, c.u.Route)
+			}
+			// What parsed renders again byte for byte, and with a command id the item
+			// renders its button again.
+			u := c.u
+			u.Button = it.Button
+			for _, r := range []Renderer{nob, testRenderer} {
+				again, err := r.Item(u)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if r.CommandID == "" {
+					if string(again) != string(got) {
+						t.Errorf("rendered again\n%q\nwant\n%q", again, got)
+					}
+				} else if !strings.Contains(string(again), "[▶ "+label+"](") {
+					t.Errorf("no button with a command id:\n%s", again)
+				}
+			}
+		})
 	}
 }
 
@@ -120,8 +206,10 @@ func TestRenderUnits(t *testing.T) {
 		got  func() ([]byte, error)
 		want string
 	}{
-		{"status", func() ([]byte, error) { return r.Status(StatusUnit{Time: "12:21", Text: "wave 1 running."}) },
-			"**12:21 UTC:** wave 1 running.\n"},
+		{
+			"status", func() ([]byte, error) { return r.Status(StatusUnit{Time: "12:21", Text: "wave 1 running."}) },
+			"**12:21 UTC:** wave 1 running.\n",
+		},
 		{"status with label", func() ([]byte, error) {
 			return r.Status(StatusUnit{Time: "12:21", Label: "unblocked", Text: "wave 1 running."})
 		}, "**12:21 UTC, unblocked:** wave 1 running.\n"},
@@ -261,7 +349,23 @@ func TestRenderErrors(t *testing.T) {
 		}, "manual action"},
 		{"next bad ref", func() error { _, err := r.NextLine(1, NextUnit{Action: "x", Ref: "Bad"}); return err }, "item id"},
 		{"next button without ref", func() error { _, err := r.NextLine(1, NextUnit{Action: "x", Button: "go"}); return err }, "Ref"},
+		{"label with an asterisk", func() error {
+			r := r
+			r.CommandID = ""
+			_, err := r.Item(ItemUnit{
+				ID: "a", Icon: IconTodo, Heading: true, Title: "x", Button: "a * b",
+				Prompt: &PromptUnit{To: "t", Body: "p"},
+			})
+			return err
+		}, "asterisks"},
 		{"next number", func() error { _, err := r.NextLine(0, NextUnit{Action: "x"}); return err }, "number"},
+		{"marker with no line to end", func() error {
+			_, err := r.Item(ItemUnit{
+				ID: "a", Icon: IconTodo, Heading: true, Title: "x",
+				Dispatch: &Dispatch{Pane: "w1:p1", Workspace: "/ws"},
+			})
+			return err
+		}, "marker"},
 		{"objective icon", func() error { _, err := r.Objective(ObjectiveUnit{Objective: "x", Icon: "?"}); return err }, "icon"},
 		{"cell newline", func() error { _, err := r.CarryOver(CarryOverUnit{Item: "a\nb"}); return err }, "one line"},
 		{"bad date", func() error { d := templateDay(); d.Date = "18/10"; _, err := r.Note(d); return err }, "date"},
@@ -338,14 +442,26 @@ func TestCarriedRow(t *testing.T) {
 		want CarryOverUnit
 	}{
 		{"objective", Carried{Text: "Ship it (o/r)", StateText: "🔄 2/3"}, CarryOverUnit{Item: "Ship it (o/r)", State: "🔄 2/3"}},
-		{"work item", Carried{Text: "[#4](u) build", Repo: "o/r", ID: "impl-4", Where: "Agent queue", State: InReview},
-			CarryOverUnit{Item: "[#4](u) build (o/r) [[2026-10-16#^impl-4|^impl-4]]", State: "🔍 IN_REVIEW in Agent queue"}},
-		{"entry", Carried{Text: "drop IE11?", Repo: "o/r", Where: "Decisions for you", State: Todo},
-			CarryOverUnit{Item: "drop IE11? (o/r)", State: "⬜ TODO in Decisions for you"}},
-		{"manual action", Carried{Text: "Rotate", Manual: true, State: Todo},
-			CarryOverUnit{Item: "Rotate", State: "TODO, manual action"}},
-		{"manual action in a bucket", Carried{Text: "Rotate", Repo: "o/r", ID: "rotate", Where: "Your actions", Manual: true, State: Todo},
-			CarryOverUnit{Item: "Rotate (o/r) [[2026-10-16#^rotate|^rotate]]", State: "TODO, manual action in Your actions"}},
+		{
+			"work item",
+			Carried{Text: "[#4](u) build", Repo: "o/r", ID: "impl-4", Where: "Agent queue", State: InReview},
+			CarryOverUnit{Item: "[#4](u) build (o/r) [[2026-10-16#^impl-4|^impl-4]]", State: "🔍 IN_REVIEW in Agent queue"},
+		},
+		{
+			"entry",
+			Carried{Text: "drop IE11?", Repo: "o/r", Where: "Decisions for you", State: Todo},
+			CarryOverUnit{Item: "drop IE11? (o/r)", State: "⬜ TODO in Decisions for you"},
+		},
+		{
+			"manual action",
+			Carried{Text: "Rotate", Manual: true, State: Todo},
+			CarryOverUnit{Item: "Rotate", State: "TODO, manual action"},
+		},
+		{
+			"manual action in a bucket",
+			Carried{Text: "Rotate", Repo: "o/r", ID: "rotate", Where: "Your actions", Manual: true, State: Todo},
+			CarryOverUnit{Item: "Rotate (o/r) [[2026-10-16#^rotate|^rotate]]", State: "TODO, manual action in Your actions"},
+		},
 	}
 	for _, tt := range tests {
 		got, err := testRenderer.CarriedRow("2026-10-16", tt.in)

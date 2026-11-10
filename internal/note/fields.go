@@ -21,20 +21,20 @@ const (
 // Renderer.Item), and the title they leave, as written. A list item's are read from the end of its
 // title line before its sent status and summary: the tier the code span ending it, the route the
 // one ending what is left, the cost what follows its first ` · `, which no title holds. A #####
-// item's cost, route and tier are its body's last sentences, before its button, dispatch marker
-// and `^<id>`; block is its paragraph.
+// item's cost, route and tier are its body's last sentences, before its button, its label in
+// italics, dispatch marker and `^<id>`; block is its paragraph.
 func (p *parser) fields(it *Item, block ast.Node) {
 	head, _ := SplitSummary(it.Title)
 	if it.Sent != nil {
 		head = it.Sent.Title
 	}
 	if it.Heading {
-		end := it.idAt
-		if it.Dispatch != nil {
-			end = min(end, it.marker.Start)
-		}
+		end := it.bodyEnd()
 		if l := p.buttonLink(block); l != nil {
 			end = min(end, l.Pos())
+		}
+		if it.labelAt >= 0 {
+			end = min(end, it.labelAt)
 		}
 		body := strings.TrimRight(string(p.src[block.Lines().At(0).Start:end]), " \t\r\n")
 		rest, tier := cutField(body, tierMark, ".")
