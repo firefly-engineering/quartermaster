@@ -15,26 +15,26 @@ const dispatchNote = "# Worklog — 2026-10-18\n" + `
 #### 🔄 Agent queue
 
 - 🔄 [#11](https://github.com/o/r/issues/11): dispatch — started <!-- qm pane=w1:p3 ws=/ws/o/r/issue-11 --> ^d11
-- ⬜ [#12](https://github.com/o/r/issues/12): refresh ^d12
+- ⬜ [r#12](https://github.com/o/r/issues/12): refresh ^d12
 
-##### 🔄 [#13](https://github.com/o/r/issues/13): send
+##### 🔄 [r#13](https://github.com/o/r/issues/13): send
 
 Port it.
 [▶ send to r](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-18&_item=d13) <!-- qm pane=w1:p4 ws=/ws/o/r/issue-13 --> ^d13
 
 > [!prompt]- Prompt sent to r
 > ` + "```herdr-prompt id=d13 to=r\n> /implement\n> ```\n" + `
-##### ⬜ [#15](https://github.com/o/r/issues/15): canary
+##### ⬜ [r#15](https://github.com/o/r/issues/15): canary
 
 ^d15
 
 > [!prompt]- Prompt sent to r
 > ` + "```herdr-prompt id=d15 to=r\n> /implement\n> ```\n" + `
-##### ⬜ [#16](https://github.com/o/r/issues/16): bare
+##### ⬜ [r#16](https://github.com/o/r/issues/16): bare
 
 ^d16
 
-##### 🔄 [#14](https://github.com/o/r/issues/14): which store?
+##### 🔄 [r#14](https://github.com/o/r/issues/14): which store?
 
 Working on it. <!-- qm pane=w1:p5 ws=/ws/o/r/issue-14 --> ^d14
 `
@@ -253,7 +253,7 @@ func TestItemsByRef(t *testing.T) {
 
 - ⬜ [r#12](https://github.com/o/r/pull/12): its PR ^pr12
 - ⬜ [other#11](https://github.com/x/other/issues/11): elsewhere ^x11
-- ⬜ see [#11](https://github.com/o/r/issues/11) later ^late
+- ⬜ see [r#11](https://github.com/o/r/issues/11) later ^late
 - ⬜ [#11](https://example.com/o/r/issues/11): not GitHub ^nogh
 `)
 	n, err := Parse(src)
@@ -295,7 +295,7 @@ func TestRenderDispatch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		src := []byte(strings.Replace(dispatchNote, "- ⬜ [#12](https://github.com/o/r/issues/12): refresh ^d12\n",
+		src := []byte(strings.Replace(dispatchNote, "- ⬜ [r#12](https://github.com/o/r/issues/12): refresh ^d12\n",
 			"- ⬜ x ^d12\n"+string(list)+"\n"+string(heading), 1))
 		n, err := Parse(src)
 		if err != nil {
@@ -348,7 +348,7 @@ func TestDispatchMarkerRoundTrip(t *testing.T) {
 	t.Parallel()
 	d := Dispatch{Pane: "w3:p7", Workspace: "/home/u/.local/share/quartermaster/worklog/workspaces/o/r/issue-9"}
 	src := []byte("# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
-		"- ⬜ [#9](https://github.com/o/r/issues/9): fix it " + Renderer{}.DispatchMarker(d) + " ^fix\n")
+		"- ⬜ [r#9](https://github.com/o/r/issues/9): fix it " + Renderer{}.DispatchMarker(d) + " ^fix\n")
 	n, err := Parse(src)
 	if err != nil {
 		t.Fatal(err)

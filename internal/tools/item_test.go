@@ -79,8 +79,8 @@ func TestItemUpsertDropPrompt(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.checkNote(t, edited(t,
-			"##### ⬜ [#14](https://github.com/acme/web/issues/14): which session store?\n\n"+sessionStorePara+"\n", "",
-			"- —\n\n"+yourActions, "- —\n- ⬜ [#14](https://github.com/acme/web/issues/14): which session store? · 10 min · Route: `/grill-with-docs` ^session-store\n\n"+yourActions))
+			"##### ⬜ [web#14](https://github.com/acme/web/issues/14): which session store?\n\n"+sessionStorePara+"\n", "",
+			"- —\n\n"+yourActions, "- —\n- ⬜ [web#14](https://github.com/acme/web/issues/14): which session store? · 10 min · Route: `/grill-with-docs` ^session-store\n\n"+yourActions))
 	})
 	t.Run("its Next line loses its button", func(t *testing.T) {
 		t.Parallel()
@@ -158,13 +158,13 @@ func TestItemUpsertNullPromptMCP(t *testing.T) {
 
 // ie11Line is the fixture's one-line decision; ie11Item is it with an id, a cost and a route.
 const (
-	ie11Line = "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11?\n"
-	ie11Item = "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11? · 5 min · Route: `/grill-with-docs` ^ie11\n"
+	ie11Line = "- ⬜ [web#16](https://github.com/acme/web/issues/16): drop IE11?\n"
+	ie11Item = "- ⬜ [web#16](https://github.com/acme/web/issues/16): drop IE11? · 5 min · Route: `/grill-with-docs` ^ie11\n"
 )
 
 func TestItemUpsertKeepsFields(t *testing.T) {
 	t.Parallel()
-	const link = "[#16](https://github.com/acme/web/issues/16): "
+	const link = "[web#16](https://github.com/acme/web/issues/16): "
 	for in, want := range map[string]string{
 		`{"id": "ie11", "title": "drop IE11 now?"}`:                "- ⬜ " + link + "drop IE11 now? · 5 min · Route: `/grill-with-docs` ^ie11\n",
 		`{"id": "ie11", "title": "drop IE11 now?", "ref": ""}`:     "- ⬜ " + link + "drop IE11 now? · 5 min · Route: `/grill-with-docs` ^ie11\n",
@@ -172,7 +172,7 @@ func TestItemUpsertKeepsFields(t *testing.T) {
 		`{"id": "ie11", "title": "drop IE11 now?", "cost": null}`:  "- ⬜ " + link + "drop IE11 now? · Route: `/grill-with-docs` ^ie11\n",
 		`{"id": "ie11", "title": "drop IE11 now?", "route": null}`: "- ⬜ " + link + "drop IE11 now? · 5 min ^ie11\n",
 		`{"id": "ie11", "title": "drop IE11 now?", "ref": "#18", "cost": "1 h", "route": "/triage"}`: "- ⬜ " +
-			"[#18](https://github.com/acme/web/issues/18): drop IE11 now? · 1 h · Route: `/triage` ^ie11\n",
+			"[web#18](https://github.com/acme/web/issues/18): drop IE11 now? · 1 h · Route: `/triage` ^ie11\n",
 	} {
 		t.Run(in, func(t *testing.T) {
 			t.Parallel()
@@ -192,7 +192,7 @@ func TestItemUpsertKeepsFields(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.checkNote(t, edited(t, sessionStorePara, "Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`. ^session-store\n"))
-		if out.Item.Title != "[#14](https://github.com/acme/web/issues/14): which session store?" {
+		if out.Item.Title != "[web#14](https://github.com/acme/web/issues/14): which session store?" {
 			t.Errorf("title %q", out.Item.Title)
 		}
 	})
@@ -334,7 +334,7 @@ func TestItemUpsertWarnsWithoutButton(t *testing.T) {
 	})
 	t.Run("a dropped prompt on an IN_PROGRESS item", func(t *testing.T) {
 		t.Parallel()
-		src := edited(t, "##### ⬜ [#14]", "##### 🔄 [#14]")
+		src := edited(t, "##### ⬜ [web#14]", "##### 🔄 [web#14]")
 		d := fixtureDeps(t, src, false)
 		out, err := d.itemUpsert(t.Context(), upsertInput(t, `{"id": "session-store", "title": "which session store?",
 			"body": "Unblocks #15.", "route": "/implement", "prompt": null}`))
@@ -359,8 +359,8 @@ func TestItemUpsertWarnsWithoutButton(t *testing.T) {
 
 func TestNextSetWarnsWithoutButton(t *testing.T) {
 	t.Parallel()
-	const loginRouted = "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review · Route: `/implement` ^login-stack\n"
-	src := edited(t, ie11Line, "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11? · Route: `/wayfinder` ^ie11\n",
+	const loginRouted = "- 🔍 [web#12](https://github.com/acme/web/pull/12) login stack, in review · Route: `/implement` ^login-stack\n"
+	src := edited(t, ie11Line, "- ⬜ [web#16](https://github.com/acme/web/issues/16): drop IE11? · Route: `/wayfinder` ^ie11\n",
 		loginStack, loginRouted, wave2, wave2+"\nThe queue. ^queue\n")
 	// One of each that does not warn: a TODO item with a prompt, a manual action, an anchor,
 	// and an IN_REVIEW item routed to a command with no prompt.
@@ -375,7 +375,7 @@ func TestNextSetWarnsWithoutButton(t *testing.T) {
 	if len(out.Next) != 5 || !out.Changed || !out.Committed {
 		t.Errorf("out %+v", out)
 	}
-	if got := d.note(t, fixtureDate); !strings.Contains(got, "2. [#16](https://github.com/acme/web/issues/16): drop IE11? · [[#^ie11|details]]\n") {
+	if got := d.note(t, fixtureDate); !strings.Contains(got, "2. [web#16](https://github.com/acme/web/issues/16): drop IE11? · [[#^ie11|details]]\n") {
 		t.Errorf("note:\n%s", got)
 	}
 
@@ -387,13 +387,13 @@ func TestNextSetWarnsWithoutButton(t *testing.T) {
 }
 
 // ie11Tiered is ie11Item with a tier.
-const ie11Tiered = "- ⬜ [#16](https://github.com/acme/web/issues/16): drop IE11? · 5 min · Route: `/grill-with-docs` · Tier: `design` ^ie11\n"
+const ie11Tiered = "- ⬜ [web#16](https://github.com/acme/web/issues/16): drop IE11? · 5 min · Route: `/grill-with-docs` · Tier: `design` ^ie11\n"
 
 // TestItemUpsertTier: a work item's tier follows its route, in both forms, and item_upsert
 // keeps, clears and validates it against the skill's tier list (#122, ADR 0011).
 func TestItemUpsertTier(t *testing.T) {
 	t.Parallel()
-	const link = "[#16](https://github.com/acme/web/issues/16): "
+	const link = "[web#16](https://github.com/acme/web/issues/16): "
 	for in, want := range map[string]string{
 		`{"id": "ie11", "title": "drop IE11?", "tier": "design"}`:            ie11Tiered,
 		`{"id": "ie11", "title": "drop IE11?"}`:                              ie11Tiered,

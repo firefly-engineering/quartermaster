@@ -8,4 +8,5 @@ the label of its herdr workspace.
 
 - A bare `#N` is accepted only where the project is already in scope, such as inside a
   project section.
-- In the note, refs render as full links, as the skill already requires.
+- In the note, refs render as full links, as the skill already requires. The label names the
+  repo, `[<repo>#N]`, even in its own project: a bare number is as ambiguous to the reader.

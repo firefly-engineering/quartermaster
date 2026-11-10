@@ -211,7 +211,7 @@ func TestPromptSendRefuses(t *testing.T) {
 func TestSendPromptNotTaken(t *testing.T) {
 	t.Parallel()
 	queue := "- Wave 2 after the stack lands.\n"
-	item := "- ⬜ [#20](https://github.com/acme/web/issues/20): rename the store · Tier: `basic-implementation` ^rename\n"
+	item := "- ⬜ [web#20](https://github.com/acme/web/issues/20): rename the store · Tier: `basic-implementation` ^rename\n"
 	for name, send := range map[string]func(Deps) error{
 		"prompt_send": func(d Deps) error {
 			_, err := d.promptSend(t.Context(), PromptSendInput{Item: "session-store"})
@@ -241,7 +241,7 @@ func TestSendPromptNotTaken(t *testing.T) {
 func TestTaskDispatchSession(t *testing.T) {
 	t.Parallel()
 	queue := "- Wave 2 after the stack lands.\n"
-	item := "- ⬜ [#20](https://github.com/acme/web/issues/20): rename the store · Tier: `basic-implementation` ^rename\n"
+	item := "- ⬜ [web#20](https://github.com/acme/web/issues/20): rename the store · Tier: `basic-implementation` ^rename\n"
 	h := newFakeRex(t, mixed()...)
 	d := sendDeps(t, edited(t, queue, item+queue), h)
 	res, err := d.taskDispatch(t.Context(), TaskDispatchInput{Ref: "acme/web#20"})

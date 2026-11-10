@@ -112,8 +112,9 @@ hand or a resource created by hand.
 
 Refs are always links. Give `item_upsert` a `ref` (`owner/repo#N`) and it renders the
 link. In prose, summaries and the status line, write the link yourself:
-`[#871](https://github.com/<o>/<r>/issues/871)`, and `[IaC#564](…)` across repos. Link
-every PR, run and commit.
+`[IaC#564](https://github.com/<o>/IaC/issues/564)`. The label always names the repo, even in
+its own project: one note spans several, and a bare `#564` is ambiguous. Link every PR, run
+and commit.
 
 ## The day's cycle
 

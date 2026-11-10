@@ -31,13 +31,13 @@ const testNote = "# Worklog — " + date + "\n" + `
 
 #### ⬜ Agent queue
 
-- ⬜ [#11](https://github.com/o/r/issues/11): dispatch ^d11
-- ✅ [#12](https://github.com/o/r/issues/12): done already ^d12
+- ⬜ [r#11](https://github.com/o/r/issues/11): dispatch ^d11
+- ✅ [r#12](https://github.com/o/r/issues/12): done already ^d12
 - ⬜ [g#5](https://github.com/o/g/issues/5): in git ^g5
-- ⬜ [#14](https://github.com/o/r/issues/14): once ^d14a
-- ⬜ [#14](https://github.com/o/r/issues/14): twice ^d14b
+- ⬜ [r#14](https://github.com/o/r/issues/14): once ^d14a
+- ⬜ [r#14](https://github.com/o/r/issues/14): twice ^d14b
 
-##### ⬜ [#13](https://github.com/o/r/issues/13): with a prompt
+##### ⬜ [r#13](https://github.com/o/r/issues/13): with a prompt
 
 [▶ send to iac](obsidian://shell-commands/?vault=worklog&execute=abc&_date=` + date + `&_item=d13) ^d13
 

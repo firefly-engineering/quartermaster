@@ -45,13 +45,13 @@ func TestCarryOverFullDay(t *testing.T) {
 		{Item: "Check the preview deploy by hand (acme/web)", State: "TODO, manual action"},
 		// What remains: a ##### item, an entry with no id, an unticked action, a list item.
 		{
-			Item:  "[#14](https://github.com/acme/web/issues/14): which session store? (acme/web) [[2026-10-16#^session-store|^session-store]]",
+			Item:  "[web#14](https://github.com/acme/web/issues/14): which session store? (acme/web) [[2026-10-16#^session-store|^session-store]]",
 			State: "⬜ TODO in Decisions for you",
 		},
-		{Item: "[#16](https://github.com/acme/web/issues/16): drop IE11? (acme/web)", State: "⬜ TODO in Decisions for you"},
+		{Item: "[web#16](https://github.com/acme/web/issues/16): drop IE11? (acme/web)", State: "⬜ TODO in Decisions for you"},
 		{Item: "Rotate the staging token (acme/web) [[2026-10-16#^rotate-token|^rotate-token]]", State: "TODO, manual action in Your actions"},
 		{
-			Item:  "[#12](https://github.com/acme/web/pull/12) login stack, in review (acme/web) [[2026-10-16#^login-stack|^login-stack]]",
+			Item:  "[web#12](https://github.com/acme/web/pull/12) login stack, in review (acme/web) [[2026-10-16#^login-stack|^login-stack]]",
 			State: "🔍 IN_REVIEW in Agent queue",
 		},
 		{

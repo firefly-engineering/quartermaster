@@ -20,7 +20,7 @@ const itemNote = "# Worklog — 2026-10-18\n" + `
 
 #### ⬜ Decisions for you
 
-##### ⬜ [#14](https://github.com/o/r/issues/14): which store?
+##### ⬜ [r#14](https://github.com/o/r/issues/14): which store?
 
 Unblocks #15.
 [▶ grill in r](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-18&_item=store) ^store
@@ -33,7 +33,7 @@ Unblocks #15.
 
 > [!prompt]- Prompt sent to r
 > ` + "```herdr-prompt id=canary-send to=r\n> /grill-with-docs\n> ```\n" + `
-- ⬜ [#16](https://github.com/o/r/issues/16): drop IE11,
+- ⬜ [r#16](https://github.com/o/r/issues/16): drop IE11,
   or keep it? ^ie11
   - a step
 - plain
@@ -56,12 +56,12 @@ func TestItemHead(t *testing.T) {
 		id, head, icon, title, button string
 	}{
 		{
-			"store", "##### ⬜ [#14](https://github.com/o/r/issues/14): which store?\n", "⬜",
-			"[#14](https://github.com/o/r/issues/14): which store?", "grill in r",
+			"store", "##### ⬜ [r#14](https://github.com/o/r/issues/14): which store?\n", "⬜",
+			"[r#14](https://github.com/o/r/issues/14): which store?", "grill in r",
 		},
 		{
-			"ie11", "- ⬜ [#16](https://github.com/o/r/issues/16): drop IE11,\n  or keep it? ^ie11\n", "⬜",
-			"[#16](https://github.com/o/r/issues/16): drop IE11, or keep it?", "",
+			"ie11", "- ⬜ [r#16](https://github.com/o/r/issues/16): drop IE11,\n  or keep it? ^ie11\n", "⬜",
+			"[r#16](https://github.com/o/r/issues/16): drop IE11, or keep it?", "",
 		},
 		{"nested", "  - 🔄 nested — PR up ^nested\n", "🔄", "nested — PR up", ""},
 		{"canary-send", "##### ⬜ send the canary\n", "⬜", "send the canary", "send to r"},
@@ -81,7 +81,7 @@ func TestItemHead(t *testing.T) {
 	if len(decisions.Dashes) != 0 {
 		t.Error("a bucket with items has a dash")
 	}
-	if l := decisions.Lists; len(l) != 1 || l[0].End != decisions.End || !strings.HasPrefix(at(src, l[0]), "- ⬜ [#16]") {
+	if l := decisions.Lists; len(l) != 1 || l[0].End != decisions.End || !strings.HasPrefix(at(src, l[0]), "- ⬜ [r#16]") {
 		t.Errorf("lists: %+v", l)
 	}
 	if tb := n.Objectives.Table; tb == nil ||
@@ -97,7 +97,7 @@ func TestItemFields(t *testing.T) {
 	d := &Dispatch{Pane: "w1:p3", Workspace: "/ws/o/r/issue-14"}
 	items := []ItemUnit{
 		{
-			ID: "store", Icon: IconInProgress, Heading: true, Repo: "o/r", Ref: Ref{Repo: "o/r", N: 14}, Title: "which store?",
+			ID: "store", Icon: IconInProgress, Heading: true, Ref: Ref{Repo: "o/r", N: 14}, Title: "which store?",
 			Body: "Unblocks #15.", Cost: "10 min", Route: "/grill-with-docs", Summary: "grilling", Dispatch: d,
 			Button: "grill in r", Prompt: &PromptUnit{To: "r", Body: "/grill-with-docs"},
 		},
@@ -105,7 +105,7 @@ func TestItemFields(t *testing.T) {
 		{ID: "cost-only", Icon: IconTodo, Heading: true, Title: "Y", Body: "Two lines\nof prose.", Cost: "1.5 h"},
 		{ID: "prose", Icon: IconTodo, Heading: true, Title: "Z", Body: "Done in 5 min."},
 		{
-			ID: "login", Icon: IconInReview, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 7}, Title: "login form",
+			ID: "login", Icon: IconInReview, Ref: Ref{Repo: "acme/IaC", N: 7}, Title: "login form",
 			Cost: "20 min", Route: "/implement", Summary: "PR up", Dispatch: d,
 		},
 		{ID: "cost-line", Icon: IconTodo, Title: "a, b", Cost: "5 min"},
@@ -113,7 +113,7 @@ func TestItemFields(t *testing.T) {
 		{ID: "bare", Icon: IconTodo, Title: "plain"},
 	}
 	sent := []ItemUnit{{
-		ID: "grant", Icon: IconTodo, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 8}, Title: "grant",
+		ID: "grant", Icon: IconTodo, Ref: Ref{Repo: "acme/IaC", N: 8}, Title: "grant",
 		Cost: "5 min", Route: "/implement", Sent: &SentUnit{To: "IaC", Status: SentAcked, Note: "[#9](u)"},
 	}}
 	src, err := testRenderer.Note(Day{

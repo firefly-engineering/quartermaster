@@ -38,9 +38,9 @@ func TestTaskDispatchRefuses(t *testing.T) {
 func TestTaskDispatchFreshRoutesByTier(t *testing.T) {
 	t.Parallel()
 	queue := "- Wave 2 after the stack lands.\n"
-	items := "- ⬜ [#20](https://github.com/acme/web/issues/20): rename the store · Route: `/implement` · Tier: `refactoring` ^rename\n" +
-		"- ⬜ [#21](https://github.com/acme/web/issues/21): fix the form · Route: `/implement` ^form\n" +
-		"- ⬜ [#22](https://github.com/acme/web/issues/22): cache headers · Tier: `research` ^cache\n"
+	items := "- ⬜ [web#20](https://github.com/acme/web/issues/20): rename the store · Route: `/implement` · Tier: `refactoring` ^rename\n" +
+		"- ⬜ [web#21](https://github.com/acme/web/issues/21): fix the form · Route: `/implement` ^form\n" +
+		"- ⬜ [web#22](https://github.com/acme/web/issues/22): cache headers · Tier: `research` ^cache\n"
 	for _, c := range []struct {
 		ref, id, start string
 	}{
@@ -157,7 +157,7 @@ func TestTaskDispatchAgain(t *testing.T) {
 			if c.marker != "" {
 				marker = " <!-- qm " + c.marker + " ws=" + ws + " -->"
 			}
-			line := "- " + string(note.IconWaiting) + " [#20](https://github.com/acme/web/issues/20): cache headers · Route: `/implement` · " +
+			line := "- " + string(note.IconWaiting) + " [web#20](https://github.com/acme/web/issues/20): cache headers · Route: `/implement` · " +
 				"Tier: `complex-implementation` — stuck: the cache layer is beyond me" + marker + " ^cache"
 			src := edited(t, "- Wave 2 after the stack lands.", line)
 			if err := os.WriteFile(filepath.Join(d.Config.Vault.Repo, "worklog", fixtureDate+".md"), []byte(src), 0o644); err != nil {

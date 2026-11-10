@@ -118,24 +118,24 @@ const refreshNote = "# Worklog — 2026-10-18\n" + `
 
 #### 🔄 Agent queue
 
-- 🔄 [#1](https://github.com/o/r/issues/1): closed by a PR ^by-pr
-- 🔍 [#2](https://github.com/o/r/issues/2): closed by a commit — PR up ^by-commit
-- ⬜ [#3](https://github.com/o/r/issues/3): closed as not planned ^not-planned
-- ⬜ [#4](https://github.com/o/r/issues/4): still open ^open
-- 🔍 [#5](https://github.com/o/r/pull/5): a merged PR ^merged
-- 🔍 [#6](https://github.com/o/r/pull/6): a PR closed unmerged ^unmerged
-- 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone
-- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited
-- 🔄 [#9](https://github.com/o/r/issues/9): its agent works <!-- qm pane=w1/p9 ws=/ws/9 --> ^working
-- ⏳ [#10](https://github.com/o/r/issues/10): waits, pane gone — on review <!-- qm pane=w10/p1 ws=/ws/10 --> ^waits
-- ⏳ [#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed
-- ⬜ [#12](https://github.com/o/r/issues/12): closed with no reason ^no-reason
-- ⬜ [#13](https://github.com/o/r/issues/13): gh fails ^gh-fails
-- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone
-- ✅ [#15](https://github.com/o/r/issues/15): done already, a session send <!-- qm pane=w15/p1 --> ^done
-- 🔄 [#17](https://github.com/o/r/issues/17): a session send, its agent gone <!-- qm pane=w17/p1 --> ^session
+- 🔄 [r#1](https://github.com/o/r/issues/1): closed by a PR ^by-pr
+- 🔍 [r#2](https://github.com/o/r/issues/2): closed by a commit — PR up ^by-commit
+- ⬜ [r#3](https://github.com/o/r/issues/3): closed as not planned ^not-planned
+- ⬜ [r#4](https://github.com/o/r/issues/4): still open ^open
+- 🔍 [r#5](https://github.com/o/r/pull/5): a merged PR ^merged
+- 🔍 [r#6](https://github.com/o/r/pull/6): a PR closed unmerged ^unmerged
+- 🔄 [r#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone
+- 🔄 [r#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited
+- 🔄 [r#9](https://github.com/o/r/issues/9): its agent works <!-- qm pane=w1/p9 ws=/ws/9 --> ^working
+- ⏳ [r#10](https://github.com/o/r/issues/10): waits, pane gone — on review <!-- qm pane=w10/p1 ws=/ws/10 --> ^waits
+- ⏳ [r#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed
+- ⬜ [r#12](https://github.com/o/r/issues/12): closed with no reason ^no-reason
+- ⬜ [r#13](https://github.com/o/r/issues/13): gh fails ^gh-fails
+- 🔄 [r#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone
+- ✅ [r#15](https://github.com/o/r/issues/15): done already, a session send <!-- qm pane=w15/p1 --> ^done
+- 🔄 [r#17](https://github.com/o/r/issues/17): a session send, its agent gone <!-- qm pane=w17/p1 --> ^session
 - 🔄 no ref, nothing to check ^plain
-- 🔄 mentions [#16](https://github.com/o/r/issues/16) after its text ^mention
+- 🔄 mentions [r#16](https://github.com/o/r/issues/16) after its text ^mention
 
 #### ⬜ Your actions
 
@@ -251,22 +251,22 @@ func TestGatherAndApply(t *testing.T) {
 
 	want := refreshNote
 	for _, r := range [][2]string{
-		{"- 🔄 [#1](https://github.com/o/r/issues/1): closed by a PR ^by-pr",
-			"- ✅ [#1](https://github.com/o/r/issues/1): closed by a PR — closed by https://github.com/o/r/pull/31 ^by-pr"},
-		{"- 🔍 [#2](https://github.com/o/r/issues/2): closed by a commit — PR up ^by-commit",
-			"- ✅ [#2](https://github.com/o/r/issues/2): closed by a commit — closed by https://github.com/o/r/commit/abc1234 ^by-commit"},
-		{"- ⬜ [#3](https://github.com/o/r/issues/3): closed as not planned ^not-planned",
-			"- ❌ [#3](https://github.com/o/r/issues/3): closed as not planned — closed as not planned: https://github.com/o/r/issues/0 ^not-planned"},
-		{"- 🔍 [#5](https://github.com/o/r/pull/5): a merged PR ^merged",
-			"- ✅ [#5](https://github.com/o/r/pull/5): a merged PR — merged https://github.com/o/r/pull/5 ^merged"},
-		{"- 🔄 [#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone",
-			"- ⏳ [#7](https://github.com/o/r/issues/7): its pane is gone — worker exited: pane w1/p7 is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone"},
-		{"- 🔄 [#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited",
-			"- ⏳ [#8](https://github.com/o/r/issues/8): its agent exited — worker exited: no agent in pane w1/p8 <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited"},
-		{"- ⏳ [#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed",
-			"- ✅ [#11](https://github.com/o/r/issues/11): waits, issue closed — closed by https://github.com/o/r/pull/31 ^waits-closed"},
-		{"- 🔄 [#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone",
-			"- ✅ [#14](https://github.com/o/r/issues/14): closed, its pane gone too — closed as completed: https://github.com/o/r/issues/0 <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone"},
+		{"- 🔄 [r#1](https://github.com/o/r/issues/1): closed by a PR ^by-pr",
+			"- ✅ [r#1](https://github.com/o/r/issues/1): closed by a PR — closed by https://github.com/o/r/pull/31 ^by-pr"},
+		{"- 🔍 [r#2](https://github.com/o/r/issues/2): closed by a commit — PR up ^by-commit",
+			"- ✅ [r#2](https://github.com/o/r/issues/2): closed by a commit — closed by https://github.com/o/r/commit/abc1234 ^by-commit"},
+		{"- ⬜ [r#3](https://github.com/o/r/issues/3): closed as not planned ^not-planned",
+			"- ❌ [r#3](https://github.com/o/r/issues/3): closed as not planned — closed as not planned: https://github.com/o/r/issues/0 ^not-planned"},
+		{"- 🔍 [r#5](https://github.com/o/r/pull/5): a merged PR ^merged",
+			"- ✅ [r#5](https://github.com/o/r/pull/5): a merged PR — merged https://github.com/o/r/pull/5 ^merged"},
+		{"- 🔄 [r#7](https://github.com/o/r/issues/7): its pane is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone",
+			"- ⏳ [r#7](https://github.com/o/r/issues/7): its pane is gone — worker exited: pane w1/p7 is gone <!-- qm pane=w1/p7 ws=/ws/7 --> ^gone"},
+		{"- 🔄 [r#8](https://github.com/o/r/issues/8): its agent exited <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited",
+			"- ⏳ [r#8](https://github.com/o/r/issues/8): its agent exited — worker exited: no agent in pane w1/p8 <!-- qm pane=w1/p8 ws=/ws/8 --> ^exited"},
+		{"- ⏳ [r#11](https://github.com/o/r/issues/11): waits, issue closed — on a person ^waits-closed",
+			"- ✅ [r#11](https://github.com/o/r/issues/11): waits, issue closed — closed by https://github.com/o/r/pull/31 ^waits-closed"},
+		{"- 🔄 [r#14](https://github.com/o/r/issues/14): closed, its pane gone too <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone",
+			"- ✅ [r#14](https://github.com/o/r/issues/14): closed, its pane gone too — closed as completed: https://github.com/o/r/issues/0 <!-- qm pane=w14/p1 ws=/ws/14 --> ^closed-gone"},
 		{"→ infra, **sent**, asked 10:00 <!-- qm pane=w5/p1 --> ^port",
 			"→ infra, **acked**, asked 10:00, https://github.com/o/infra/pull/77, https://github.com/o/infra/actions/runs/9 <!-- qm pane=w5/p1 --> ^port"},
 		{"- 🔄 [infra#42](https://github.com/o/infra/issues/42): a third ask → infra, **acked** ^third",
@@ -294,7 +294,7 @@ func equalApplied(a, b Applied) bool {
 func TestApplyChangedSinceRead(t *testing.T) {
 	t.Parallel()
 	const before = "# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
-		"- 🔄 [#1](https://github.com/o/r/issues/1): fix it ^fix\n"
+		"- 🔄 [r#1](https://github.com/o/r/issues/1): fix it ^fix\n"
 	gh := &fake{t: t, keyOf: ghKey(t), replies: map[string]reply{"o/r#1": {out: issue("CLOSED", "COMPLETED", byPR)}}}
 	n, err := note.Parse([]byte(before))
 	if err != nil {
@@ -305,7 +305,7 @@ func TestApplyChangedSinceRead(t *testing.T) {
 	if calls := rx.Calls(); len(calls) != 0 {
 		t.Errorf("rex asked %q", calls)
 	}
-	now := strings.Replace(before, "🔄 [#1]", "⏳ [#1]", 1)
+	now := strings.Replace(before, "🔄 [r#1]", "⏳ [r#1]", 1)
 	out, applied, skipped, err := plan.Apply([]byte(now))
 	if err != nil {
 		t.Fatal(err)
@@ -322,7 +322,7 @@ func TestApplyChangedSinceRead(t *testing.T) {
 func TestApplyRefChanged(t *testing.T) {
 	t.Parallel()
 	const before = "# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
-		"- 🔄 [#1](https://github.com/o/r/issues/1): fix it ^fix\n"
+		"- 🔄 [r#1](https://github.com/o/r/issues/1): fix it ^fix\n"
 	gh := &fake{t: t, keyOf: ghKey(t), replies: map[string]reply{"o/r#1": {out: issue("CLOSED", "COMPLETED", byPR)}}}
 	n, err := note.Parse([]byte(before))
 	if err != nil {
@@ -333,7 +333,7 @@ func TestApplyRefChanged(t *testing.T) {
 	if calls := rx.Calls(); len(calls) != 0 {
 		t.Errorf("rex asked %q", calls)
 	}
-	now := strings.Replace(before, "[#1](https://github.com/o/r/issues/1)", "[#2](https://github.com/o/r/issues/2)", 1)
+	now := strings.Replace(before, "[r#1](https://github.com/o/r/issues/1)", "[r#2](https://github.com/o/r/issues/2)", 1)
 	out, applied, skipped, err := plan.Apply([]byte(now))
 	if err != nil || string(out) != now || len(applied) != 0 {
 		t.Fatalf("applied %+v, err %v", applied, err)
@@ -347,7 +347,7 @@ func TestApplyRefChanged(t *testing.T) {
 func TestApplyMarkerChanged(t *testing.T) {
 	t.Parallel()
 	const before = "# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
-		"- ✅ [#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1/p1 ws=/ws/o/r/issue-1 --> ^fix\n"
+		"- ✅ [r#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1/p1 ws=/ws/o/r/issue-1 --> ^fix\n"
 	rx := rextest.New(t)
 	rx.Edit(func(s *rextest.State) { s.Pane(rex.Pane{ID: "w1/p1", Workspace: "w1", Tab: "w1/t1"}) })
 	n, err := note.Parse([]byte(before))
@@ -372,7 +372,7 @@ func TestApplyMarkerChanged(t *testing.T) {
 func TestNoRunners(t *testing.T) {
 	t.Parallel()
 	const src = "# Worklog — 2026-10-18\n\n## 🔄 o/r\n\n### 🔄 What remains\n\n#### 🔄 Agent queue\n\n" +
-		"- 🔄 [#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1/p1 ws=/ws --> ^fix\n"
+		"- 🔄 [r#1](https://github.com/o/r/issues/1): fix it <!-- qm pane=w1/p1 ws=/ws --> ^fix\n"
 	n, err := note.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)

@@ -94,8 +94,8 @@ func TestRefreshMoves(t *testing.T) {
 		t.Errorf("out %+v", out)
 	}
 	d.checkNote(t, edited(t,
-		"- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review ^login-stack",
-		"- ✅ [#12](https://github.com/acme/web/pull/12) login stack, in review — merged https://github.com/acme/web/pull/12 ^login-stack",
+		"- 🔍 [web#12](https://github.com/acme/web/pull/12) login stack, in review ^login-stack",
+		"- ✅ [web#12](https://github.com/acme/web/pull/12) login stack, in review — merged https://github.com/acme/web/pull/12 ^login-stack",
 		"#### 🔄 Agent queue", "#### ✅ Agent queue"))
 	if log := d.jj(t, "log", "--no-graph", "-r", "@-", "-T", "description"); !strings.HasPrefix(log,
 		"worklog(2026-10-16): refresh: ^login-stack IN_REVIEW to DONE\n") {
@@ -115,9 +115,9 @@ func TestRefreshRefusesUnparseable(t *testing.T) {
 // The fixture's dropped item, as a fresh dispatch leaves it: its agent is web-13, in pane w1/p1
 // of tab w1/t1 (rexAgent's tab 1).
 const (
-	oldForm      = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 ^old-form"
-	oldFormFresh = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm pane=w1/p1 ws=/ws/acme/web/issue-13 --> ^old-form"
-	oldFormDone  = "- ❌ [#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm ws=/ws/acme/web/issue-13 --> ^old-form"
+	oldForm      = "- ❌ [web#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 ^old-form"
+	oldFormFresh = "- ❌ [web#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm pane=w1/p1 ws=/ws/acme/web/issue-13 --> ^old-form"
+	oldFormDone  = "- ❌ [web#13](https://github.com/acme/web/issues/13) old form: dropped, superseded by #12 <!-- qm ws=/ws/acme/web/issue-13 --> ^old-form"
 	// A batch with no ref in its place, as a fresh dispatch leaves it: its agent is web-old-form,
 	// in its checkout named after its item id.
 	batchFresh = "- ❌ wave 1: dropped, superseded by #12 <!-- qm pane=w1/p1 ws=/ws/acme/web/old-form --> ^old-form"

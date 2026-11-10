@@ -33,16 +33,16 @@ func templateDay() Day {
 				{Icon: IconTodo, Name: "Decisions for you", Items: []ItemUnit{
 					{
 						ID: "grill-2", Icon: IconTodo, Heading: true,
-						Title: "[#N](url): is the parser strict?",
+						Title: "[quartermaster#N](url): is the parser strict?",
 						Body:  "Unblocks #3. It touches ADR 0002.", Cost: "20 min", Route: "/grill-with-docs", Tier: "design",
 						Button: "grill in quartermaster",
 						Prompt: &PromptUnit{To: "firefly-engineering/quartermaster", Body: "/grill-with-docs https://github.com/firefly-engineering/quartermaster/issues/2"},
 					},
-					{Icon: IconTodo, Title: "[#M](url): a decision with no prompt yet"},
+					{Icon: IconTodo, Title: "[quartermaster#M](url): a decision with no prompt yet"},
 				}},
 				{Icon: IconTodo, Name: "Your actions"},
 				{Icon: IconTodo, Name: "Agent queue", Items: []ItemUnit{
-					{Icon: IconTodo, Title: "[#N](url) spec, after [#M](url). A batch ready to start is a `#####` work item with its button and prompt"},
+					{Icon: IconTodo, Title: "[quartermaster#N](url) spec, after [quartermaster#M](url). A batch ready to start is a `#####` work item with its button and prompt"},
 				}},
 				{Icon: IconTodo, Name: "Sent to other repos", Items: []ItemUnit{
 					{Icon: IconTodo, Title: "a grant → firefly-engineering/quartermaster, **sent**, [IaC#1](https://example.com/1). While **to send**, it is a `#####` work item with its button and prompt"},

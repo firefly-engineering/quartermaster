@@ -11,12 +11,12 @@ import (
 
 const (
 	part1 = "### ✅ Part 1 — Agent batch: login page, done\n\n" +
-		"- ✅ [#12](https://github.com/acme/web/issues/12) login form, PR up.\n- [ ] Check the preview deploy by hand\n"
+		"- ✅ [web#12](https://github.com/acme/web/issues/12) login form, PR up.\n- [ ] Check the preview deploy by hand\n"
 	part1End    = "- [ ] Check the preview deploy by hand\n"
 	nextLogin   = "2. Review the login stack · 20 min · [[#^login-stack|details]]\n"
 	infraRemain = "## ⏳ acme/infra\n\n### ⏳ What remains\n"
 	processEnd  = "- [x] Clean the stale workspaces\n"
-	sessionItem = "##### ⬜ [#14](https://github.com/acme/web/issues/14): which session store?\n\n" +
+	sessionItem = "##### ⬜ [web#14](https://github.com/acme/web/issues/14): which session store?\n\n" +
 		"Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n" +
 		"[▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-16&_item=session-store) ^session-store\n\n" +
 		"> [!prompt]- Prompt sent to web\n> ```herdr-prompt id=session-store to=web\n" +
@@ -29,14 +29,14 @@ func TestPartWrite(t *testing.T) {
 		t.Parallel()
 		d := fixtureDeps(t, settled(t), true)
 		out, err := d.partWrite(t.Context(), PartWriteInput{
-			Repo: "acme/web", N: 2, Kind: "Land", Title: "stack merged", Icon: "✅", Body: "- merged [#12](https://github.com/acme/web/pull/12)\n",
+			Repo: "acme/web", N: 2, Kind: "Land", Title: "stack merged", Icon: "✅", Body: "- merged [web#12](https://github.com/acme/web/pull/12)\n",
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.checkNote(t, edited(t, part1End, part1End+"\n### ✅ Part 2 — Land: stack merged\n\n- merged [#12](https://github.com/acme/web/pull/12)\n"))
+		d.checkNote(t, edited(t, part1End, part1End+"\n### ✅ Part 2 — Land: stack merged\n\n- merged [web#12](https://github.com/acme/web/pull/12)\n"))
 		if !out.Created || out.Repo != "acme/web" || out.Part.N != 2 || out.Part.Icon != "✅" ||
-			out.Part.Body != "- merged [#12](https://github.com/acme/web/pull/12)" {
+			out.Part.Body != "- merged [web#12](https://github.com/acme/web/pull/12)" {
 			t.Errorf("out %+v", out)
 		}
 		if log := d.jj(t, "log", "--no-graph", "-r", "@-", "-T", "description"); !strings.HasPrefix(log,
@@ -119,7 +119,7 @@ func TestItemTransitionIntoPart(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.checkNote(t, edited(t, nextLogin, "", loginStack, "", queue, "#### ✅ Agent queue\n",
-			part1End, part1End+"- ✅ [#12](https://github.com/acme/web/pull/12) login stack, in review — merged in abc123\n"))
+			part1End, part1End+"- ✅ [web#12](https://github.com/acme/web/pull/12) login stack, in review — merged in abc123\n"))
 		if out.From != "IN_REVIEW" || out.To != "DONE" || out.Item != nil || out.Part == nil || out.Part.Repo != "acme/web" || out.Part.Part.N != 1 {
 			t.Errorf("out %+v", out)
 		}
@@ -135,7 +135,7 @@ func TestItemTransitionIntoPart(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.checkNote(t, edited(t, sessionItem, "", "#### ⬜ Decisions for you", "#### — Decisions for you",
-			part1End, part1End+"- ❌ [#14](https://github.com/acme/web/issues/14): which session store? — settled on #17\n"))
+			part1End, part1End+"- ❌ [web#14](https://github.com/acme/web/issues/14): which session store? — settled on #17\n"))
 	})
 	t.Run("into a Part with no lines yet", func(t *testing.T) {
 		t.Parallel()
@@ -156,7 +156,7 @@ func TestItemTransitionIntoPart(t *testing.T) {
 // move to its own state (spec §6): it keeps its last summary unless given one.
 func TestItemTransitionFilesFinished(t *testing.T) {
 	t.Parallel()
-	const title = "[#12](https://github.com/acme/web/pull/12) login stack, in review"
+	const title = "[web#12](https://github.com/acme/web/pull/12) login stack, in review"
 	for _, c := range []struct {
 		name, to, icon, last, summary, want string
 	}{

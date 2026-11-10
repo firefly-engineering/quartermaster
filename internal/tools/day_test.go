@@ -171,7 +171,7 @@ const prepared = "---\ndate: 2026-10-19\nprevious: \"[[2026-10-16]]\"\nprojects:
 	"## Objectives\n\n| Objective | Done when | Progress |\n|---|---|---|\n| Land the login stack (acme/web) | stack merged | ⬜ not started |\n\n" +
 	"## Next\n\n1. [ ] Rotate the staging token · 5 min · [[#^rotate-token|details]]\n\n" +
 	"## 🔍 acme/web\n\n### 🔍 What remains\n\n#### ⬜ Your actions\n\n- [ ] Rotate the staging token ^rotate-token\n\n" +
-	"#### 🔍 Agent queue\n\n- 🔍 [#12](https://github.com/acme/web/pull/12) login stack ^login-stack\n\n" +
+	"#### 🔍 Agent queue\n\n- 🔍 [web#12](https://github.com/acme/web/pull/12) login stack ^login-stack\n\n" +
 	"## Carry-over\n\nFrom [[2026-10-16]].\n\n| Item | State now | Verdict |\n|---|---|---|\n" +
 	"| Vendor credential (acme/infra) [[2026-10-16#^vendor-cred\\|^vendor-cred]] | ⏳ WAITING | defer: vendor |\n" +
 	"| Bring the build cache online (acme/infra) | offline | |\n\n" +
@@ -203,8 +203,8 @@ func TestDayOpenPrepared(t *testing.T) {
 		"Upgrade the runner (acme/infra)",
 		"Call the vendor · 10 min",
 		"Check the preview deploy by hand (acme/web)",
-		`[#14](https://github.com/acme/web/issues/14): which session store? (acme/web) [[2026-10-16#^session-store\|^session-store]]`,
-		"[#16](https://github.com/acme/web/issues/16): drop IE11? (acme/web)",
+		`[web#14](https://github.com/acme/web/issues/14): which session store? (acme/web) [[2026-10-16#^session-store\|^session-store]]`,
+		"[web#16](https://github.com/acme/web/issues/16): drop IE11? (acme/web)",
 		`Write the onboarding doc \| draft`,
 		"File a ticket for the slow CI cache",
 		"Ask about the cache budget",

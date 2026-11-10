@@ -50,7 +50,7 @@ tags:
 
 #### <icon> Decisions for you
 
-##### <icon> [#N](url): <question>
+##### <icon> [<repo>#N](url): <question>
 
 Unblocks <…>. <why that route>. Cost: <cost>. Route: `<skill>`. Tier: `<tier>`.
 [▶ <verb> in <workspace>](obsidian://shell-commands/?vault=worklog&execute=<id>&_date=<date>&_item=<item-id>) ^<item-id>
@@ -60,7 +60,7 @@ Unblocks <…>. <why that route>. Cost: <cost>. Route: `<skill>`. Tier: `<tier>`
 > <self-contained prompt, e.g. /grill-with-docs https://github.com/<o>/<r>/issues/N — the question and its context>
 > ```
 
-- <icon> [#M](url): <a decision with no prompt yet, one line>
+- <icon> [<repo>#M](url): <a decision with no prompt yet, one line>
 
 #### <icon> Your actions
 
@@ -68,7 +68,7 @@ Unblocks <…>. <why that route>. Cost: <cost>. Route: `<skill>`. Tier: `<tier>`
 
 #### <icon> Agent queue
 
-- <icon> [#N](url) <title>, after [#M](url). A batch ready to start is a `#####` work item with its button and prompt
+- <icon> [<repo>#N](url) <title>, after [<repo>#M](url). A batch ready to start is a `#####` work item with its button and prompt
 
 #### <icon> Sent to other repos
 

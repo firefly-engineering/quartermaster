@@ -168,7 +168,7 @@ func itemOutput(n *note.Note, id string) ItemOutput {
 // unit builds the renderer's unit for f in project repo, with its icon and summary.
 func unit(f ItemFields, repo string, icon note.Icon, summary string) (note.ItemUnit, error) {
 	u := note.ItemUnit{
-		ID: f.ID, Icon: icon, Title: strings.TrimSpace(f.Title), Repo: repo, Cost: value(f.Cost), Route: value(f.Route),
+		ID: f.ID, Icon: icon, Title: strings.TrimSpace(f.Title), Cost: value(f.Cost), Route: value(f.Route),
 		Tier: value(f.Tier), Summary: summary, Body: f.Body, Heading: f.Body != "" || f.Prompt != nil,
 	}
 	if u.Tier != "" {

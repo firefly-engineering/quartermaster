@@ -65,7 +65,6 @@ type ItemUnit struct {
 	Icon    Icon
 	Title   string      // one line, after the icon and ref link; no SummarySep, and in the list form no fieldSep
 	Ref     Ref         // the issue or PR it is about, the zero Ref for none
-	Repo    string      // the project it is in, where Ref renders as a bare #N; "" for none
 	Cost    string      // as `20 min`; "" for none
 	Route   string      // the next skill, as `/implement`; "" for none
 	Tier    string      // the class of its work, as `design`; "" for none. The renderer takes any word: item_upsert checks it is a tier
@@ -562,7 +561,7 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 	}
 	title = string(u.Icon) + " "
 	if u.Ref != (Ref{}) {
-		link, err := refLink(u.Ref, u.Repo)
+		link, err := refLink(u.Ref)
 		if err != nil {
 			return "", "", fmt.Errorf("%s: %w", what, err)
 		}
@@ -593,18 +592,14 @@ func (r Renderer) title(u ItemUnit) (what, title string, err error) {
 	return what, title + "\n", nil
 }
 
-// refLink renders a ref as a full link (ADR 0007): `[#N](<url>)` in its own project, and
-// `[<repo>#N](<url>)` in another, as the skill writes `[IaC#564](…)`.
-func refLink(f Ref, project string) (string, error) {
+// refLink renders a ref as a full link (ADR 0007), `[<repo>#N](<url>)` as the skill writes
+// `[IaC#564](…)`: the label names the repo even in its own project, as one note spans several.
+func refLink(f Ref) (string, error) {
 	_, repo, _ := strings.Cut(f.Repo, "/")
 	if !isRepo(f.Repo) || f.N < 1 {
 		return "", fmt.Errorf("ref %+v: want owner/repo#N", f)
 	}
-	label := "#" + strconv.Itoa(f.N)
-	if f.Repo != project {
-		label = repo + label
-	}
-	return "[" + label + "](" + f.URL() + ")", nil
+	return "[" + repo + "#" + strconv.Itoa(f.N) + "](" + f.URL() + ")", nil
 }
 
 // Note renders a whole note from d, in template.md's layout. Its buttons carry d.Date, the
@@ -707,7 +702,7 @@ func (r Renderer) project(p ProjectUnit) ([]string, error) {
 	if len(p.Buckets) == 0 {
 		return blocks, nil
 	}
-	remains, err := r.remains(p.Remains, p.Repo, p.Buckets)
+	remains, err := r.remains(p.Remains, p.Buckets)
 	if err != nil {
 		return nil, fmt.Errorf("project %s: %w", p.Repo, err)
 	}
@@ -828,24 +823,24 @@ func (r Renderer) Project(p ProjectUnit) ([]byte, error) {
 
 // Remains renders a `### <icon> What remains` section, to splice into a project that lacks it.
 func (r Renderer) Remains(icon Icon, buckets []BucketUnit) ([]byte, error) {
-	blocks, err := r.remains(icon, "", buckets)
+	blocks, err := r.remains(icon, buckets)
 	return []byte(strings.Join(blocks, "\n")), err
 }
 
 // Bucket renders a `#### <icon> <name>` section, to splice into a *What remains* that lacks it.
 func (r Renderer) Bucket(b BucketUnit) ([]byte, error) {
-	blocks, err := r.bucket(b, "")
+	blocks, err := r.bucket(b)
 	return []byte(strings.Join(blocks, "\n")), err
 }
 
-// remains renders a What remains section of project repo as blocks.
-func (r Renderer) remains(icon Icon, repo string, buckets []BucketUnit) ([]string, error) {
+// remains renders a What remains section as blocks.
+func (r Renderer) remains(icon Icon, buckets []BucketUnit) ([]string, error) {
 	if !icon.isHeading() {
 		return nil, fmt.Errorf("the What remains icon %q is not a heading icon", icon)
 	}
 	blocks := []string{"### " + string(icon) + " What remains\n"}
 	for _, b := range buckets {
-		bb, err := r.bucket(b, repo)
+		bb, err := r.bucket(b)
 		if err != nil {
 			return nil, err
 		}
@@ -854,8 +849,8 @@ func (r Renderer) remains(icon Icon, repo string, buckets []BucketUnit) ([]strin
 	return blocks, nil
 }
 
-// bucket renders a bucket of project repo as blocks; an item's ref there renders as #N.
-func (r Renderer) bucket(b BucketUnit, repo string) ([]string, error) {
+// bucket renders a bucket as blocks.
+func (r Renderer) bucket(b BucketUnit) ([]string, error) {
 	if !slices.Contains(BucketNames, b.Name) {
 		return nil, fmt.Errorf("unknown bucket %q: want one of %s", b.Name, strings.Join(BucketNames, ", "))
 	}
@@ -869,9 +864,6 @@ func (r Renderer) bucket(b BucketUnit, repo string) ([]string, error) {
 	// Consecutive list entries form one list; a ##### item is a block of its own.
 	var run string
 	for _, it := range b.Items {
-		if it.Repo == "" {
-			it.Repo = repo
-		}
 		unit, err := r.Item(it)
 		if err != nil {
 			return nil, err

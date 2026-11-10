@@ -160,8 +160,9 @@ it changes, so everything else, including user prose, round-trips byte for byte
 | Carry-over | the table under `## Carry-over` |
 | Process | the list under `## Process` |
 
-A work item's ref is the link opening its title, before the title text: `[#N](<url>): <title>`,
-read as `owner/repo#N` from its GitHub issue or PR URL. A list item writes its cost, route and
+A work item's ref is the link opening its title, before the title text: `[<repo>#N](<url>): <title>`,
+read as `owner/repo#N` from its GitHub issue or PR URL. The label names the repo even in its own
+project, as one note spans several; the parser reads only the URL, so a bare `[#N]` still parses. A list item writes its cost, route and
 tier on its line, `` <title> · <cost> · Route: `<route>` · Tier: `<tier>` ``, then its sent
 status and summary; they are read from the end of its title before those: the tier is the code
 span ending it, after ` · Tier: `, the route the code span ending what is left, after

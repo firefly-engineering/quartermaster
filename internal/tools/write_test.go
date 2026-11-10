@@ -135,7 +135,7 @@ func TestWriteNeedsANote(t *testing.T) {
 }
 
 const (
-	objective1 = "| Ship the login page (acme/web) | [#12](https://github.com/acme/web/issues/12) closed | 🔍 stack in review |\n"
+	objective1 = "| Ship the login page (acme/web) | [web#12](https://github.com/acme/web/issues/12) closed | 🔍 stack in review |\n"
 	objective4 = "| Upgrade the runner (acme/infra) | runner on v3 | ⏳ waits on the vendor |\n"
 )
 
@@ -155,16 +155,16 @@ func TestObjectiveSet(t *testing.T) {
 	}
 
 	// Refine: a new done-condition, stamped with the clock's time and the reason.
-	refined := "| Ship the login page (acme/web) (refined 18:05 UTC: the PR is the unit) | [#12](https://github.com/acme/web/pull/12) merged | 🔍 stack in review |\n"
+	refined := "| Ship the login page (acme/web) (refined 18:05 UTC: the PR is the unit) | [web#12](https://github.com/acme/web/pull/12) merged | 🔍 stack in review |\n"
 	if _, err := d.objectiveSet(ctx, ObjectiveSetInput{
-		Row: 1, DoneWhen: "[#12](https://github.com/acme/web/pull/12) merged", Reason: "the PR is the unit",
+		Row: 1, DoneWhen: "[web#12](https://github.com/acme/web/pull/12) merged", Reason: "the PR is the unit",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	d.checkNote(t, edited(t, objective4, added, objective1, refined))
 
 	// Refine again, at a time the user gave: the stamp is replaced, not stacked.
-	reworded := "| Ship the login page and its tests (acme/web) (refined 17:50 UTC: tests count) | [#12](https://github.com/acme/web/pull/12) merged | 🔍 stack in review |\n"
+	reworded := "| Ship the login page and its tests (acme/web) (refined 17:50 UTC: tests count) | [web#12](https://github.com/acme/web/pull/12) merged | 🔍 stack in review |\n"
 	if _, err := d.objectiveSet(ctx, ObjectiveSetInput{
 		Row: 1, Objective: "Ship the login page and its tests (acme/web)", Reason: "tests count", At: "17:50",
 	}); err != nil {
@@ -205,7 +205,7 @@ func TestObjectiveSet(t *testing.T) {
 const (
 	sentBucket = "#### — Sent to other repos\n\n- —\n"
 	infraChase = "#### ⏳ Outside input: chase\n\n- ⏳ Vendor credential for the v3 runner, asked Tuesday ^vendor-cred\n"
-	loginStack = "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review ^login-stack\n"
+	loginStack = "- 🔍 [web#12](https://github.com/acme/web/pull/12) login stack, in review ^login-stack\n"
 	wave2      = "- Wave 2 after the stack lands.\n"
 )
 
@@ -231,7 +231,7 @@ func TestItemUpsertCreate(t *testing.T) {
 			[]string{sentBucket, "#### ⬜ Sent to other repos\n\n" + grantItem}},
 		{"a list item joins the bucket's last list", ItemUpsertInput{
 			ItemFields: ItemFields{ID: "flaky", Repo: "acme/web", Bucket: "Agent queue", Title: "flaky test", Ref: new("#9"), Route: new("/implement")},
-		}, []string{wave2, wave2 + "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · Route: `/implement` ^flaky\n"}},
+		}, []string{wave2, wave2 + "- ⬜ [web#9](https://github.com/acme/web/issues/9): flaky test · Route: `/implement` ^flaky\n"}},
 		{"a missing bucket, in template order", ItemUpsertInput{
 			ItemFields: ItemFields{ID: "cache", Repo: "acme/infra", Bucket: "Waiting", Title: "cache budget", Cost: new("5 min")},
 			State:      "WAITING",
@@ -239,7 +239,7 @@ func TestItemUpsertCreate(t *testing.T) {
 		{"a missing project, after the last one and in the front matter", ItemUpsertInput{
 			ItemFields: ItemFields{ID: "bump", Repo: "acme/api", Bucket: "Agent queue", Title: "bump Go", Ref: new("acme/api#3")},
 		}, []string{"  - acme/infra\n", "  - acme/infra\n  - acme/api\n", infraChase, infraChase + "\n## ⬜ acme/api\n\n### ⬜ What remains\n\n#### — Decisions for you\n\n- —\n\n" +
-			"#### — Your actions\n\n- —\n\n#### ⬜ Agent queue\n\n- ⬜ [#3](https://github.com/acme/api/issues/3): bump Go ^bump\n\n" +
+			"#### — Your actions\n\n- —\n\n#### ⬜ Agent queue\n\n- ⬜ [api#3](https://github.com/acme/api/issues/3): bump Go ^bump\n\n" +
 			"#### — Sent to other repos\n\n- —\n\n#### — Outside input: chase\n\n- —\n\n#### — Waiting\n\n- —\n"}},
 	}
 	for _, c := range cases {
@@ -267,7 +267,7 @@ func TestItemUpsertUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.checkNote(t, edited(t, loginStack, "- 🔍 [#12](https://github.com/acme/web/issues/12): login stack · 20 min ^login-stack\n"))
+		d.checkNote(t, edited(t, loginStack, "- 🔍 [web#12](https://github.com/acme/web/issues/12): login stack · 20 min ^login-stack\n"))
 		if out.Created || out.Item.State != "IN_REVIEW" || out.Bucket != "Agent queue" {
 			t.Errorf("out %+v", out)
 		}
@@ -317,7 +317,7 @@ func TestItemUpsertUpdate(t *testing.T) {
 			}
 		}
 		d.checkNote(t, withMarker(edited(t, "Unblocks #15. Cost: 10 min.", "Unblocks #15. Cost: 15 min.", sessionStoreOldFence, sessionStoreNewFence,
-			loginStack, "- 🔍 [#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n")))
+			loginStack, "- 🔍 [web#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n")))
 	})
 	t.Run("moved to another project's missing bucket", func(t *testing.T) {
 		t.Parallel()
@@ -345,7 +345,7 @@ func TestItemUpsertUpdate(t *testing.T) {
 		}
 		// The queue it leaves holds only a dropped item now, so its derived icon is ✅.
 		d.checkNote(t, edited(t, queue+"\n"+loginStack, "#### ✅ Agent queue\n\n", "#### — Waiting\n\n- —\n",
-			"#### 🔍 Waiting\n\n- 🔍 [#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n"))
+			"#### 🔍 Waiting\n\n- 🔍 [web#12](https://github.com/acme/web/issues/12): login stack, in review ^login-stack\n"))
 		if out.Bucket != "Waiting" || out.Repo != "acme/web" || out.Item.State != "IN_REVIEW" {
 			t.Errorf("out %+v", out)
 		}
@@ -410,7 +410,7 @@ func TestItemTransition(t *testing.T) {
 	}
 	// The queue's last open item is done: its heading is derived anew.
 	d.checkNote(t, edited(t, queue, "#### ✅ Agent queue\n",
-		loginStack, "- ✅ [#12](https://github.com/acme/web/pull/12) login stack, in review — merged in abc123 ^login-stack\n"))
+		loginStack, "- ✅ [web#12](https://github.com/acme/web/pull/12) login stack, in review — merged in abc123 ^login-stack\n"))
 	if out.From != "IN_REVIEW" || out.To != "DONE" || out.Item == nil || out.Item.Item.State != "DONE" || out.Action != nil {
 		t.Errorf("out %+v", out)
 	}
@@ -476,7 +476,7 @@ func TestItemTransitionSameState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.checkNote(t, edited(t, loginStack, "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review — CI green ^login-stack\n"))
+	d.checkNote(t, edited(t, loginStack, "- 🔍 [web#12](https://github.com/acme/web/pull/12) login stack, in review — CI green ^login-stack\n"))
 	if out.From != "IN_REVIEW" || out.To != "IN_REVIEW" || out.Item == nil || out.Item.Item.State != "IN_REVIEW" {
 		t.Errorf("out %+v", out)
 	}
@@ -507,7 +507,7 @@ func TestItemTransitionDoneSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := edited(t, queue, "#### ✅ Agent queue\n",
-		loginStack, "- ✅ [#12](https://github.com/acme/web/pull/12) login stack, in review — merged in abc124 ^login-stack\n")
+		loginStack, "- ✅ [web#12](https://github.com/acme/web/pull/12) login stack, in review — merged in abc124 ^login-stack\n")
 	d.checkNote(t, want)
 	if out.From != "DONE" || out.To != "DONE" || out.Item == nil || out.Item.Item.State != "DONE" {
 		t.Errorf("out %+v", out)
@@ -538,7 +538,7 @@ func TestNextSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.checkNote(t, edited(t, next,
-		"1. [#14](https://github.com/acme/web/issues/14): which session store? · 10 min · [[#^session-store|details]] · "+
+		"1. [web#14](https://github.com/acme/web/issues/14): which session store? · 10 min · [[#^session-store|details]] · "+
 			"[▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=abc&_date=2026-10-16&_item=session-store)\n"+
 			"2. [ ] Rotate the staging token · 5 min · [[#^rotate-token|details]]\n"+
 			"3. Review the login stack · 20 min · [[#^login-stack|details]]\n"))
@@ -569,7 +569,7 @@ func TestNextSetKeepsTicks(t *testing.T) {
 		}
 		d.checkNote(t, edited(t, next,
 			"1. [x] Rotate the staging token · [[#^rotate-token|details]]\n"+
-				"2. [#12](https://github.com/acme/web/pull/12) login stack, in review · [[#^login-stack|details]]\n",
+				"2. [web#12](https://github.com/acme/web/pull/12) login stack, in review · [[#^login-stack|details]]\n",
 			"#### 🔄 Your actions\n\n- [ ] Rotate", "#### ✅ Your actions\n\n- [x] Rotate"))
 	})
 	t.Run("dropped", func(t *testing.T) {
@@ -625,7 +625,7 @@ func TestNextSetAnchor(t *testing.T) {
 // whatever the line showed before; a manual action's or an anchor's takes the entry's only (#82).
 func TestNextSetCost(t *testing.T) {
 	t.Parallel()
-	const costed = "- 🔍 [#12](https://github.com/acme/web/pull/12) login stack, in review · 5 min ^login-stack\n"
+	const costed = "- 🔍 [web#12](https://github.com/acme/web/pull/12) login stack, in review · 5 min ^login-stack\n"
 	src := edited(t, loginStack, costed, "- Wave 2 after the stack lands.\n", "- Wave 2 after the stack lands.\n\nThe queue. ^queue\n")
 	for _, c := range []struct {
 		name string
@@ -661,7 +661,7 @@ func TestNextSetCost(t *testing.T) {
 
 const (
 	row1 = "| Bring the build cache online (acme/infra) | offline | defer: hardware |\n"
-	row2 = "| [#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"
+	row2 = "| [web#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"
 	row5 = "| Write the onboarding doc \\| draft | started | |\n"
 )
 
@@ -696,8 +696,8 @@ func TestCarryOverVerdict(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.checkNote(t, edited(t,
-			wave2, wave2+"- ⬜ [#9](https://github.com/acme/web/issues/9) flaky test · Route: `/implement` ^flaky\n",
-			row2, "| [#9](https://github.com/acme/web/issues/9) flaky test | open | keep: in scope |\n"))
+			wave2, wave2+"- ⬜ [web#9](https://github.com/acme/web/issues/9) flaky test · Route: `/implement` ^flaky\n",
+			row2, "| [web#9](https://github.com/acme/web/issues/9) flaky test | open | keep: in scope |\n"))
 		if out.Kept == nil || out.Kept.Item.ID != "flaky" || out.Kept.Bucket != "Agent queue" {
 			t.Errorf("out %+v", out)
 		}
@@ -714,16 +714,16 @@ func TestCarryOverVerdict(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.checkNote(t, edited(t,
-			wave2, wave2+"- ⬜ [#9](https://github.com/acme/web/issues/9) flaky test ^flaky\n",
-			row2, "| [#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"))
+			wave2, wave2+"- ⬜ [web#9](https://github.com/acme/web/issues/9) flaky test ^flaky\n",
+			row2, "| [web#9](https://github.com/acme/web/issues/9) flaky test | open | keep |\n"))
 	})
 	t.Run("keep with no title takes the old item's title, ref, cost and route", func(t *testing.T) {
 		t.Parallel()
 		const (
-			old = "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI ^flaky\n"
-			row = "| [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI " +
+			old = "- ⬜ [web#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI ^flaky\n"
+			row = "| [web#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI " +
 				"(acme/web) [[2026-10-15#^flaky\\|^flaky]] | ⬜ TODO in Agent queue | |\n"
-			kept = "| [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI " +
+			kept = "| [web#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` — fails on CI " +
 				"(acme/web) [[2026-10-15#^flaky\\|^flaky]] | ⬜ TODO in Agent queue | keep |\n"
 		)
 		prev := "# Worklog — 2026-10-15\n\n**18:00 UTC:** done.\n\n## ⬜ acme/web\n\n### ⬜ What remains\n\n" +
@@ -733,8 +733,8 @@ func TestCarryOverVerdict(t *testing.T) {
 			cost *string
 			want string
 		}{
-			{"all from the old item", nil, "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` ^flaky\n"},
-			{"a given cost wins", new("5 min"), "- ⬜ [#9](https://github.com/acme/web/issues/9): flaky test · 5 min · Route: `/implement` ^flaky\n"},
+			{"all from the old item", nil, "- ⬜ [web#9](https://github.com/acme/web/issues/9): flaky test · 20 min · Route: `/implement` ^flaky\n"},
+			{"a given cost wins", new("5 min"), "- ⬜ [web#9](https://github.com/acme/web/issues/9): flaky test · 5 min · Route: `/implement` ^flaky\n"},
 		} {
 			t.Run(c.name, func(t *testing.T) {
 				t.Parallel()

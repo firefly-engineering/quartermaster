@@ -45,20 +45,20 @@ func TestRenderWriteUnits(t *testing.T) {
 	}{
 		{"list item with ref, cost, route and summary", func() ([]byte, error) {
 			return r.Item(ItemUnit{
-				ID: "login", Icon: IconInReview, Repo: "acme/web", Ref: web12, Title: "login form",
+				ID: "login", Icon: IconInReview, Ref: web12, Title: "login form",
 				Cost: "20 min", Route: "/implement", Summary: "PR up",
 			})
-		}, "- 🔍 [#12](https://github.com/acme/web/issues/12): login form · 20 min · Route: `/implement` — PR up ^login\n"},
+		}, "- 🔍 [web#12](https://github.com/acme/web/issues/12): login form · 20 min · Route: `/implement` — PR up ^login\n"},
 		{"ref in another project", func() ([]byte, error) {
-			return r.Item(ItemUnit{ID: "grant", Icon: IconTodo, Repo: "acme/web", Ref: Ref{Repo: "acme/IaC", N: 564}, Title: "grant"})
+			return r.Item(ItemUnit{ID: "grant", Icon: IconTodo, Ref: Ref{Repo: "acme/IaC", N: 564}, Title: "grant"})
 		}, "- ⬜ [IaC#564](https://github.com/acme/IaC/issues/564): grant ^grant\n"},
 		{"heading item with cost, route and summary", func() ([]byte, error) {
 			return r.Item(ItemUnit{
-				ID: "store", Icon: IconInProgress, Heading: true, Repo: "acme/web", Ref: Ref{Repo: "acme/web", N: 14},
+				ID: "store", Icon: IconInProgress, Heading: true, Ref: Ref{Repo: "acme/web", N: 14},
 				Title: "which store?", Body: "Unblocks #15.", Cost: "10 min", Route: "/grill-with-docs", Summary: "grilling",
 				Button: "grill in web", Prompt: &PromptUnit{To: "web", Body: "/grill-with-docs u"},
 			})
-		}, "##### 🔄 [#14](https://github.com/acme/web/issues/14): which store? — grilling\n\n" +
+		}, "##### 🔄 [web#14](https://github.com/acme/web/issues/14): which store? — grilling\n\n" +
 			"Unblocks #15. Cost: 10 min. Route: `/grill-with-docs`.\n" +
 			"[▶ grill in web](obsidian://shell-commands/?vault=worklog&execute=nf8lgvkx5s&_date=2026-10-18&_item=store) ^store\n\n" +
 			"> [!prompt]- Prompt sent to web\n> ```qm-prompt id=store to=web\n> /grill-with-docs u\n> ```\n"},
@@ -89,7 +89,7 @@ func TestRenderWriteUnits(t *testing.T) {
 			return r.Project(ProjectUnit{Icon: IconTodo, Repo: "acme/web", Remains: IconTodo, Buckets: []BucketUnit{
 				{Icon: IconTodo, Name: "Agent queue", Items: []ItemUnit{{ID: "a", Icon: IconTodo, Ref: web12, Title: "A"}}},
 			}})
-		}, "## ⬜ acme/web\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n- ⬜ [#12](https://github.com/acme/web/issues/12): A ^a\n"},
+		}, "## ⬜ acme/web\n\n### ⬜ What remains\n\n#### ⬜ Agent queue\n\n- ⬜ [web#12](https://github.com/acme/web/issues/12): A ^a\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -244,10 +244,10 @@ func TestTransitionItem(t *testing.T) {
 		from    string
 		want    string
 	}{
-		{"store", InProgress, "grilling", "##### ⬜ [#14](https://github.com/o/r/issues/14): which store?\n",
-			"##### 🔄 [#14](https://github.com/o/r/issues/14): which store? — grilling\n"},
-		{"ie11", Dropped, "won't fix", "- ⬜ [#16](https://github.com/o/r/issues/16): drop IE11,\n  or keep it? ^ie11\n",
-			"- ❌ [#16](https://github.com/o/r/issues/16): drop IE11, or keep it? — won't fix ^ie11\n"},
+		{"store", InProgress, "grilling", "##### ⬜ [r#14](https://github.com/o/r/issues/14): which store?\n",
+			"##### 🔄 [r#14](https://github.com/o/r/issues/14): which store? — grilling\n"},
+		{"ie11", Dropped, "won't fix", "- ⬜ [r#16](https://github.com/o/r/issues/16): drop IE11,\n  or keep it? ^ie11\n",
+			"- ❌ [r#16](https://github.com/o/r/issues/16): drop IE11, or keep it? — won't fix ^ie11\n"},
 		// No summary keeps the one there.
 		{"nested", InReview, "", "  - 🔄 nested — PR up ^nested\n", "  - 🔍 nested — PR up ^nested\n"},
 		{"rotate", Done, "", "- [ ] Rotate the token ^rotate\n", "- [x] Rotate the token ^rotate\n"},

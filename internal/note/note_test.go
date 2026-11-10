@@ -220,7 +220,7 @@ func TestCarryOverRowRef(t *testing.T) {
 		"[[2026-10-16]] then [[2026-10-16#^b]]":                       "b",
 		"Vendor credential `[[2026-10-16#^vendor-cred]]`":             "",
 		"[[2026-10-16#^Bad id]]":                                      "",
-		"[#9](https://github.com/acme/web/issues/9) flaky test":       "",
+		"[web#9](https://github.com/acme/web/issues/9) flaky test":    "",
 	} {
 		src := "# Worklog — 2026-10-19\n\n**08:00 UTC:** ok.\n\n## Carry-over\n\n" +
 			"| Item | State now | Verdict |\n|---|---|---|\n| " + item + " | open | |\n"
