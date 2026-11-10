@@ -27,6 +27,12 @@ Unblocks #15.
 
 > [!prompt]- Prompt sent to r
 > ` + "```herdr-prompt id=store to=r\n> /grill-with-docs\n> ```\n" + `
+##### ⬜ send the canary
+
+*send to r* ^canary-send
+
+> [!prompt]- Prompt sent to r
+> ` + "```herdr-prompt id=canary-send to=r\n> /grill-with-docs\n> ```\n" + `
 - ⬜ [#16](https://github.com/o/r/issues/16): drop IE11,
   or keep it? ^ie11
   - a step
@@ -49,11 +55,16 @@ func TestItemHead(t *testing.T) {
 	for _, w := range []struct {
 		id, head, icon, title, button string
 	}{
-		{"store", "##### ⬜ [#14](https://github.com/o/r/issues/14): which store?\n", "⬜",
-			"[#14](https://github.com/o/r/issues/14): which store?", "grill in r"},
-		{"ie11", "- ⬜ [#16](https://github.com/o/r/issues/16): drop IE11,\n  or keep it? ^ie11\n", "⬜",
-			"[#16](https://github.com/o/r/issues/16): drop IE11, or keep it?", ""},
+		{
+			"store", "##### ⬜ [#14](https://github.com/o/r/issues/14): which store?\n", "⬜",
+			"[#14](https://github.com/o/r/issues/14): which store?", "grill in r",
+		},
+		{
+			"ie11", "- ⬜ [#16](https://github.com/o/r/issues/16): drop IE11,\n  or keep it? ^ie11\n", "⬜",
+			"[#16](https://github.com/o/r/issues/16): drop IE11, or keep it?", "",
+		},
 		{"nested", "  - 🔄 nested — PR up ^nested\n", "🔄", "nested — PR up", ""},
+		{"canary-send", "##### ⬜ send the canary\n", "⬜", "send the canary", "send to r"},
 	} {
 		it := n.Item(w.id)
 		if it == nil {
@@ -85,25 +96,33 @@ func TestItemFields(t *testing.T) {
 	t.Parallel()
 	d := &Dispatch{Pane: "w1:p3", Workspace: "/ws/o/r/issue-14"}
 	items := []ItemUnit{
-		{ID: "store", Icon: IconInProgress, Heading: true, Repo: "o/r", Ref: Ref{Repo: "o/r", N: 14}, Title: "which store?",
+		{
+			ID: "store", Icon: IconInProgress, Heading: true, Repo: "o/r", Ref: Ref{Repo: "o/r", N: 14}, Title: "which store?",
 			Body: "Unblocks #15.", Cost: "10 min", Route: "/grill-with-docs", Summary: "grilling", Dispatch: d,
-			Button: "grill in r", Prompt: &PromptUnit{To: "r", Body: "/grill-with-docs"}},
+			Button: "grill in r", Prompt: &PromptUnit{To: "r", Body: "/grill-with-docs"},
+		},
 		{ID: "route-only", Icon: IconTodo, Heading: true, Title: "X", Route: "/triage"},
 		{ID: "cost-only", Icon: IconTodo, Heading: true, Title: "Y", Body: "Two lines\nof prose.", Cost: "1.5 h"},
 		{ID: "prose", Icon: IconTodo, Heading: true, Title: "Z", Body: "Done in 5 min."},
-		{ID: "login", Icon: IconInReview, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 7}, Title: "login form",
-			Cost: "20 min", Route: "/implement", Summary: "PR up", Dispatch: d},
+		{
+			ID: "login", Icon: IconInReview, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 7}, Title: "login form",
+			Cost: "20 min", Route: "/implement", Summary: "PR up", Dispatch: d,
+		},
 		{ID: "cost-line", Icon: IconTodo, Title: "a, b", Cost: "5 min"},
 		{ID: "route-line", Icon: IconTodo, Title: "c", Route: "/implement"},
 		{ID: "bare", Icon: IconTodo, Title: "plain"},
 	}
-	sent := []ItemUnit{{ID: "grant", Icon: IconTodo, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 8}, Title: "grant",
-		Cost: "5 min", Route: "/implement", Sent: &SentUnit{To: "IaC", Status: SentAcked, Note: "[#9](u)"}}}
-	src, err := testRenderer.Note(Day{Date: "2026-10-18", Status: StatusUnit{Time: "09:30", Text: "open."},
+	sent := []ItemUnit{{
+		ID: "grant", Icon: IconTodo, Repo: "o/r", Ref: Ref{Repo: "acme/IaC", N: 8}, Title: "grant",
+		Cost: "5 min", Route: "/implement", Sent: &SentUnit{To: "IaC", Status: SentAcked, Note: "[#9](u)"},
+	}}
+	src, err := testRenderer.Note(Day{
+		Date: "2026-10-18", Status: StatusUnit{Time: "09:30", Text: "open."},
 		Projects: []ProjectUnit{{Icon: IconTodo, Repo: "o/r", Remains: IconTodo, Buckets: []BucketUnit{
 			{Icon: IconTodo, Name: "Decisions for you", Items: items},
 			{Icon: IconTodo, Name: SentBucket, Items: sent},
-		}}}})
+		}}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

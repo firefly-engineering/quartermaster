@@ -203,7 +203,7 @@ type Item struct {
 	Title    string // the source after the icon, its lines joined by one space, without the `^<id>` or a list item's dispatch marker
 	Bare     string // its title as item_upsert takes it: Title without its ref link, cost, route, tier, sent status and summary
 	Heading  bool
-	Button   string // a ##### item's ▶ label, after the ▶; "" without a button
+	Button   string // a ##### item's ▶ label, after the ▶ or, in italics, where its button would go on a vault with no Shell commands id; "" with neither
 	Prompt   *Prompt
 	Dispatch *Dispatch // where task_dispatch started an agent on it; nil when it has no marker
 	Sent     *Sent     // in *Sent to other repos*, its sent status; nil without one
@@ -212,9 +212,10 @@ type Item struct {
 	Route    string    // the next skill that moves it, as `/implement`; "" without one
 	Tier     string    // the class of its work, which routes its prompts (ADR 0011), as `design`; "" without one
 
-	idAt   int    // the offset of the `^` of its `^<id>`
-	marker Span   // its dispatch marker's own bytes, when it has one
-	lead   string // its title as written before its cost, route, tier, sent status and summary
+	idAt    int    // the offset of the `^` of its `^<id>`
+	marker  Span   // its dispatch marker's own bytes, when it has one
+	labelAt int    // the offset of its italic label's first `*`; -1 when it has none. Only a ##### item's is set or read
+	lead    string // its title as written before its cost, route, tier, sent status and summary
 }
 
 // PromptFence is the info string's first word on a prompt block: the name the renderer writes.

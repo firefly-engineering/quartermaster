@@ -58,7 +58,8 @@ type NextUnit struct {
 // ` · <cost> · Route: <route> · Tier: <tier>` before the summary, the route and the tier in code
 // spans, and ` ^<id>` after it, so its title holds no ` · `; the `#####` form ends its body with
 // `Cost: <cost>. Route: <route>. Tier: <tier>.` instead. A sent status comes before the summary:
-// ` → <to>, **<status>**`. The parser reads the ref, cost, route and tier back (Item).
+// ` → <to>, **<status>**`. The parser reads the ref, cost, route, tier and button label back
+// (Item).
 type ItemUnit struct {
 	ID      string
 	Icon    Icon
@@ -71,7 +72,7 @@ type ItemUnit struct {
 	Summary string      // its last transition's summary (spec §4.3), after SummarySep; "" for none
 	Heading bool        // the `#####` form; required with a Prompt
 	Body    string      // the `#####` form's prose before its button; no blank line
-	Button  string      // the ▶ label, as `grill in trunk`; needs a Prompt
+	Button  string      // the ▶ label, as `grill in trunk`; needs a Prompt, and defaults to send to <to>
 	Prompt  *PromptUnit // the collapsed `> [!prompt]-` callout
 	Sent    *SentUnit   // in *Sent to other repos*, its sent status, after the title, cost, route and tier; nil for none
 
@@ -93,6 +94,18 @@ const fieldSep = " · "
 // DefaultButton is the ▶ label of a prompt sent to the workspace labelled to, when no other
 // label is given.
 func DefaultButton(to string) string { return "send to " + to }
+
+// sendLabel is a work item's ▶ label: the one given, or `send to <to>` for a prompt it has
+// none of its own for. It is "" with neither.
+func sendLabel(button, to string) string {
+	if button != "" {
+		return button
+	}
+	if to != "" {
+		return DefaultButton(to)
+	}
+	return ""
+}
 
 // Action is a parsed work item's title (Item.Title) as the action of its *Next* line: without
 // its summary, or the cost, route and tier the list form puts after ` · `.
@@ -408,7 +421,8 @@ func (r Renderer) NextBody(units []NextUnit) ([]byte, error) {
 // Item renders a bucket entry. The list form is one line, `- <icon> <title> ^<id>`. The
 // heading form is the `#####` heading, a blank line, its paragraph ending with the button and
 // `^<id>`, then a blank line and the collapsed prompt callout when it has a prompt. Without a
-// CommandID the button is left out and the prompt kept.
+// CommandID the label is written in italics where the button would go (itemButton), and the
+// prompt kept.
 func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	what, title, err := r.title(u)
 	if err != nil {
@@ -450,7 +464,11 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	default:
 		para[len(para)-1] += " " + strings.Join(tail, " ")
 	}
-	button, err := r.button(u.Button, u.ID)
+	to := ""
+	if u.Prompt != nil {
+		to = u.Prompt.To
+	}
+	button, err := r.itemButton(sendLabel(u.Button, to), u.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -459,10 +477,11 @@ func (r Renderer) Item(u ItemUnit) ([]byte, error) {
 	}
 	if u.Dispatch != nil {
 		if len(para) == 0 {
-			para = []string{r.DispatchMarker(*u.Dispatch)}
-		} else {
-			para[len(para)-1] += " " + r.DispatchMarker(*u.Dispatch)
+			// Alone with ^<id>, the marker would start the paragraph, which CommonMark
+			// reads as an HTML block, not the item's paragraph.
+			return nil, fmt.Errorf("%s: a dispatch marker ends a line of prose, a button or its label, and the item has none", what)
 		}
+		para[len(para)-1] += " " + r.DispatchMarker(*u.Dispatch)
 	}
 	if len(para) == 0 {
 		para = []string{"^" + u.ID}
@@ -891,6 +910,32 @@ func (r Renderer) button(label, id string) (string, error) {
 		"&execute=" + queryValue(r.CommandID) +
 		"&_date=" + r.Date + "&_item=" + id
 	return "[" + buttonMark + label + "](" + uri + ")", nil
+}
+
+// itemButton is the ▶ button of work item id, or its label in italics where the button
+// would go when the vault has no Shell commands id (Renderer.Item): the item's paragraph
+// then never starts with a dispatch marker, and a reader without the plugin still sees
+// where its prompt goes. It is "" when there is no label.
+func (r Renderer) itemButton(label, id string) (string, error) {
+	if label == "" {
+		return "", nil
+	}
+	if r.CommandID != "" {
+		return r.button(label, id)
+	}
+	return r.italic(label)
+}
+
+// italic renders a ▶ label in italics, as an item without a button writes it where the
+// button would go (itemButton): `*<label>*`.
+func (r Renderer) italic(label string) (string, error) {
+	if err := oneLine("button label", label); err != nil {
+		return "", err
+	}
+	if strings.Contains(label, "*") {
+		return "", fmt.Errorf("button label %q: no asterisks, it renders in italics", label)
+	}
+	return "*" + label + "*", nil
 }
 
 // A button is a link to buttonURI whose text is buttonMark and its label.

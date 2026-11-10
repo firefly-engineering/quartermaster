@@ -49,6 +49,15 @@ To send. ^ask-iac
 > Reply with links.
 > ` + fence + `
 
+##### ⬜ Bare canary
+
+^send-bare
+
+> [!prompt]- Prompt sent to IaC
+> ` + fence + `herdr-prompt id=send-bare to=IaC
+> Please do it.
+> ` + fence + `
+
 ##### ⬜ No prompt
 
 Nothing to send. ^bare
@@ -153,6 +162,32 @@ func TestSendOneLinePrompt(t *testing.T) {
 	}
 }
 
+// TestSendPromptOnlyItem: a send on an item with a prompt and nothing else, as a vault
+// without Shell commands settings renders it, records its pane and keeps the note parsing:
+// the item's ▶ label is written in italics where its button would go, before the marker
+// (#168).
+func TestSendPromptOnlyItem(t *testing.T) {
+	t.Parallel()
+	vault, s, _ := setup(t, "idle")
+	got, err := s.Send(context.Background(), vault, "2026-10-16", "send-bare")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Pane != "wX/p9" {
+		t.Fatalf("pane %q", got.Pane)
+	}
+	b, err := os.ReadFile(got.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "*send to IaC* <!-- qm pane=wX/p9 --> ^send-bare") {
+		t.Fatalf("the pane is not recorded on the label:\n%s", b)
+	}
+	if _, err := note.Parse(b); err != nil {
+		t.Fatalf("the note no longer parses: %v", err)
+	}
+}
+
 // TestSendItemWithInstruction appends an instruction to the item's prompt, before the closing line.
 func TestSendItemWithInstruction(t *testing.T) {
 	t.Parallel()
@@ -170,8 +205,10 @@ func TestSendItemWithInstruction(t *testing.T) {
 func TestDeliver(t *testing.T) {
 	t.Parallel()
 	vault, s, f := setup(t, "idle")
-	p := Prompt{To: Workspace{ID: "wX", Label: "IaC"}, Repo: "o/iac", Checkout: "/src/iac", Text: "/implement https://github.com/o/r/issues/3",
-		Date: "2026-10-16", Ref: "o/r#3"}
+	p := Prompt{
+		To: Workspace{ID: "wX", Label: "IaC"}, Repo: "o/iac", Checkout: "/src/iac", Text: "/implement https://github.com/o/r/issues/3",
+		Date: "2026-10-16", Ref: "o/r#3",
+	}
 	got, err := s.Deliver(context.Background(), p)
 	if err != nil {
 		t.Fatal(err)
@@ -192,8 +229,12 @@ func TestDeliver(t *testing.T) {
 		t.Fatalf("a blocked agent: %+v, %v, want a spawn's pane", got, err)
 	}
 	_, s, f = setup(t, "idle")
-	for _, bad := range []Prompt{{To: Workspace{Label: "trunk"}, Repo: p.Repo, Text: "go"}, {To: p.To, Repo: p.Repo, Text: " "},
-		{To: p.To, Text: "go"}, {To: p.To, Repo: p.Repo, Text: "go", Date: "2026-10-16"}} {
+	for _, bad := range []Prompt{
+		{To: Workspace{Label: "trunk"}, Repo: p.Repo, Text: "go"},
+		{To: p.To, Repo: p.Repo, Text: " "},
+		{To: p.To, Text: "go"},
+		{To: p.To, Repo: p.Repo, Text: "go", Date: "2026-10-16"},
+	} {
 		if _, err := s.Deliver(context.Background(), bad); err == nil {
 			t.Errorf("%+v: no error", bad)
 		}
@@ -220,8 +261,14 @@ func TestSendAvailableStatuses(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		name, status, pane string
-	}{{"idle", "idle", "wZ/p6"}, {"done", "done", "wZ/p6"}, {"working", "working", "wZ/p9"}, {"blocked", "blocked", "wZ/p9"},
-		{"no report", "", "wZ/p9"}, {"an unknown status", "unknown", "wZ/p9"}} {
+	}{
+		{"idle", "idle", "wZ/p6"},
+		{"done", "done", "wZ/p6"},
+		{"working", "working", "wZ/p9"},
+		{"blocked", "blocked", "wZ/p9"},
+		{"no report", "", "wZ/p9"},
+		{"an unknown status", "unknown", "wZ/p9"},
+	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			vault, s, f := setup(t, c.status)

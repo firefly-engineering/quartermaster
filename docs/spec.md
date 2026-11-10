@@ -172,6 +172,17 @@ read from the end the same way. A body ending with a bare `<cost>.`, as written 
 `Cost:` marker, reads as prose: the item has no cost until it is rewritten. Each is absent
 when the item has none.
 
+A `#####` item with a prompt ends its paragraph with the ▶ button that sends it,
+`[▶ <label>](…)`, and its `^<item-id>` after it on the same line; the label is read back
+after the ▶.
+On a vault with no Obsidian Shell commands settings ([§9.1]) there is no button to build,
+and the item writes the same label in italics where the button would go, `*send to <to>*`
+or its own label. Either way the paragraph never starts with the `<!--` of a dispatch
+marker, which CommonMark would read as an HTML block rather than the item's paragraph:
+the italic label is read back as the item's too, a marker recorded on an item whose
+paragraph holds only `^<item-id>` writes the label before itself, and the next render with
+a command id writes the button again.
+
 The tier is the class of the item's work, one of the closed list in the worklog skill's tier
 table ([ADR 0011]). It routes the item's prompts to a harness through config; the note never
 names the harness. A prompt led by a route's command, `/<name>`, reaches a harness of kind

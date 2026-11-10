@@ -36,6 +36,15 @@ func (r Renderer) DispatchMarker(d Dispatch) string {
 	return m + " " + markerClose
 }
 
+// bodyEnd is where a ##### item's paragraph trailer starts: its dispatch marker, when it
+// has one, else its `^<id>`.
+func (it *Item) bodyEnd() int {
+	if it.Dispatch != nil {
+		return min(it.idAt, it.marker.Start)
+	}
+	return it.idAt
+}
+
 // Check reports why d cannot be written as a marker that parses back to d.
 func (d Dispatch) Check() error {
 	if d.Pane == "" && d.Workspace == "" {
@@ -83,8 +92,11 @@ func parseMarker(raw string) (d Dispatch, ok bool) {
 }
 
 // SetDispatch records d on work item id of n, parsed from src, and returns the new source: it
-// replaces the item's marker, or writes one just before its `^<id>`. An empty d removes the
-// marker, with the space written after it. Nothing else changes.
+// replaces the item's marker, or writes one just before its `^<id>`. On an item whose
+// paragraph holds only `^<id>` it writes the item's ▶ label in italics first, where its button
+// would go (Renderer.Item), so the paragraph never starts with the marker, which CommonMark
+// would read as an HTML block. An empty d removes the marker, with the space written after it.
+// Nothing else changes.
 func SetDispatch(n *Note, src []byte, id string, d Dispatch) ([]byte, error) {
 	it := n.Item(id)
 	if d == (Dispatch{}) && it != nil {
@@ -106,6 +118,20 @@ func SetDispatch(n *Note, src []byte, id string, d Dispatch) ([]byte, error) {
 	marker := Renderer{}.DispatchMarker(d)
 	if it.Dispatch != nil {
 		return Replace(src, it.marker, []byte(marker)), nil
+	}
+	if it.Heading && isBlank(string(src[it.Head.End:it.idAt])) {
+		to := ""
+		if it.Prompt != nil {
+			to = it.Prompt.To
+		}
+		if label := sendLabel(it.Button, to); label != "" {
+			ital, err := Renderer{}.italic(label)
+			if err != nil {
+				return nil, fmt.Errorf("^%s: %w", id, err)
+			}
+			return Insert(src, it.idAt, []byte(ital+" "+marker+" ")), nil
+		}
+		return nil, fmt.Errorf("^%s: its paragraph holds only ^%s, and a marker before it would read as an HTML block, not the item's paragraph: give the item a body or a prompt", id, id)
 	}
 	return Insert(src, it.idAt, []byte(marker+" ")), nil
 }
