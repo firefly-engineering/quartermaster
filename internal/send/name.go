@@ -10,8 +10,9 @@ import (
 
 // AgentName is the agent name for repo, the repo part of owner/repo, with suffix: the first of
 // `<repo>-<suffix>`, then with `-2`, `-3`, … appended, that is not in taken, the names of the
-// live agents (rex.Client.AgentList). Names are kept unique among all live agents, so the
-// counter absorbs two repos of one name, the owner left out.
+// live agents (rex.Client.AgentList). A name is unique among the agents live when it is
+// picked, so the counter absorbs two repos of one name, the owner left out. Two spawns at once
+// can pick the same one: nothing finds an agent by its name, only by its pane (#174).
 //
 // Both parts are lowercased and every character outside [a-z0-9_-] becomes `-`; the repo part
 // is then prefixed `a` unless it starts with a letter. Only the repo part is cut to fit 32 characters:
